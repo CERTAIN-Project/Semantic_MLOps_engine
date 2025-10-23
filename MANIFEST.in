@@ -1,0 +1,102 @@
+# Include important documentation files
+include README.md
+include LICENSE
+include CHANGELOG.md
+include CONTRIBUTORS.md
+
+# Include configuration files
+include pyproject.toml
+include setup.py
+include setup.cfg
+
+# Include requirements files
+include requirements.txt
+include requirements-dev.txt
+include requirements-test.txt
+
+# Include version file if you have one
+include VERSION
+include certain_library/_version.py
+
+# Include all Python files in the package
+recursive-include certain_library *.py
+recursive-include certain_library *.pyx
+recursive-include certain_library *.pxd
+
+# Include package data files
+recursive-include certain_library *.json
+recursive-include certain_library *.yaml
+recursive-include certain_library *.yml
+recursive-include certain_library *.toml
+recursive-include certain_library *.cfg
+recursive-include certain_library *.ini
+
+# Include test files
+recursive-include tests *.py
+recursive-include tests *.json
+recursive-include tests *.yaml
+recursive-include tests *.csv
+
+# Include documentation
+recursive-include docs *.rst
+recursive-include docs *.md
+recursive-include docs *.txt
+recursive-include docs *.png
+recursive-include docs *.jpg
+recursive-include docs *.gif
+recursive-include docs Makefile
+recursive-include docs make.bat
+
+# Include examples
+recursive-include examples *.py
+recursive-include examples *.ipynb
+recursive-include examples *.md
+recursive-include examples *.txt
+
+# Include data files if any
+recursive-include certain_library/data *.csv
+recursive-include certain_library/data *.json
+recursive-include certain_library/data *.txt
+
+# Include type stubs
+recursive-include certain_library *.pyi
+include py.typed
+
+# Exclude compiled Python files
+global-exclude *.pyc
+global-exclude *.pyo
+global-exclude *.pyd
+global-exclude __pycache__
+global-exclude *.so
+global-exclude *.dylib
+
+# Exclude development and build files
+global-exclude .git*
+global-exclude .DS_Store
+global-exclude *.swp
+global-exclude *.swo
+global-exclude *~
+global-exclude .coverage
+global-exclude .pytest_cache
+global-exclude .mypy_cache
+global-exclude .tox
+global-exclude build
+global-exclude dist
+global-exclude *.egg-info
+
+# Exclude IDE files
+global-exclude .vscode
+global-exclude .idea
+global-exclude *.sublime-*
+
+# Exclude MLflow and emissions files
+global-exclude mlruns
+global-exclude mlartifacts
+global-exclude emissions.csv
+global-exclude code_carbon
+
+# Exclude environment files
+global-exclude .env
+global-exclude .venv
+global-exclude env
+global-exclude venv

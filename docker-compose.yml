@@ -1,0 +1,125 @@
+services:
+  postgres:
+    image: postgres:13
+    container_name: certain_databases
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./docker_data/postgres/:/var/lib/postgresql/data
+      - ./init_databases.sql:/docker-entrypoint-initdb.d/01_init_databases.sql
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    networks:
+      - certain_library_default
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  migrations:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: certain_migrations
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - certain_library_default
+    environment:
+      - ALEMBIC_DATABASE_URL=postgresql://postgres:postgres@postgres:5432/certain_db
+      - PYTHONPATH=/app:/app/data_api
+    working_dir: /app/data_api
+    command: >
+      sh -c "
+      alembic upgrade head
+      "
+    restart: "no"
+
+  mlflow:
+    image: python:3.11-slim
+    container_name: certain_mlflow
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "5001:5001"
+    volumes:
+      - ./docker_data/mlflow_artifacts:/app/mlruns
+    environment:
+      - MLFLOW_BACKEND_STORE_URI=postgresql://postgres:postgres@postgres:5432/mlflow
+      - MLFLOW_DEFAULT_ARTIFACT_ROOT=/app/mlruns
+    networks:
+      - certain_library_default
+    command: >
+      sh -c "
+      pip install mlflow==2.21.2 psycopg2-binary &&
+      mlflow server
+      --backend-store-uri postgresql://postgres:postgres@postgres:5432/mlflow
+      --default-artifact-root /app/mlruns
+      --host 0.0.0.0
+      --port 5001
+      "
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5001/')\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  data_transfer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: certain_data_transfer_api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - certain_library_default
+    ports:
+      - "8001:8001"
+    environment:
+      - MLFLOW_DB=postgresql://postgres:postgres@postgres:5432/mlflow
+      - TARGET_DB=postgresql://postgres:postgres@postgres:5432/certain_db
+      - MLFLOW_ARTIFACTS=/app/mlruns
+      - PYTHONPATH=/app:/app/data_api
+    volumes:
+      - ./docker_data/mlflow_artifacts:/app/mlruns
+      - ./test_docker:/app/test_docker
+    working_dir: /app/data_api
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8001/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  library_tracker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: certain_library_tracker
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - certain_library_default
+    ports:
+      - "8002:8002"
+    environment:
+      - MLFLOW_TRACKING_URI=postgresql+psycopg2://postgres:postgres@postgres:5432/mlflow
+      - MLFLOW_DB=postgresql+psycopg2://postgres:postgres@postgres:5432/mlflow
+      - MLFLOW_ARTIFACTS=/app/mlruns
+      - MLFLOW_ARTIFACT_ROOT=/app/mlruns
+      - PYTHONPATH=/app:/app/certain_library
+    volumes:
+      - ./docker_data/mlflow_artifacts:/app/mlruns
+    stdin_open: true
+    tty: true
+
+networks:
+  certain_library_default:
+    driver: bridge
