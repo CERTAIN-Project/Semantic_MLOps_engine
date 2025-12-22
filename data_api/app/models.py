@@ -23,7 +23,9 @@ class Experiments(Base):
 
     experiment_id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     experiment_name = Column(String, nullable=False, default="default")
-    lifecycle_stage = Column(String, nullable=False)
+    experiment_stage = Column(String, nullable=False, default="Active")
+    lifecycle_stage = Column(String, nullable=False, default="data_processing")
+    description = Column(String, nullable=True)
     creation_time = Column(Numeric, nullable=False, default=1672531200)
     last_update_time = Column(Numeric, nullable=False, default=1672531200)
 
@@ -35,6 +37,25 @@ class Experiments(Base):
     )
     deployment = relationship(
         "ModelDeployed", back_populates="experiments", cascade="all, delete-orphan"
+    )
+    ai_actors = relationship(
+        "AIActors", back_populates="experiments", cascade="all, delete-orphan"
+    )
+    labeling_procedures = relationship(
+        "LabelingProcedures", back_populates="experiments", cascade="all, delete-orphan"
+    )
+    human_oversightmechanism = relationship(
+        "HumanOversightMechanism",
+        back_populates="experiments",
+        cascade="all, delete-orphan",
+    )
+    transparency_measure = relationship(
+        "TransparencyMeasure",
+        back_populates="experiments",
+        cascade="all, delete-orphan",
+    )
+    risks = relationship(
+        "Risk", back_populates="experiments", cascade="all, delete-orphan"
     )
 
 
@@ -67,6 +88,24 @@ class Runs(Base):
     logs = relationship("RunLogs", back_populates="run", cascade="all, delete-orphan")
     model_architecture = relationship(
         "ModelArchitecture",
+        back_populates="run",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+    declaration_of_conformity = relationship(
+        "DeclarationOfConformity",
+        back_populates="run",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+    visual_documentation = relationship(
+        "VisualDocumentation",
+        back_populates="run",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+    explainable_ai_features = relationship(
+        "ExplainableAIFeatures",
         back_populates="run",
         uselist=False,
         cascade="all, delete-orphan",
@@ -119,6 +158,7 @@ class ModelDeployed(Base):
     )
     location = Column(String)
     status = Column(String)
+    model_cateory = Column(String)
 
     experiment = relationship("Experiment", back_populates="deployment")
     run = relationship("Run", back_populates="deployment")
@@ -135,6 +175,21 @@ class ModelDeployed(Base):
     )
     monitor_logs = relationship(
         "MonitorLog", back_populates="deployment", cascade="all, delete-orphan"
+    )
+    build_and_integration_testing = relationship(
+        "BuildAndIntegrationTesting",
+        back_populates="deployment",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+    interface = relationship(
+        "Interface", back_populates="experiments", cascade="all, delete-orphan"
+    )
+    standard = relationship(
+        "Standard", back_populates="experiments", cascade="all, delete-orphan"
+    )
+    decomissioning = relationship(
+        "Decomissioning", back_populates="experiments", cascade="all, delete-orphan"
     )
 
 
@@ -305,6 +360,7 @@ class Data(Base):
     data_source = Column(String)
     data_version = Column(String)
     data_location = Column(String)
+    data_acquisition_method = Column(String)
     data_size = Column(Float)
     data_format = Column(String)
     creation_time = Column(Numeric, nullable=False, default=1672531200)
@@ -350,12 +406,15 @@ class DataTechniquesHyperparameters(Base):
 
     run_id = Column(String, nullable=False, default=lambda: str(uuid.uuid4()))
     data_id = Column(String, nullable=False, default=lambda: str(uuid.uuid4()))
-    key = Column(String, nullable=False)
-    technical_name = Column(String, nullable=False)
+    technique_name = Column(String, nullable=False)
+    technique_parameter_name = Column(String, nullable=False)
+    technique_parameter_value = Column(String, nullable=False)
     value = Column(String)
 
     __table_args__ = (
-        PrimaryKeyConstraint("run_id", "data_id", "key", "technical_name"),
+        PrimaryKeyConstraint(
+            "run_id", "data_id", "technique_name", "technique_parameter_name"
+        ),
         ForeignKeyConstraint(
             ["run_id", "data_id"],
             ["data.run_id", "data.data_id"],
@@ -370,8 +429,8 @@ class DataTechniques(Base):
 
     run_id = Column(String, nullable=False, default=lambda: str(uuid.uuid4()))
     data_id = Column(String, nullable=False, default=lambda: str(uuid.uuid4()))
-    technique_name = Column(String, nullable=False)
-    value = Column(String)
+    technique_name = Column(ARRAY(String), nullable=False)
+    data_technique_stage = Column(String)
 
     __table_args__ = (
         PrimaryKeyConstraint("run_id", "data_id", "technique_name"),
@@ -437,7 +496,7 @@ class ModelArchitecture(Base):
     model_id = Column(
         String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
     )
-
+    model_version = Column(Integer, nullable=False, default=1)
     architecture_name = Column(String)
     activation_function = Column(String)
     loss_function = Column(String)
@@ -452,7 +511,7 @@ class ModelArchitecture(Base):
     number_of_layers = Column(Integer)
     number_of_total_parameters = Column(Integer)
     number_of_trainable_parameters = Column(Integer)
-    nummber_of_non_trainable_parameters = Column(Integer)
+    number_of_non_trainable_parameters = Column(Integer)
 
     creation_time = Column(Numeric, nullable=False, default=1672531200)
 
@@ -544,9 +603,7 @@ class ModelMetrics(Base):
     timestamp = Column(Numeric, nullable=False, default=1672531200)
 
     __table_args__ = (
-        PrimaryKeyConstraint(
-            "run_id", "key", "model_id", "step", "stage", "timestamp", "is_NaN", "value"
-        ),
+        PrimaryKeyConstraint("run_id", "key", "model_id", "step", "stage"),
         ForeignKeyConstraint(
             ["run_id", "model_id"],
             ["model_architecture.run_id", "model_architecture.model_id"],
@@ -597,17 +654,7 @@ class WeightDistribution(Base):
     timestamp = Column(Numeric, nullable=False, default=1672531200)
 
     __table_args__ = (
-        PrimaryKeyConstraint(
-            "run_id",
-            "model_id",
-            "layer_name",
-            "std",
-            "mean",
-            "step",
-            "stage",
-            "timestamp",
-            "is_NaN",
-        ),
+        PrimaryKeyConstraint("run_id", "model_id", "step", "stage"),
         ForeignKeyConstraint(
             ["run_id", "model_id"],
             ["model_architecture.run_id", "model_architecture.model_id"],
@@ -631,15 +678,7 @@ class Resources(Base):
     timestamp = Column(Numeric, nullable=False, default=1672531200)
 
     __table_args__ = (
-        PrimaryKeyConstraint(
-            "run_id",
-            "model_id",
-            "key",
-            "value",
-            "step",
-            "stage",
-            "timestamp",
-        ),
+        PrimaryKeyConstraint("run_id", "model_id", "key", "step", "stage"),
         ForeignKeyConstraint(
             ["run_id", "model_id"],
             ["model_architecture.run_id", "model_architecture.model_id"],
@@ -663,16 +702,7 @@ class Examples(Base):
     timestamp = Column(Numeric, nullable=False, default=1672531200)
 
     __table_args__ = (
-        PrimaryKeyConstraint(
-            "run_id",
-            "model_id",
-            "input",
-            "prediction",
-            "ground_truth",
-            "step",
-            "stage",
-            "timestamp",
-        ),
+        PrimaryKeyConstraint("run_id", "model_id", "input", "step", "stage"),
         ForeignKeyConstraint(
             ["run_id", "model_id"],
             ["model_architecture.run_id", "model_architecture.model_id"],
@@ -694,3 +724,348 @@ class IdMapping(Base):
     model_id = Column(String, default=lambda: str(uuid.uuid4()), nullable=False)
     data_id = Column(String, default=lambda: str(uuid.uuid4()), nullable=False)
     deployment_id = Column(String, default=lambda: str(uuid.uuid4()), nullable=False)
+
+
+class AIActors(Base):
+    __tablename__ = "ai_actors"
+
+    ai_actors_id = Column(
+        String,
+        primary_key=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+    experiment_id = Column(String, primary_key=True, nullable=False)
+    ai_provider = Column(String)
+    ai_deployer = Column(String)
+    auditor = Column(String)
+    organization = Column(String)
+
+    __table_args__ = (
+        PrimaryKeyConstraint("ai_actors_id", "experiment_id"),
+        ForeignKeyConstraint(["experiment_id"], ["experiments.experiment_id"]),
+    )
+
+
+class LabelingProcedures(Base):
+    __tablename__ = "labeling_procedures"
+
+    labeling_id = Column(
+        String,
+        primary_key=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+    experiment_id = Column(String, primary_key=True, nullable=False)
+    procedure_description = Column(String)
+    quality_assurance_methods = Column(String)
+    annotator_details = Column(String)
+    annotation_tools = Column(ARRAY(String))
+
+    __table_args__ = (
+        PrimaryKeyConstraint("labeling_id", "experiment_id"),
+        ForeignKeyConstraint(["experiment_id"], ["experiments.experiment_id"]),
+    )
+
+
+class ModelPackaging(Base):
+    __tablename__ = "model_packaging"
+
+    packaging_id = Column(
+        String,
+        primary_key=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+    experiment_id = Column(
+        String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
+    )
+    deployment_id = Column(
+        String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
+    )
+    model_id = Column(
+        String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
+    )
+    packaging_format = Column(String)
+    dependencies = Column(ARRAY(String))
+    containerization_details = Column(String)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["experiment_id", "deployment_id", "model_id"],
+            [
+                "model_deployed.experiment_id",
+                "model_deployed.deployment_id",
+                "model_deployed.model_id",
+            ],
+        ),
+    )
+
+    deployment = relationship("ModelDeployed", back_populates="model_packaging")
+
+
+class BuildAndIntegrationTesting(Base):
+    __tablename__ = "build_and_integration_testing"
+
+    test_id = Column(
+        String,
+        primary_key=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+    experiment_id = Column(
+        String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
+    )
+    deployment_id = Column(
+        String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
+    )
+    model_id = Column(
+        String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
+    )
+    build_status = Column(String)
+    build_logs = Column(String)
+    build_timestamp = Column(Numeric, nullable=False, default=1672531200)
+    test_type = Column(String)
+    test_results = Column(String)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["experiment_id", "deployment_id", "model_id"],
+            [
+                "model_deployed.experiment_id",
+                "model_deployed.deployment_id",
+                "model_deployed.model_id",
+            ],
+        ),
+    )
+
+
+class DeclarationOfConformity(Base):
+    __tablename__ = "declaration_of_conformity"
+
+    declaration_id = Column(
+        String,
+        primary_key=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+    run_id = Column(String, primary_key=True, nullable=False)
+
+    # Metadata
+    filename = Column(String, nullable=False)
+    file_type = Column(String, nullable=False)
+    mime_type = Column(String, nullable=False)
+    file_size = Column(Integer)
+
+    link_to_artifacts = Column(String, nullable=True)
+
+    description = Column(String)
+    creation_time = Column(Numeric, nullable=False, default=1672531200)
+
+    __table_args__ = (
+        PrimaryKeyConstraint("declaration_id", "run_id"),
+        ForeignKeyConstraint(["run_id"], ["runs.run_id"]),
+    )
+
+
+class VisualDocumentation(Base):
+    __tablename__ = "visual_documentation"
+
+    document_id = Column(
+        String,
+        primary_key=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+    run_id = Column(String, primary_key=True, nullable=False)
+
+    # Metadata
+    filename = Column(String, nullable=False)
+    file_type = Column(String, nullable=False)
+    file_size = Column(Integer)
+
+    link_to_artifacts = Column(String, nullable=True)
+
+    description = Column(String)
+    tags = Column(ARRAY(String))
+    creation_time = Column(Numeric, nullable=False, default=1672531200)
+
+    __table_args__ = (
+        PrimaryKeyConstraint("document_id", "run_id"),
+        ForeignKeyConstraint(["run_id"], ["runs.run_id"]),
+    )
+
+
+class Standard(Base):
+    __tablename__ = "standards"
+
+    standard_id = Column(
+        String,
+        primary_key=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+    experiment_id = Column(
+        String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
+    )
+    deployment_id = Column(
+        String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
+    )
+    model_id = Column(
+        String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
+    )
+    name = Column(String, nullable=False)
+    description = Column(String)
+    version = Column(String)
+    publication_date = Column(Numeric)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["experiment_id", "deployment_id", "model_id"],
+            [
+                "model_deployed.experiment_id",
+                "model_deployed.deployment_id",
+                "model_deployed.model_id",
+            ],
+        ),
+    )
+
+
+class Interface(Base):
+    __tablename__ = "interfaces"
+
+    interface_id = Column(
+        String,
+        primary_key=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+    experiment_id = Column(
+        String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
+    )
+    deployment_id = Column(
+        String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
+    )
+    model_id = Column(
+        String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
+    )
+    interface_type = Column(String, nullable=False)
+    specifications = Column(String)
+    version = Column(String)
+    documentation_link = Column(String)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["experiment_id", "deployment_id", "model_id"],
+            [
+                "model_deployed.experiment_id",
+                "model_deployed.deployment_id",
+                "model_deployed.model_id",
+            ],
+        ),
+    )
+
+
+class ExplainableAIFeature(Base):
+    __tablename__ = "explainable_ai_features"
+
+    feature_id = Column(
+        String,
+        primary_key=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+    run_id = Column(String, nullable=False)
+    feature_name = Column(ARRAY(String), nullable=False)
+    feature_values = Column(ARRAY(String), nullable=False)
+    implementation_details = Column(String)
+
+    __table_args__ = (
+        PrimaryKeyConstraint("feature_id", "run_id"),
+        ForeignKeyConstraint(["run_id"], ["runs.run_id"]),
+    )
+
+
+class HumanOversightMechanism(Base):
+    __tablename__ = "human_oversight_mechanisms"
+
+    mechanism_id = Column(
+        String,
+        primary_key=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+    experiment_id = Column(String, nullable=False)
+    oversight_type = Column(String, nullable=False)
+    description = Column(String)
+    implementation_details = Column(String)
+
+    __table_args__ = (
+        PrimaryKeyConstraint("mechanism_id", "experiment_id"),
+        ForeignKeyConstraint(["experiment_id"], ["experiments.experiment_id"]),
+    )
+
+
+class TransparencyMeasure(Base):
+    __tablename__ = "transparency_measures"
+
+    measure_id = Column(
+        String,
+        primary_key=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+    experiment_id = Column(String, nullable=False)
+    measure_type = Column(ARRAY(String), nullable=False)
+    measure_value = Column(ARRAY(String), nullable=False)
+    description = Column(String)
+    implementation_details = Column(String)
+
+    __table_args__ = (
+        PrimaryKeyConstraint("measure_id", "experiment_id"),
+        ForeignKeyConstraint(["experiment_id"], ["experiments.experiment_id"]),
+    )
+
+
+class Risk(Base):
+    __tablename__ = "risks"
+
+    risk_id = Column(
+        String,
+        primary_key=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+    experiment_id = Column(String, nullable=False)
+    risk_description = Column(String, nullable=False)
+    risk_type = Column(String, nullable=False)
+    risk_level = Column(Float, nullable=False)
+
+    __table_args__ = (
+        PrimaryKeyConstraint("risk_id", "experiment_id"),
+        ForeignKeyConstraint(["experiment_id"], ["experiments.experiment_id"]),
+    )
+
+
+class Decomissioning(Base):
+    __tablename__ = "decomissioning"
+    decomissioning_id = Column(
+        String,
+        primary_key=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+    experiment_id = Column(
+        String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
+    )
+    deployment_id = Column(
+        String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
+    )
+    model_id = Column(
+        String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
+    )
+    decomissioning_date = Column(Numeric, nullable=False, default=1672531200)
+    decomissioning_actions = Column(ARRAY(String), nullable=False)
+    reason = Column(String, nullable=False)
+    procedure_details = Column(String)
+
+    __table_args__ = (
+        PrimaryKeyConstraint(
+            "decomissioning_id", "experiment_id", "deployment_id", "model_id"
+        ),
+        ForeignKeyConstraint(
+            ["experiment_id", "deployment_id", "model_id"],
+            [
+                "model_deployed.experiment_id",
+                "model_deployed.deployment_id",
+                "model_deployed.model_id",
+            ],
+        ),
+    )
