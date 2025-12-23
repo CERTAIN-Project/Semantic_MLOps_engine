@@ -271,8 +271,8 @@ class DriftMetric(Base):
     model_id = Column(
         String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
     )
-    value = Column(Integer, primary_key=True)
-    timestamp = Column(Numeric, primary_key=True, nullable=False, default=1672531200)
+    value = Column(Integer)
+    timestamp = Column(Numeric, nullable=False, default=1672531200)
 
     __table_args__ = (
         ForeignKeyConstraint(
@@ -404,10 +404,14 @@ class DataResources(Base):
 class DataTechniquesHyperparameters(Base):
     __tablename__ = "data_hyperparameters"
 
-    run_id = Column(String, nullable=False, default=lambda: str(uuid.uuid4()))
-    data_id = Column(String, nullable=False, default=lambda: str(uuid.uuid4()))
-    technique_name = Column(String, nullable=False)
-    technique_parameter_name = Column(String, nullable=False)
+    run_id = Column(
+        String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
+    )
+    data_id = Column(
+        String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
+    )
+    technique_name = Column(String, primary_key=True, nullable=False)
+    technique_parameter_name = Column(String, primary_key=True, nullable=False)
     technique_parameter_value = Column(String, nullable=False)
     value = Column(String)
 
@@ -788,6 +792,9 @@ class ModelPackaging(Base):
     containerization_details = Column(String)
 
     __table_args__ = (
+        PrimaryKeyConstraint(
+            "packaging_id", "experiment_id", "deployment_id", "model_id"
+        ),
         ForeignKeyConstraint(
             ["experiment_id", "deployment_id", "model_id"],
             [
@@ -809,15 +816,9 @@ class BuildAndIntegrationTesting(Base):
         primary_key=True,
         default=lambda: str(uuid.uuid4()),
     )
-    experiment_id = Column(
-        String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
-    )
-    deployment_id = Column(
-        String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
-    )
-    model_id = Column(
-        String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
-    )
+    experiment_id = Column(String, primary_key=True, nullable=False)
+    deployment_id = Column(String, primary_key=True, nullable=False)
+    model_id = Column(String, primary_key=True, nullable=False)
     build_status = Column(String)
     build_logs = Column(String)
     build_timestamp = Column(Numeric, nullable=False, default=1672531200)
@@ -825,6 +826,7 @@ class BuildAndIntegrationTesting(Base):
     test_results = Column(String)
 
     __table_args__ = (
+        PrimaryKeyConstraint("test_id", "experiment_id", "deployment_id", "model_id"),
         ForeignKeyConstraint(
             ["experiment_id", "deployment_id", "model_id"],
             [
@@ -841,10 +843,9 @@ class DeclarationOfConformity(Base):
 
     declaration_id = Column(
         String,
-        primary_key=True,
         default=lambda: str(uuid.uuid4()),
     )
-    run_id = Column(String, primary_key=True, nullable=False)
+    run_id = Column(String, nullable=False)
 
     # Metadata
     filename = Column(String, nullable=False)
@@ -868,10 +869,9 @@ class VisualDocumentation(Base):
 
     document_id = Column(
         String,
-        primary_key=True,
         default=lambda: str(uuid.uuid4()),
     )
-    run_id = Column(String, primary_key=True, nullable=False)
+    run_id = Column(String, nullable=False)
 
     # Metadata
     filename = Column(String, nullable=False)
@@ -913,6 +913,9 @@ class Standard(Base):
     publication_date = Column(Numeric)
 
     __table_args__ = (
+        PrimaryKeyConstraint(
+            "standard_id", "experiment_id", "deployment_id", "model_id"
+        ),
         ForeignKeyConstraint(
             ["experiment_id", "deployment_id", "model_id"],
             [
@@ -947,6 +950,9 @@ class Interface(Base):
     documentation_link = Column(String)
 
     __table_args__ = (
+        PrimaryKeyConstraint(
+            "interface_id", "experiment_id", "deployment_id", "model_id"
+        ),
         ForeignKeyConstraint(
             ["experiment_id", "deployment_id", "model_id"],
             [
@@ -1039,18 +1045,11 @@ class Decomissioning(Base):
     __tablename__ = "decomissioning"
     decomissioning_id = Column(
         String,
-        primary_key=True,
         default=lambda: str(uuid.uuid4()),
     )
-    experiment_id = Column(
-        String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
-    )
-    deployment_id = Column(
-        String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
-    )
-    model_id = Column(
-        String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
-    )
+    experiment_id = Column(String, nullable=False, default=lambda: str(uuid.uuid4()))
+    deployment_id = Column(String, nullable=False, default=lambda: str(uuid.uuid4()))
+    model_id = Column(String, nullable=False, default=lambda: str(uuid.uuid4()))
     decomissioning_date = Column(Numeric, nullable=False, default=1672531200)
     decomissioning_actions = Column(ARRAY(String), nullable=False)
     reason = Column(String, nullable=False)
@@ -1068,4 +1067,23 @@ class Decomissioning(Base):
                 "model_deployed.model_id",
             ],
         ),
+    )
+
+
+class ChangeLog(Base):
+    __tablename__ = "change_logs"
+
+    log_id = Column(
+        String,
+        primary_key=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+    run_id = Column(String, nullable=False)
+    change_description = Column(String, nullable=False)
+    changed_by = Column(String, nullable=False)
+    change_timestamp = Column(Numeric, nullable=False, default=1672531200)
+
+    __table_args__ = (
+        PrimaryKeyConstraint("log_id", "run_id"),
+        ForeignKeyConstraint(["run_id"], ["runs.run_id"]),
     )
