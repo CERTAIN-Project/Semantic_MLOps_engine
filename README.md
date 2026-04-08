@@ -133,6 +133,8 @@ The project uses a multi-service Docker architecture:
 - **MLflow Server** (Port 5001): MLflow tracking server with web UI
 - **Data Transfer API** (Port 8001): FastAPI service for programmatic access
 - **Library Tracker** (Port 8002): Interactive development container
+- **Data Lineage API** (Port 3000): PostgREST service for data lineage queries
+- **Ontop SPARQL Endpoint** (Port 8080): Virtual knowledge graph — exposes PostgreSQL data as RDF via the AIDOC-AP ontology
 - **Database Migrations**: Alembic migrations for database schema
 
 ## 📁 Directory Structure (previous info retained)
@@ -284,6 +286,124 @@ docker compose down && docker compose up --build -d
 - **[DOCKER_SETUP.md](docs/DOCKER_SETUP.md)** - Comprehensive Docker setup guide
 - **[DEV_CONTAINER_GUIDE.md](docs/DEV_CONTAINER_GUIDE.md)** - Development container usage
 - **[ARTIFACTS_FIX_SUMMARY.md](docs/ARTIFACTS_FIX_SUMMARY.md)** - MLflow artifacts and sync guide
+
+## 🧠 Ontop — SPARQL Endpoint & Virtual Knowledge Graph
+
+[Ontop](https://ontop-vkg.org/) exposes the PostgreSQL data as a **virtual knowledge graph** using the [AIDOC-AP ontology](https://w3id.org/aidoc-ap#) (AI Documentation Application Profile). Instead of duplicating data into a triple store, Ontop translates SPARQL queries into SQL on-the-fly against the live database.
+
+### How it works
+
+```
+┌──────────────┐   R2RML mapping    ┌──────────────┐   SPARQL    ┌──────────┐
+│  PostgreSQL  │  ──────────────►   │    Ontop     │  ◄────────  │  Client  │
+│  certain_db  │                    │  (port 8080) │  ────────►  │          │
+│              │   ontology.ttl     │              │   RDF/JSON  │          │
+│  experiments │  (AIDOC-AP vocab)  │  Virtual KG  │             │          │
+│  runs, data  │                    │              │             │          │
+│  models ...  │   input.properties │              │             │          │
+│              │  (JDBC connection) │              │             │          │
+└──────────────┘                    └──────────────┘             └──────────┘
+```
+
+### Configuration files
+
+All Ontop configuration lives in `ontop/ontop/input/`:
+
+| File | Purpose |
+|---|---|
+| `input.properties` | JDBC connection to PostgreSQL + references to ontology/mapping files |
+| `ontology.ttl` | The AIDOC-AP ontology — defines OWL classes (`ModelEngineering`, `AIActivity`, `Dataset`, etc.) and properties |
+| `mapping.ttl` | R2RML mapping — maps each PostgreSQL table/column to ontology classes and properties |
+
+### Verify Ontop is running
+
+```bash
+# Check container status
+docker compose ps | grep ontop
+
+# Check health endpoint
+curl -s http://localhost:8080/actuator/health
+# Expected: {"status":"UP"}
+
+# Check logs
+docker compose logs ontop --tail 20
+
+# Verify JDBC driver is loaded
+docker exec ontop_service ls -la /opt/ontop/jdbc/
+# Expected: postgresql-42.7.7.jar (~1 MB)
+```
+
+### Access the SPARQL UI
+
+Open **http://localhost:8080** in your browser — Ontop provides a built-in query editor where you can write and execute SPARQL queries interactively.
+
+### Example SPARQL queries
+
+**List all experiments:**
+```bash
+curl -s -X POST "http://localhost:8080/sparql" \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  --data-urlencode "query=
+    PREFIX aidoc: <https://w3id.org/aidoc-ap#>
+    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+    PREFIX dcterms: <http://purl.org/dc/terms/>
+
+    SELECT ?experiment ?id ?name ?lifecycleStage WHERE {
+      ?experiment a aidoc:ModelEngineering ;
+                  dcterms:identifier ?id ;
+                  rdfs:label ?name ;
+                  aidoc:hasLifecycleStage ?lifecycleStage .
+    } LIMIT 10
+  " | python3 -m json.tool
+```
+
+**List runs with their status and linked experiment:**
+```bash
+curl -s -X POST "http://localhost:8080/sparql" \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  --data-urlencode "query=
+    PREFIX aidoc: <https://w3id.org/aidoc-ap#>
+    PREFIX dcterms: <http://purl.org/dc/terms/>
+    PREFIX prov: <http://www.w3.org/ns/prov#>
+    PREFIX schema: <https://schema.org/>
+
+    SELECT ?run ?runId ?status ?experiment WHERE {
+      ?run a aidoc:AIActivity ;
+           dcterms:identifier ?runId ;
+           schema:status ?status ;
+           prov:wasInfluencedBy ?experiment .
+    } LIMIT 5
+  " | python3 -m json.tool
+```
+
+### Ontop key mapping concepts
+
+The R2RML mapping in `mapping.ttl` translates PostgreSQL tables to AIDOC-AP ontology classes:
+
+| PostgreSQL Table | AIDOC-AP Class | Description |
+|---|---|---|
+| `experiments` | `aidoc:ModelEngineering` / `mls:Experiment` | ML experiments |
+| `runs` | `aidoc:AIActivity` / `prov:Activity` | Individual training/evaluation runs |
+| `data` | `aidoc:Dataset` / `mls:Dataset` | Training/test datasets |
+| `runs_code` | `aidoc:SoftwareImplementation` | Code snapshots |
+| `runs_logs` | `aidoc:Log` | Run log entries |
+| `data_hyperparameters` | `mls:HyperParameter` | Data processing hyperparameters |
+| `data_metrics` | `aidoc:PerformanceMetric` | Data quality metrics |
+
+### Troubleshooting Ontop
+
+```bash
+# If Ontop won't start — check for port conflicts
+lsof -i :8080
+
+# If queries return empty — verify the mapping loads correctly
+docker compose logs ontop | grep -i "error\|exception\|mapping"
+
+# Restart Ontop after changing mapping/ontology files
+docker compose restart ontop
+```
 
 ---
 

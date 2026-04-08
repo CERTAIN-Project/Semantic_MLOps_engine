@@ -22,6 +22,15 @@ def map_mlflow_experiments(experiments):
         "experiment_id": experiments.experiment_id,
         "experiment_name": experiments.name,
         "lifecycle_stage": experiments.lifecycle_stage,
+        # Some DB schemas expect an explicit 'experiment_stage' (non-nullable).
+        # Use any available attribute or fall back to lifecycle_stage or 'active'.
+        "experiment_stage": getattr(
+            experiments,
+            "experiment_stage",
+            getattr(experiments, "lifecycle_stage", "active"),
+        ),
+        # Include description if available (nullable in DB migrations).
+        "description": getattr(experiments, "description", None),
         "creation_time": experiments.creation_time,
         "last_update_time": experiments.last_update_time,
     }
