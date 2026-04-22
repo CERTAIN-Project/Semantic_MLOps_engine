@@ -251,14 +251,23 @@ def sync_model_architecture(id_mapping):
                 "run_id": run_id,
                 "model_id": id_mapping[run_id]["model_id"],
                 "architecture_name": "Simple Model",
+                # model_architecture table has several non-nullable columns added by migrations
+                # Provide safe defaults so upserts don't fail when source lacks data.
+                "model_version": 1,
                 "layer_structure": (
-                    layer_structure[run_id]
-                    if run_id in layer_structure.keys()
-                    else None
+                    layer_structure[run_id] if run_id in layer_structure.keys() else {},
                 ),
                 "activation_function": "ReLU",
                 "optimizer": "Adam",
                 "loss_function": "MSE",
+                "framework": "unknown",
+                "metrics": [],
+                "input_shape": "",
+                "output_shape": "",
+                "number_of_layers": 0,
+                "number_of_total_parameters": 0,
+                "number_of_trainable_parameters": 0,
+                "number_of_non_trainable_parameters": 0,
                 "creation_time": int(pd.Timestamp.now(tz="UTC").timestamp()),
             }
         )

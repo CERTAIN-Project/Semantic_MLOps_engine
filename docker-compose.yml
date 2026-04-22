@@ -119,6 +119,75 @@ services:
       - ./docker_data/mlflow_artifacts:/app/mlruns
     stdin_open: true
     tty: true
+  
+  data_lineage_api:
+    build:
+      context: .
+      dockerfile: data-lineage-api.dockerfile
+    container_name: certain_data_lineage_api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      PGRST_DB_URI: postgresql://postgres:postgres@postgres:5432/certain_db
+      PGRST_DB_ANON_ROLE: postgres
+    networks:
+      - certain_library_default
+
+  # ── Ontop (SPARQL / virtual knowledge graph) ──────────────────────────
+  # Downloads the PostgreSQL JDBC driver once, then the ontop service
+  # picks it up from a shared volume.
+  download_jdbc:
+    image: curlimages/curl:latest
+    container_name: ontop_download_jdbc
+    user: root
+    volumes:
+      - jdbc_driver:/jdbc
+    networks:
+      - certain_library_default
+    command: >
+      sh -c '
+        if [ ! -f /jdbc/postgresql-42.7.7.jar ]; then
+          echo "Downloading PostgreSQL JDBC driver...";
+          curl -L -o /jdbc/postgresql-42.7.7.jar https://jdbc.postgresql.org/download/postgresql-42.7.7.jar;
+          echo "JDBC driver downloaded";
+        else
+          echo "JDBC driver already exists, skipping download";
+        fi
+      '
+
+  ontop:
+    image: ontop/ontop:5.4.0
+    container_name: ontop_service
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+      download_jdbc:
+        condition: service_completed_successfully
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./ontop/ontop/input:/opt/ontop/input
+      - jdbc_driver:/opt/ontop/jdbc
+    environment:
+      - ONTOP_LAZY_INIT=true
+    networks:
+      - certain_library_default
+    command: >
+      /opt/ontop/ontop endpoint
+        --ontology=/opt/ontop/input/ontology.ttl
+        --mapping=/opt/ontop/input/mapping.ttl
+        --properties=/opt/ontop/input/input.properties
+        --port=8080
+        --cors-allowed-origins=*
+    restart: unless-stopped
+
+volumes:
+  jdbc_driver:
 
   ontop:
     image: ontop/ontop:5.5.0
