@@ -135,7 +135,6 @@ services:
       - ONTOP_MAPPING_FILE=/opt/ontop/input/aidoc-ap_r2rml.ttl
       - ONTOP_PROPERTIES_FILE=/opt/ontop/input/aidoc-ap.properties
       - ONTOP_CORS_ALLOWED_ORIGINS="*"
-      - ONTOP_DEV_MODE="true"
       - ONTOP_LAZY_INIT="true"
     volumes:
       - ./ontop/input:/opt/ontop/input
