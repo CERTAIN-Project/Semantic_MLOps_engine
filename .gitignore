@@ -144,3 +144,6 @@ mlartifacts/
 # Emissions tracking
 emissions.csv
 code_carbon/
+
+# Docker data
+docker_data/

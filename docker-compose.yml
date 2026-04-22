@@ -120,6 +120,32 @@ services:
     stdin_open: true
     tty: true
 
+  ontop:
+    image: ontop/ontop:5.5.0
+    container_name: certain_ontop
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - certain_library_default
+    ports:
+      - "0.0.0.0:8080:8080"
+    environment:
+      - ONTOP_ONTOLOGY_FILE=/opt/ontop/input/aidoc-ap.ttl
+      - ONTOP_MAPPING_FILE=/opt/ontop/input/aidoc-ap_r2rml.ttl
+      - ONTOP_PROPERTIES_FILE=/opt/ontop/input/aidoc-ap.properties
+      - ONTOP_CORS_ALLOWED_ORIGINS="*"
+      - ONTOP_DEV_MODE="true"
+      - ONTOP_LAZY_INIT="true"
+    volumes:
+      - ./ontop/input:/opt/ontop/input
+      - ./ontop/jdbc:/opt/ontop/jdbc
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 networks:
   certain_library_default:
     driver: bridge

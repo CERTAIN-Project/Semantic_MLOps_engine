@@ -1,0 +1,3150 @@
+@prefix rr: <http://www.w3.org/ns/r2rml#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix aidoc: <https://w3id.org/aidoc-ap#> .
+@prefix airo: <https://w3id.org/airo#> .
+@prefix mls: <http://www.w3.org/ns/mls#> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix schema: <https://schema.org/> .
+@prefix dqv: <http://www.w3.org/ns/dqv#> .
+
+# =============================================================================
+# R2RML Mapping: Database Schema to AIDOC-AP Ontology
+# =============================================================================
+# This mapping transforms ML experiment tracking data into AIDOC-AP compliant
+# RDF for AI system documentation per EU AI Act Annex IV requirements.
+# =============================================================================
+
+
+# =============================================================================
+# EXPERIMENTS -> aidoc:ModelEngineering (mls:Experiment)
+# =============================================================================
+# Experiments represent ML experiments which map to ModelEngineering activities
+# in the AIDOC-AP ontology (a subclass of mls:Experiment and MLPipeline).
+
+<#ExperimentsTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT experiment_id, experiment_name, lifecycle_stage,
+                   to_timestamp(CASE WHEN creation_time > 10000000000 THEN creation_time / 1000.0 ELSE creation_time END) AS creation_ts,
+                   to_timestamp(CASE WHEN last_update_time > 10000000000 THEN last_update_time / 1000.0 ELSE last_update_time END) AS last_update_ts
+            FROM experiments
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/experiments/{experiment_id}" ;
+        rr:class aidoc:ModelEngineering ;
+        rr:class mls:Experiment ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdfs:label ;
+        rr:objectMap [ rr:column "experiment_name" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:identifier ;
+        rr:objectMap [ rr:column "experiment_id" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate aidoc:hasLifecycleStage ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/lifecycle-stage/{lifecycle_stage}" ;
+            rr:termType rr:IRI
+        ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate prov:startedAtTime ;
+        rr:objectMap [ rr:column "creation_ts" ; rr:datatype xsd:dateTime ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate prov:endedAtTime ;
+        rr:objectMap [ rr:column "last_update_ts" ; rr:datatype xsd:dateTime ]
+    ] .
+
+
+# =============================================================================
+# EXPERIMENTS_TAGS -> Tags associated with experiments
+# =============================================================================
+
+<#ExperimentsTagsTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [ rr:tableName "experiments_tags" ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/experiments/{experiment_id}" ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate schema:keywords ;
+        rr:objectMap [
+            rr:template "{key}:{value}" ;
+            rr:termType rr:Literal
+        ]
+    ] .
+
+
+# =============================================================================
+# RUNS -> aidoc:AIActivity (prov:Activity)
+# =============================================================================
+# Runs represent individual training/evaluation runs as AI activities.
+
+<#RunsTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT run_id, experiment_id, run_name, source_type, source_name,
+                   user_id, status, source_version,
+                   to_timestamp(CASE WHEN start_time > 10000000000 THEN start_time / 1000.0 ELSE start_time END) AS start_ts,
+                   to_timestamp(CASE WHEN end_time > 10000000000 THEN end_time / 1000.0 ELSE end_time END) AS end_ts
+            FROM runs
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/runs/{run_id}" ;
+        rr:class aidoc:AIActivity ;
+        rr:class prov:Activity ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdfs:label ;
+        rr:objectMap [ rr:column "run_name" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:identifier ;
+        rr:objectMap [ rr:column "run_id" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:source ;
+        rr:objectMap [ rr:column "source_name" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate aidoc:version ;
+        rr:objectMap [ rr:column "source_version" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate prov:wasAssociatedWith ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/users/{user_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate schema:status ;
+        rr:objectMap [ rr:column "status" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate prov:startedAtTime ;
+        rr:objectMap [ rr:column "start_ts" ; rr:datatype xsd:dateTime ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate prov:endedAtTime ;
+        rr:objectMap [ rr:column "end_ts" ; rr:datatype xsd:dateTime ]
+    ] ;
+
+    # Link run to its parent experiment
+    rr:predicateObjectMap [
+        rr:predicate prov:wasInfluencedBy ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/experiments/{experiment_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# RUNS_TAGS -> Tags associated with runs
+# =============================================================================
+
+<#RunsTagsTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [ rr:tableName "runs_tags" ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/runs/{run_id}" ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate schema:keywords ;
+        rr:objectMap [
+            rr:template "{key}:{value}" ;
+            rr:termType rr:Literal
+        ]
+    ] .
+
+
+# =============================================================================
+# RUNS_CODE -> aidoc:SoftwareImplementation
+# =============================================================================
+# Code snapshots associated with runs, mapping to SoftwareImplementation.
+
+<#RunsCodeTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [ rr:tableName "runs_code" ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/runs/{run_id}/code" ;
+        rr:class aidoc:SoftwareImplementation ;
+        rr:class mls:Implementation ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdfs:label ;
+        rr:objectMap [ rr:column "name" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate aidoc:version ;
+        rr:objectMap [ rr:column "git_commit_hash" ; rr:datatype xsd:string ]
+    ] ;
+
+    # Link to parent run
+    rr:predicateObjectMap [
+        rr:predicate prov:wasGeneratedBy ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/runs/{run_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# RUNS_LOGS -> aidoc:Log
+# =============================================================================
+# Logs generated during runs, mapping to the Log class.
+
+<#RunsLogsTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT run_id, log_id, log_type, log_message,
+                   to_timestamp(CASE WHEN log_creation_time > 10000000000 THEN log_creation_time / 1000.0 ELSE log_creation_time END) AS log_creation_ts
+            FROM runs_logs
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/runs/{run_id}/logs/{log_id}" ;
+        rr:class aidoc:Log ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:identifier ;
+        rr:objectMap [ rr:column "log_id" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:type ;
+        rr:objectMap [ rr:column "log_type" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdfs:comment ;
+        rr:objectMap [ rr:column "log_message" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:created ;
+        rr:objectMap [ rr:column "log_creation_ts" ; rr:datatype xsd:dateTime ]
+    ] ;
+
+    # Link to parent run
+    rr:predicateObjectMap [
+        rr:predicate prov:wasGeneratedBy ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/runs/{run_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# DATA -> aidoc:Dataset
+# =============================================================================
+# Data entries mapping to the Dataset class in AIDOC-AP.
+
+<#DataTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT run_id, data_id, data_stage, data_type, data_source,
+                   data_version, data_location, data_size, data_format,
+                   to_timestamp(CASE WHEN creation_time > 10000000000 THEN creation_time / 1000.0 ELSE creation_time END) AS creation_ts,
+                   to_timestamp(CASE WHEN last_update_time > 10000000000 THEN last_update_time / 1000.0 ELSE last_update_time END) AS last_update_ts
+            FROM data
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/data/{run_id}/{data_id}" ;
+        rr:class aidoc:Dataset ;
+        rr:class mls:Dataset ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:identifier ;
+        rr:objectMap [ rr:column "data_id" ; rr:datatype xsd:string ]
+    ] ;
+
+    # data_stage maps to the lifecycle stage of data usage
+    rr:predicateObjectMap [
+        rr:predicate aidoc:dataScope ;
+        rr:objectMap [ rr:column "data_stage" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:type ;
+        rr:objectMap [ rr:column "data_type" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:source ;
+        rr:objectMap [ rr:column "data_source" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate aidoc:version ;
+        rr:objectMap [ rr:column "data_version" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate schema:contentUrl ;
+        rr:objectMap [ rr:column "data_location" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate schema:contentSize ;
+        rr:objectMap [ rr:column "data_size" ; rr:datatype xsd:double ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:format ;
+        rr:objectMap [ rr:column "data_format" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:created ;
+        rr:objectMap [ rr:column "creation_ts" ; rr:datatype xsd:dateTime ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:modified ;
+        rr:objectMap [ rr:column "last_update_ts" ; rr:datatype xsd:dateTime ]
+    ] ;
+
+    # Link to parent run
+    rr:predicateObjectMap [
+        rr:predicate prov:wasGeneratedBy ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/runs/{run_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# DATA_SIGNATURES -> Schema information for datasets
+# =============================================================================
+
+<#DataSignaturesTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [ rr:tableName "data_signatures" ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/data/{run_id}/{data_id}" ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate aidoc:dataCharacteristic ;
+        rr:objectMap [ rr:column "signature" ; rr:datatype xsd:string ]
+    ] .
+
+
+# =============================================================================
+# DATA_HYPERPARAMETERS -> Hyperparameters associated with data processing
+# =============================================================================
+
+<#DataHyperparametersTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [ rr:tableName "data_hyperparameters" ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/data/{run_id}/{data_id}/hyperparameter/{technique_parameter_name}" ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdfs:label ;
+        rr:objectMap [ rr:column "technique_parameter_name" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:identifier ;
+        rr:objectMap [ rr:column "technique_name" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdf:value ;
+        rr:objectMap [ rr:column "technique_parameter_value" ; rr:datatype xsd:string ]
+    ] ;
+
+    # Link to parent dataset
+    rr:predicateObjectMap [
+        rr:predicate prov:wasInfluencedBy ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/data/{run_id}/{data_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# DATA_METRICS -> aidoc:PerformanceMetric (for data quality metrics)
+# =============================================================================
+
+<#DataMetricsTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT run_id, data_id, key, value, data_stage,
+                   to_timestamp(CASE WHEN timestamp > 10000000000 THEN timestamp / 1000.0 ELSE timestamp END) AS ts
+            FROM data_metrics
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/data/{run_id}/{data_id}/metric/{key}" ;
+        rr:class dqv:Metric ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdfs:label ;
+        rr:objectMap [ rr:column "key" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdf:value ;
+        rr:objectMap [ rr:column "value" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:created ;
+        rr:objectMap [ rr:column "ts" ; rr:datatype xsd:dateTime ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate aidoc:dataScope ;
+        rr:objectMap [ rr:column "data_stage" ; rr:datatype xsd:string ]
+    ] ;
+
+    # Link to parent dataset
+    rr:predicateObjectMap [
+        rr:predicate dqv:computedOn ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/data/{run_id}/{data_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# DATA_RESOURCES -> aidoc:ComputationalResource
+# =============================================================================
+
+<#DataResourcesTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT run_id, data_id, key, value, stage,
+                   to_timestamp(CASE WHEN timestamp > 10000000000 THEN timestamp / 1000.0 ELSE timestamp END) AS ts
+            FROM data_resources
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/data/{run_id}/{data_id}/resource/{key}" ;
+        rr:class aidoc:ComputationalResource ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdfs:label ;
+        rr:objectMap [ rr:column "key" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate aidoc:resourceType ;
+        rr:objectMap [ rr:column "stage" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdf:value ;
+        rr:objectMap [ rr:column "value" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:created ;
+        rr:objectMap [ rr:column "ts" ; rr:datatype xsd:dateTime ]
+    ] .
+
+
+# =============================================================================
+# DATA_TECHNIQUES -> Data processing techniques used
+# =============================================================================
+
+<#DataTechniquesTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [ rr:tableName "data_techniques" ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/data/{run_id}/{data_id}" ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate aidoc:dataCollectionMethod ;
+        rr:objectMap [ rr:column "technique_name" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate aidoc:dataScope ;
+        rr:objectMap [ rr:column "data_technique_stage" ; rr:datatype xsd:string ]
+    ] .
+
+
+# =============================================================================
+# MODEL_ARCHITECTURE -> aidoc:AIModel
+# =============================================================================
+# Model architecture information mapping to the AIModel class.
+
+<#ModelArchitectureTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT run_id, model_id, architecture_name, activation_function,
+                   loss_function, optimizer, layer_structure, framework,
+                   input_shape, output_shape, number_of_layers,
+                   number_of_total_parameters,
+                   to_timestamp(CASE WHEN creation_time > 10000000000 THEN creation_time / 1000.0 ELSE creation_time END) AS creation_ts
+            FROM model_architecture
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/models/{run_id}/{model_id}" ;
+        rr:class aidoc:AIModel ;
+        rr:class mls:Model ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:identifier ;
+        rr:objectMap [ rr:column "model_id" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate aidoc:hasArchitecture ;
+        rr:objectMap [ rr:column "architecture_name" ; rr:datatype xsd:string ]
+    ] ;
+
+    # Map to AIMethod based on architecture
+    rr:predicateObjectMap [
+        rr:predicate aidoc:usesAIMethod ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/methods/{architecture_name}" ;
+            rr:termType rr:IRI
+        ]
+    ] ;
+
+    # Activation function as part of architecture description
+    rr:predicateObjectMap [
+        rr:predicate schema:applicationSubCategory ;
+        rr:objectMap [ rr:column "activation_function" ; rr:datatype xsd:string ]
+    ] ;
+
+    # Loss function
+    rr:predicateObjectMap [
+        rr:predicate mls:hasObjective ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/objectives/{loss_function}" ;
+            rr:termType rr:IRI
+        ]
+    ] ;
+
+    # Optimizer
+    rr:predicateObjectMap [
+        rr:predicate mls:hasOptimizer ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/optimizers/{optimizer}" ;
+            rr:termType rr:IRI
+        ]
+    ] ;
+
+    # Layer structure (JSON)
+    rr:predicateObjectMap [
+        rr:predicate aidoc:hasArchitecture ;
+        rr:objectMap [ rr:column "layer_structure" ; rr:datatype xsd:string ]
+    ] ;
+
+    # Framework used (maps to SoftwareDependency)
+    rr:predicateObjectMap [
+        rr:predicate aidoc:dependsOn ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/frameworks/{framework}" ;
+            rr:termType rr:IRI
+        ]
+    ] ;
+
+    # Input shape
+    rr:predicateObjectMap [
+        rr:predicate schema:encodingFormat ;
+        rr:objectMap [ rr:column "input_shape" ; rr:datatype xsd:string ]
+    ] ;
+
+    # Output shape
+    rr:predicateObjectMap [
+        rr:predicate schema:additionalType ;
+        rr:objectMap [ rr:column "output_shape" ; rr:datatype xsd:string ]
+    ] ;
+
+    # Number of layers
+    rr:predicateObjectMap [
+        rr:predicate schema:numberOfItems ;
+        rr:objectMap [ rr:column "number_of_layers" ; rr:datatype xsd:integer ]
+    ] ;
+
+    # Total parameters
+    rr:predicateObjectMap [
+        rr:predicate mls:hasModelParameter ;
+        rr:objectMap [ rr:column "number_of_total_parameters" ; rr:datatype xsd:integer ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:created ;
+        rr:objectMap [ rr:column "creation_ts" ; rr:datatype xsd:dateTime ]
+    ] ;
+
+    # Link to parent run
+    rr:predicateObjectMap [
+        rr:predicate prov:wasGeneratedBy ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/runs/{run_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# MODEL_HYPERPARAMETERS -> mls:HyperParameter
+# =============================================================================
+
+<#ModelHyperparametersTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [ rr:tableName "model_hyperparameters" ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/models/{run_id}/{model_id}/hyperparameter/{key}" ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdfs:label ;
+        rr:objectMap [ rr:column "key" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdf:value ;
+        rr:objectMap [ rr:column "value" ; rr:datatype xsd:string ]
+    ] ;
+
+    # Link to parent model
+    rr:predicateObjectMap [
+        rr:predicate mls:specifiedBy ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/models/{run_id}/{model_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# MODEL_METRICS -> aidoc:PerformanceMetric
+# =============================================================================
+
+<#ModelMetricsTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT run_id, model_id, key, value, step, stage,
+                   to_timestamp(CASE WHEN timestamp > 10000000000 THEN timestamp / 1000.0 ELSE timestamp END) AS ts
+            FROM model_metrics
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/models/{run_id}/{model_id}/metric/{key}/step/{step}" ;
+        rr:class aidoc:PerformanceMetric ;
+        rr:class dqv:Metric ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdfs:label ;
+        rr:objectMap [ rr:column "key" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdf:value ;
+        rr:objectMap [ rr:column "value" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate schema:step ;
+        rr:objectMap [ rr:column "step" ; rr:datatype xsd:integer ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate aidoc:dataScope ;
+        rr:objectMap [ rr:column "stage" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:created ;
+        rr:objectMap [ rr:column "ts" ; rr:datatype xsd:dateTime ]
+    ] ;
+
+    # Link to parent model
+    rr:predicateObjectMap [
+        rr:predicate dqv:computedOn ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/models/{run_id}/{model_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# LAST_MODEL_METRICS -> Latest performance metrics
+# =============================================================================
+
+<#LastModelMetricsTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT run_id, model_id, key, value, step, stage,
+                   to_timestamp(CASE WHEN timestamp > 10000000000 THEN timestamp / 1000.0 ELSE timestamp END) AS ts
+            FROM last_model_metrics
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/models/{run_id}/{model_id}/latest-metric/{key}" ;
+        rr:class aidoc:PerformanceMetric ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdfs:label ;
+        rr:objectMap [ rr:column "key" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdf:value ;
+        rr:objectMap [ rr:column "value" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate schema:step ;
+        rr:objectMap [ rr:column "step" ; rr:datatype xsd:integer ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate aidoc:dataScope ;
+        rr:objectMap [ rr:column "stage" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:created ;
+        rr:objectMap [ rr:column "ts" ; rr:datatype xsd:dateTime ]
+    ] ;
+
+    # Link to parent model with hasPerformanceMetric (for ModelEvaluation)
+    rr:predicateObjectMap [
+        rr:predicate dqv:computedOn ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/models/{run_id}/{model_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# CHECKPOINTS -> Model checkpoints (snapshots during training)
+# =============================================================================
+
+<#CheckpointsTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT run_id, model_id, checkpoint_id, checkpoint_name,
+                   checkpoint_location,
+                   to_timestamp(CASE WHEN creation_time > 10000000000 THEN creation_time / 1000.0 ELSE creation_time END) AS creation_ts
+            FROM checkpoints
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/models/{run_id}/{model_id}/checkpoint/{checkpoint_id}" ;
+        rr:class aidoc:AIModel ;
+        rr:class prov:Entity ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:identifier ;
+        rr:objectMap [ rr:column "checkpoint_id" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdfs:label ;
+        rr:objectMap [ rr:column "checkpoint_name" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate schema:contentUrl ;
+        rr:objectMap [ rr:column "checkpoint_location" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:created ;
+        rr:objectMap [ rr:column "creation_ts" ; rr:datatype xsd:dateTime ]
+    ] ;
+
+    # Link to parent model as derivation
+    rr:predicateObjectMap [
+        rr:predicate prov:wasDerivedFrom ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/models/{run_id}/{model_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# WEIGHT_DISTRIBUTION -> Model weight statistics
+# =============================================================================
+
+<#WeightDistributionTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT run_id, model_id, layer_name, step, stage,
+                   to_timestamp(CASE WHEN timestamp > 10000000000 THEN timestamp / 1000.0 ELSE timestamp END) AS ts
+            FROM weight_distribution
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/models/{run_id}/{model_id}/weights/{layer_name}/step/{step}" ;
+        rr:class aidoc:PerformanceMetric ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdfs:label ;
+        rr:objectMap [ rr:column "layer_name" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate schema:step ;
+        rr:objectMap [ rr:column "step" ; rr:datatype xsd:integer ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate aidoc:dataScope ;
+        rr:objectMap [ rr:column "stage" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:created ;
+        rr:objectMap [ rr:column "ts" ; rr:datatype xsd:dateTime ]
+    ] ;
+
+    # Link to parent model
+    rr:predicateObjectMap [
+        rr:predicate dqv:computedOn ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/models/{run_id}/{model_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# EXAMPLES -> Training/validation/test examples with predictions
+# =============================================================================
+
+<#ExamplesTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT run_id, model_id, md5(input) AS input_hash, step, stage,
+                   input, prediction, ground_truth,
+                   to_timestamp(CASE WHEN timestamp > 10000000000 THEN timestamp / 1000.0 ELSE timestamp END) AS ts
+            FROM examples
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/models/{run_id}/{model_id}/example/{step}/{stage}/{input_hash}" ;
+        rr:class prov:Entity ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate schema:input ;
+        rr:objectMap [ rr:column "input" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate schema:result ;
+        rr:objectMap [ rr:column "prediction" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate schema:expectedResult ;
+        rr:objectMap [ rr:column "ground_truth" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate schema:step ;
+        rr:objectMap [ rr:column "step" ; rr:datatype xsd:integer ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate aidoc:dataScope ;
+        rr:objectMap [ rr:column "stage" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:created ;
+        rr:objectMap [ rr:column "ts" ; rr:datatype xsd:dateTime ]
+    ] ;
+
+    # Link to model
+    rr:predicateObjectMap [
+        rr:predicate prov:wasGeneratedBy ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/models/{run_id}/{model_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# RESOURCES -> aidoc:ComputationalResource
+# =============================================================================
+
+<#ResourcesTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT run_id, model_id, key, value, step, stage,
+                   to_timestamp(CASE WHEN timestamp > 10000000000 THEN timestamp / 1000.0 ELSE timestamp END) AS ts
+            FROM resources
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/models/{run_id}/{model_id}/resource/{key}/step/{step}" ;
+        rr:class aidoc:ComputationalResource ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdfs:label ;
+        rr:objectMap [ rr:column "key" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdf:value ;
+        rr:objectMap [ rr:column "value" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate schema:step ;
+        rr:objectMap [ rr:column "step" ; rr:datatype xsd:integer ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate aidoc:resourceType ;
+        rr:objectMap [ rr:column "stage" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:created ;
+        rr:objectMap [ rr:column "ts" ; rr:datatype xsd:dateTime ]
+    ] ;
+
+    # Link to model
+    rr:predicateObjectMap [
+        rr:predicate prov:wasUsedBy ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/models/{run_id}/{model_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] ;
+
+    # Link to the hardware component backing this resource
+    rr:predicateObjectMap [
+        rr:predicate aidoc:requiresHardware ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/hardware/{run_id}/{model_id}/{key}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# MODEL_DEPLOYED -> aidoc:Deployment
+# =============================================================================
+# Deployed models mapping to the Deployment activity class.
+
+<#ModelDeployedTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT experiment_id, deployment_id, run_id, model_id, user_id,
+                   model_version, endpoint, model_format, size, description,
+                   current_stage, location, status,
+                   to_timestamp(CASE WHEN deployed_time > 10000000000 THEN deployed_time / 1000.0 ELSE deployed_time END) AS deployed_ts
+            FROM model_deployed
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/deployments/{experiment_id}/{model_id}/{deployment_id}" ;
+        rr:class aidoc:Deployment ;
+        rr:class aidoc:AIActivity ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:identifier ;
+        rr:objectMap [ rr:column "deployment_id" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate prov:startedAtTime ;
+        rr:objectMap [ rr:column "deployed_ts" ; rr:datatype xsd:dateTime ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate aidoc:version ;
+        rr:objectMap [ rr:column "model_version" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate schema:url ;
+        rr:objectMap [ rr:column "endpoint" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:format ;
+        rr:objectMap [ rr:column "model_format" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate schema:contentSize ;
+        rr:objectMap [ rr:column "size" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdfs:comment ;
+        rr:objectMap [ rr:column "description" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate prov:wasAssociatedWith ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/users/{user_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate aidoc:hasLifecycleStage ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/lifecycle-stage/{current_stage}" ;
+            rr:termType rr:IRI
+        ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate schema:contentUrl ;
+        rr:objectMap [ rr:column "location" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate schema:status ;
+        rr:objectMap [ rr:column "status" ; rr:datatype xsd:string ]
+    ] ;
+
+    # Link to parent experiment
+    rr:predicateObjectMap [
+        rr:predicate prov:wasInfluencedBy ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/experiments/{experiment_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] ;
+
+    # Link to deployed model (if run_id exists)
+    rr:predicateObjectMap [
+        rr:predicate prov:used ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/models/{run_id}/{model_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# DRIFT_METRICS -> aidoc:PostMarketMonitoringActivity metrics
+# =============================================================================
+
+<#DriftMetricsTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT experiment_id, deployment_id, model_id,
+                   CAST(CASE WHEN timestamp > 10000000000 THEN timestamp / 1000 ELSE timestamp END AS bigint) AS ts_epoch,
+                   to_timestamp(CASE WHEN timestamp > 10000000000 THEN timestamp / 1000.0 ELSE timestamp END) AS ts_dt,
+                   value
+            FROM drift_metrics
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/deployments/{experiment_id}/{model_id}/{deployment_id}/drift/{ts_epoch}" ;
+        rr:class aidoc:PerformanceMetric ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdfs:label ;
+        rr:objectMap [ rr:constant "Drift Metric" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdf:value ;
+        rr:objectMap [ rr:column "value" ; rr:datatype xsd:integer ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:created ;
+        rr:objectMap [ rr:column "ts_dt" ; rr:datatype xsd:dateTime ]
+    ] ;
+
+    # Link to deployment
+    rr:predicateObjectMap [
+        rr:predicate dqv:computedOn ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/deployments/{experiment_id}/{model_id}/{deployment_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# MONITOR_LOGS -> aidoc:Log (post-deployment monitoring)
+# =============================================================================
+
+<#MonitorLogsTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [ rr:tableName "monitor_logs" ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/deployments/{experiment_id}/{model_id}/{deployment_id}/log/{log_id}" ;
+        rr:class aidoc:Log ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:identifier ;
+        rr:objectMap [ rr:column "log_id" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdfs:comment ;
+        rr:objectMap [ rr:column "message" ; rr:datatype xsd:string ]
+    ] ;
+
+    # Link to deployment
+    rr:predicateObjectMap [
+        rr:predicate prov:wasGeneratedBy ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/deployments/{experiment_id}/{model_id}/{deployment_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# RUNTIME_ENVIRONMENT -> aidoc:ComputationalResource
+# =============================================================================
+
+<#RuntimeEnvironmentTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [ rr:tableName "runtime_environment" ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/deployments/{experiment_id}/{model_id}/{deployment_id}/runtime" ;
+        rr:class aidoc:ComputationalResource ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdfs:label ;
+        rr:objectMap [ rr:column "server_name" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate aidoc:resourceConfiguration ;
+        rr:objectMap [ rr:column "performance" ; rr:datatype xsd:string ]
+    ] ;
+
+    # Link to deployment
+    rr:predicateObjectMap [
+        rr:predicate prov:wasUsedBy ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/deployments/{experiment_id}/{model_id}/{deployment_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# ID_MAPPING -> Cross-reference linking
+# =============================================================================
+# This table provides cross-reference IDs; we use it to create additional links.
+
+<#IdMappingRunToModelTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT im.run_id, im.model_id, im.data_id, im.deployment_id, r.experiment_id
+            FROM id_mapping im
+            JOIN runs r ON im.run_id = r.run_id
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/runs/{run_id}" ;
+    ] ;
+
+    # Link run to model
+    rr:predicateObjectMap [
+        rr:predicate prov:generated ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/models/{run_id}/{model_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] ;
+
+    # Link run to data
+    rr:predicateObjectMap [
+        rr:predicate prov:used ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/data/{run_id}/{data_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] ;
+
+    # Link run to deployment
+    rr:predicateObjectMap [
+        rr:predicate prov:generated ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/deployments/{experiment_id}/{model_id}/{deployment_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# USERS (implicit from user_id references) -> aidoc:AIResearcher
+# =============================================================================
+# Create user entities from runs table user_id
+
+<#UsersTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT DISTINCT user_id
+            FROM runs
+            WHERE user_id IS NOT NULL
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/users/{user_id}" ;
+        rr:class aidoc:AIResearcher ;
+        rr:class foaf:Person ;
+        rr:class prov:Agent ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:identifier ;
+        rr:objectMap [ rr:column "user_id" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate foaf:accountName ;
+        rr:objectMap [ rr:column "user_id" ; rr:datatype xsd:string ]
+    ] .
+
+
+# =============================================================================
+# FRAMEWORKS (implicit from model_architecture) -> aidoc:SoftwareDependency
+# =============================================================================
+
+<#FrameworksTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT DISTINCT framework
+            FROM model_architecture
+            WHERE framework IS NOT NULL
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/frameworks/{framework}" ;
+        rr:class aidoc:SoftwareDependency ;
+        rr:class mls:Software ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdfs:label ;
+        rr:objectMap [ rr:column "framework" ; rr:datatype xsd:string ]
+    ] .
+
+
+##############################################################################
+# New
+##############################################################################
+
+
+# =============================================================================
+# AITask -> Map from experiments.description
+# =============================================================================
+
+<#AITaskTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT experiment_id, description
+            FROM experiments
+            WHERE description IS NOT NULL
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/tasks/{experiment_id}" ;
+        rr:class aidoc:AITask ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdfs:label ;
+        rr:objectMap [ rr:column "description" ; rr:datatype xsd:string ]
+    ] .
+
+
+# =============================================================================
+# AIMethod -> Map from model_architecture (name + activation)
+# =============================================================================
+
+<#AIMethodTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT DISTINCT architecture_name, activation_function, loss_function
+            FROM model_architecture
+            WHERE architecture_name IS NOT NULL
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/methods/{architecture_name}" ;
+        rr:class aidoc:AIMethod ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdfs:label ;
+        rr:objectMap [
+            rr:template "{architecture_name}_{activation_function}_{loss_function}" ;
+            rr:termType rr:Literal
+        ]
+    ] .
+
+
+# =============================================================================
+# AIProvider -> Map from ai_actors.ai_provider
+# =============================================================================
+
+<#AIProviderTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT DISTINCT ai_actors_id, experiment_id, ai_provider, organization
+            FROM ai_actors
+            WHERE ai_provider IS NOT NULL
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/providers/{ai_provider}" ;
+        rr:class aidoc:AIProvider ;
+        rr:class foaf:Organization ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate foaf:name ;
+        rr:objectMap [ rr:column "ai_provider" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate schema:organizationName ;
+        rr:objectMap [ rr:column "organization" ; rr:datatype xsd:string ]
+    ] ;
+
+    # Link provider to experiment
+    rr:predicateObjectMap [
+        rr:predicate dcterms:relation ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/experiments/{experiment_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# AIDeployer -> Map from ai_actors.ai_deployer
+# =============================================================================
+
+<#AIDeployerTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT DISTINCT ai_actors_id, experiment_id, ai_deployer, organization
+            FROM ai_actors
+            WHERE ai_deployer IS NOT NULL
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/deployers/{ai_deployer}" ;
+        rr:class aidoc:AIDeployer ;
+        rr:class foaf:Organization ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate foaf:name ;
+        rr:objectMap [ rr:column "ai_deployer" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate schema:organizationName ;
+        rr:objectMap [ rr:column "organization" ; rr:datatype xsd:string ]
+    ] ;
+
+    # Link deployer to experiment
+    rr:predicateObjectMap [
+        rr:predicate dcterms:relation ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/experiments/{experiment_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# Auditor -> Map from ai_actors.auditor
+# =============================================================================
+
+<#AuditorTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT DISTINCT ai_actors_id, experiment_id, auditor, organization
+            FROM ai_actors
+            WHERE auditor IS NOT NULL
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/auditors/{auditor}" ;
+        rr:class aidoc:Auditor ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate foaf:name ;
+        rr:objectMap [ rr:column "auditor" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate schema:organizationName ;
+        rr:objectMap [ rr:column "organization" ; rr:datatype xsd:string ]
+    ] ;
+
+    # Link auditor to experiment
+    rr:predicateObjectMap [
+        rr:predicate dcterms:relation ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/experiments/{experiment_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# DataTraining -> Map from data table where data_stage = 'training'
+# =============================================================================
+
+<#DataTrainingTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT run_id, data_id, data_stage, data_type, data_source,
+                   data_version, data_location, data_size, data_format,
+                   creation_time, last_update_time
+            FROM data
+            WHERE LOWER(data_stage) = 'training' OR LOWER(data_stage) LIKE '%train%'
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/data-activities/training/{run_id}/{data_id}" ;
+        rr:class aidoc:DataTraining ;
+        rr:class aidoc:AIActivity ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdfs:label ;
+        rr:objectMap [
+            rr:template "Training Data Activity for {data_id}" ;
+            rr:termType rr:Literal
+        ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:identifier ;
+        rr:objectMap [ rr:column "data_id" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate aidoc:dataScope ;
+        rr:objectMap [ rr:column "data_stage" ; rr:datatype xsd:string ]
+    ] ;
+
+    # Link to the actual dataset
+    rr:predicateObjectMap [
+        rr:predicate prov:used ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/data/{run_id}/{data_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] ;
+
+    # Link to the run
+    rr:predicateObjectMap [
+        rr:predicate prov:wasInfluencedBy ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/runs/{run_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# DataValidation -> Map from data table where data_stage = 'validation'
+# =============================================================================
+
+<#DataValidationTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT run_id, data_id, data_stage, data_type, data_source,
+                   data_version, data_location, data_size, data_format,
+                   creation_time, last_update_time
+            FROM data
+            WHERE LOWER(data_stage) = 'validation' OR LOWER(data_stage) LIKE '%valid%'
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/data-activities/validation/{run_id}/{data_id}" ;
+        rr:class aidoc:DataValidation ;
+        rr:class aidoc:AIActivity ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdfs:label ;
+        rr:objectMap [
+            rr:template "Validation Data Activity for {data_id}" ;
+            rr:termType rr:Literal
+        ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:identifier ;
+        rr:objectMap [ rr:column "data_id" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate aidoc:dataScope ;
+        rr:objectMap [ rr:column "data_stage" ; rr:datatype xsd:string ]
+    ] ;
+
+    # Link to the actual dataset
+    rr:predicateObjectMap [
+        rr:predicate prov:used ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/data/{run_id}/{data_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] ;
+
+    # Link to the run
+    rr:predicateObjectMap [
+        rr:predicate prov:wasInfluencedBy ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/runs/{run_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# DataTesting -> Map from data table where data_stage = 'testing'
+# =============================================================================
+
+<#DataTestingTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT run_id, data_id, data_stage, data_type, data_source,
+                   data_version, data_location, data_size, data_format,
+                   creation_time, last_update_time
+            FROM data
+            WHERE LOWER(data_stage) = 'testing' OR LOWER(data_stage) LIKE '%test%'
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/data-activities/testing/{run_id}/{data_id}" ;
+        rr:class aidoc:DataTesting ;
+        rr:class aidoc:AIActivity ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdfs:label ;
+        rr:objectMap [
+            rr:template "Testing Data Activity for {data_id}" ;
+            rr:termType rr:Literal
+        ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:identifier ;
+        rr:objectMap [ rr:column "data_id" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate aidoc:dataScope ;
+        rr:objectMap [ rr:column "data_stage" ; rr:datatype xsd:string ]
+    ] ;
+
+    # Link to the actual dataset
+    rr:predicateObjectMap [
+        rr:predicate prov:used ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/data/{run_id}/{data_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] ;
+
+    # Link to the run
+    rr:predicateObjectMap [
+        rr:predicate prov:wasInfluencedBy ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/runs/{run_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# DataWrangling -> Map from data table where data_stage = 'wrangling'/'preprocessing'
+# =============================================================================
+
+<#DataWranglingTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT run_id, data_id, data_stage, data_type, data_source,
+                   data_version, data_location, data_size, data_format,
+                   creation_time, last_update_time, data_acquisition_method
+            FROM data
+            WHERE LOWER(data_stage) IN ('wrangling', 'preprocessing', 'preparation')
+               OR LOWER(data_stage) LIKE '%wrangl%'
+               OR LOWER(data_stage) LIKE '%preprocess%'
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/data-activities/wrangling/{run_id}/{data_id}" ;
+        rr:class aidoc:DataWrangling ;
+        rr:class aidoc:AIActivity ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdfs:label ;
+        rr:objectMap [
+            rr:template "Data Wrangling Activity for {data_id}" ;
+            rr:termType rr:Literal
+        ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:identifier ;
+        rr:objectMap [ rr:column "data_id" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate aidoc:dataScope ;
+        rr:objectMap [ rr:column "data_stage" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate aidoc:dataCollectionMethod ;
+        rr:objectMap [ rr:column "data_acquisition_method" ; rr:datatype xsd:string ]
+    ] ;
+
+    # Link to the actual dataset
+    rr:predicateObjectMap [
+        rr:predicate prov:used ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/data/{run_id}/{data_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] ;
+
+    # Link to the run
+    rr:predicateObjectMap [
+        rr:predicate prov:wasInfluencedBy ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/runs/{run_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# DataAcquisitionActivity -> Map from data table with acquisition info
+# =============================================================================
+
+<#DataAcquisitionActivityTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT run_id, data_id, data_acquisition_method, data_source,
+                   to_timestamp(CASE WHEN creation_time > 10000000000 THEN creation_time / 1000.0 ELSE creation_time END) AS creation_ts,
+                   data_location, data_format
+            FROM data
+            WHERE data_acquisition_method IS NOT NULL
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/data-acquisition/{run_id}/{data_id}" ;
+        rr:class aidoc:DataAcquisitionActivity ;
+        rr:class aidoc:AIActivity ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdfs:label ;
+        rr:objectMap [
+            rr:template "Data Acquisition for {data_id}" ;
+            rr:termType rr:Literal
+        ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate aidoc:dataCollectionMethod ;
+        rr:objectMap [ rr:column "data_acquisition_method" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:source ;
+        rr:objectMap [ rr:column "data_source" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate prov:startedAtTime ;
+        rr:objectMap [ rr:column "creation_ts" ; rr:datatype xsd:dateTime ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate schema:contentUrl ;
+        rr:objectMap [ rr:column "data_location" ; rr:datatype xsd:string ]
+    ] ;
+
+    # Link to the actual dataset
+    rr:predicateObjectMap [
+        rr:predicate prov:generated ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/data/{run_id}/{data_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# LabelingProcedure -> Map from labeling_procedures table
+# =============================================================================
+
+<#LabelingProcedureTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [ rr:tableName "labeling_procedures" ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/labeling/{experiment_id}/{labeling_id}" ;
+        rr:class aidoc:LabelingProcedure ;
+        rr:class aidoc:AIActivity ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:identifier ;
+        rr:objectMap [ rr:column "labeling_id" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdfs:comment ;
+        rr:objectMap [ rr:column "procedure_description" ; rr:datatype xsd:string ]
+    ] ;
+
+    # Link to experiment
+    rr:predicateObjectMap [
+        rr:predicate prov:wasInfluencedBy ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/experiments/{experiment_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# DataCleaningProcedure -> Map from data_techniques where stage is cleaning
+# =============================================================================
+
+<#DataCleaningProcedureTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT run_id, data_id, technique_name, data_technique_stage
+            FROM data_techniques
+            WHERE data_technique_stage = 'cleaning'
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/data-cleaning/{run_id}/{data_id}" ;
+        rr:class aidoc:DataCleaningProcedure ;
+        rr:class aidoc:AIActivity ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdfs:label ;
+        rr:objectMap [
+            rr:template "Data Cleaning for {data_id}" ;
+            rr:termType rr:Literal
+        ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate aidoc:dataCollectionMethod ;
+        rr:objectMap [ rr:column "technique_name" ; rr:datatype xsd:string ]
+    ] ;
+
+    # Link to dataset
+    rr:predicateObjectMap [
+        rr:predicate prov:used ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/data/{run_id}/{data_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# ModelEvaluation -> Map from model_metrics table
+# =============================================================================
+
+<#ModelEvaluationTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT DISTINCT run_id, model_id, stage,
+                   to_timestamp(CASE WHEN timestamp > 10000000000 THEN timestamp / 1000.0 ELSE timestamp END) AS ts,
+                   key, value
+            FROM model_metrics
+            WHERE stage = 'evaluation'
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/model-evaluation/{run_id}/{model_id}" ;
+        rr:class aidoc:ModelEvaluation ;
+        rr:class aidoc:AIActivity ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdfs:label ;
+        rr:objectMap [
+            rr:template "Model Evaluation for {model_id}" ;
+            rr:termType rr:Literal
+        ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate prov:endedAtTime ;
+        rr:objectMap [ rr:column "ts" ; rr:datatype xsd:dateTime ]
+    ] ;
+
+    # Link to model
+    rr:predicateObjectMap [
+        rr:predicate prov:used ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/models/{run_id}/{model_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# ModelPackaging -> Map from model_packaging table
+# =============================================================================
+
+<#ModelPackagingTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [ rr:tableName "model_packaging" ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/model-packaging/{experiment_id}/{model_id}/{packaging_id}" ;
+        rr:class aidoc:ModelPackaging ;
+        rr:class aidoc:AIActivity ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:identifier ;
+        rr:objectMap [ rr:column "packaging_id" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:format ;
+        rr:objectMap [ rr:column "packaging_format" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdfs:comment ;
+        rr:objectMap [ rr:column "containerization_details" ; rr:datatype xsd:string ]
+    ] ;
+
+    # Link to deployment
+    rr:predicateObjectMap [
+        rr:predicate prov:wasInfluencedBy ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/deployments/{experiment_id}/{model_id}/{deployment_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# BuildAndIntegrationTesting -> Map from build_and_integration_testing table
+# =============================================================================
+
+<#BuildAndIntegrationTestingTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT experiment_id, deployment_id, model_id, test_id,
+                   to_timestamp(CASE WHEN build_timestamp > 10000000000 THEN build_timestamp / 1000.0 ELSE build_timestamp END) AS build_ts,
+                   build_logs
+            FROM build_and_integration_testing
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/testing/{experiment_id}/{deployment_id}/{model_id}/{test_id}" ;
+        rr:class aidoc:BuildAndIntegrationTesting ;
+        rr:class aidoc:AIActivity ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:identifier ;
+        rr:objectMap [ rr:column "test_id" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate prov:endedAtTime ;
+        rr:objectMap [ rr:column "build_ts" ; rr:datatype xsd:dateTime ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdfs:comment ;
+        rr:objectMap [ rr:column "build_logs" ; rr:datatype xsd:string ]
+    ] ;
+
+    # Link to deployment
+    rr:predicateObjectMap [
+        rr:predicate prov:wasInfluencedBy ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/deployments/{experiment_id}/{model_id}/{deployment_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# Decommissioning -> Map from decomissioning table
+# =============================================================================
+
+<#DecommissioningTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT experiment_id, model_id, deployment_id, decomissioning_id,
+                   to_timestamp(CASE WHEN decomissioning_date > 10000000000 THEN decomissioning_date / 1000.0 ELSE decomissioning_date END) AS decomissioning_ts,
+                   procedure_details
+            FROM decomissioning
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/decommissioning/{experiment_id}/{model_id}/{decomissioning_id}" ;
+        rr:class aidoc:Decommissioning ;
+        rr:class aidoc:AIActivity ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:identifier ;
+        rr:objectMap [ rr:column "decomissioning_id" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:date ;
+        rr:objectMap [ rr:column "decomissioning_ts" ; rr:datatype xsd:dateTime ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdfs:comment ;
+        rr:objectMap [ rr:column "procedure_details" ; rr:datatype xsd:string ]
+    ] ;
+
+    # Link to deployment
+    rr:predicateObjectMap [
+        rr:predicate prov:wasInfluencedBy ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/deployments/{experiment_id}/{model_id}/{deployment_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# HumanOversightMechanism -> Map from human_oversight_mechanisms table
+# =============================================================================
+
+<#HumanOversightMechanismTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [ rr:tableName "human_oversight_mechanisms" ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/oversight/{experiment_id}/{mechanism_id}" ;
+        rr:class aidoc:HumanOversightMechanism ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:identifier ;
+        rr:objectMap [ rr:column "mechanism_id" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:type ;
+        rr:objectMap [ rr:column "oversight_type" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:description ;
+        rr:objectMap [ rr:column "description" ; rr:datatype xsd:string ]
+    ] ;
+
+    # Link to experiment
+    rr:predicateObjectMap [
+        rr:predicate prov:wasInfluencedBy ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/experiments/{experiment_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# TransparencyMeasure -> Map from transparency_measures table
+# =============================================================================
+
+<#TransparencyMeasureTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT experiment_id, measure_id,
+                   unnest(measure_type::text[]) as measure_type_item,
+                   unnest(measure_value::text[]) as measure_value_item,
+                   description, implementation_details
+            FROM transparency_measures
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/transparency/{experiment_id}/{measure_id}" ;
+        rr:class aidoc:TransparencyMeasure ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:identifier ;
+        rr:objectMap [ rr:column "measure_id" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:type ;
+        rr:objectMap [ rr:column "measure_type_item" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdf:value ;
+        rr:objectMap [ rr:column "measure_value_item" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:description ;
+        rr:objectMap [ rr:column "description" ; rr:datatype xsd:string ]
+    ] ;
+
+    # Link to experiment
+    rr:predicateObjectMap [
+        rr:predicate prov:wasInfluencedBy ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/experiments/{experiment_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# ExplainableAIFeature -> Map from explainable_ai_features table
+# =============================================================================
+
+<#ExplainableAIFeatureTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT run_id, feature_id,
+                   unnest(feature_name::text[]) as feature_name_item,
+                   unnest(feature_values::text[]) as feature_value_item,
+                   implementation_details
+            FROM explainable_ai_features
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/explainable-ai/{run_id}/{feature_id}" ;
+        rr:class aidoc:ExplainableAIFeature ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:identifier ;
+        rr:objectMap [ rr:column "feature_id" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate schema:name ;
+        rr:objectMap [ rr:column "feature_name_item" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdf:value ;
+        rr:objectMap [ rr:column "feature_value_item" ; rr:datatype xsd:string ]
+    ] ;
+
+    # Link to run
+    rr:predicateObjectMap [
+        rr:predicate prov:wasInfluencedBy ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/runs/{run_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# Interface -> Map from interfaces table
+# =============================================================================
+
+<#InterfaceTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [ rr:tableName "interfaces" ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/interface/{experiment_id}/{deployment_id}/{model_id}/{interface_id}" ;
+        rr:class aidoc:Interface ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:identifier ;
+        rr:objectMap [ rr:column "interface_id" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:type ;
+        rr:objectMap [ rr:column "interface_type" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate schema:version ;
+        rr:objectMap [ rr:column "version" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate schema:url ;
+        rr:objectMap [ rr:column "documentation_link" ; rr:datatype xsd:string ]
+    ] ;
+
+    # Link to deployment
+    rr:predicateObjectMap [
+        rr:predicate prov:wasInfluencedBy ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/deployments/{experiment_id}/{model_id}/{deployment_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# Standard -> Map from standards table
+# =============================================================================
+
+<#StandardTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT experiment_id, deployment_id, model_id, standard_id,
+                   name, description, version,
+                   to_timestamp(CASE WHEN publication_date > 10000000000 THEN publication_date / 1000.0 ELSE publication_date END) AS publication_ts
+            FROM standards
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/standard/{experiment_id}/{deployment_id}/{model_id}/{standard_id}" ;
+        rr:class aidoc:Standard ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:identifier ;
+        rr:objectMap [ rr:column "standard_id" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate schema:name ;
+        rr:objectMap [ rr:column "name" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:description ;
+        rr:objectMap [ rr:column "description" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate schema:version ;
+        rr:objectMap [ rr:column "version" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:issued ;
+        rr:objectMap [ rr:column "publication_ts" ; rr:datatype xsd:dateTime ]
+    ] ;
+
+    # Link to deployment
+    rr:predicateObjectMap [
+        rr:predicate prov:wasInfluencedBy ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/deployments/{experiment_id}/{model_id}/{deployment_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# DeclarationOfConformity -> Map from declaration_of_conformity table
+# =============================================================================
+
+<#DeclarationOfConformityTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT run_id, declaration_id, filename, file_type, file_size,
+                   link_to_artifacts, description,
+                   to_timestamp(CASE WHEN creation_time > 10000000000 THEN creation_time / 1000.0 ELSE creation_time END) AS creation_ts
+            FROM declaration_of_conformity
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/declaration/{run_id}/{declaration_id}" ;
+        rr:class aidoc:DeclarationOfConformity ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:identifier ;
+        rr:objectMap [ rr:column "declaration_id" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate schema:name ;
+        rr:objectMap [ rr:column "filename" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:format ;
+        rr:objectMap [ rr:column "file_type" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate schema:contentSize ;
+        rr:objectMap [ rr:column "file_size" ; rr:datatype xsd:integer ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate schema:url ;
+        rr:objectMap [ rr:column "link_to_artifacts" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:description ;
+        rr:objectMap [ rr:column "description" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:created ;
+        rr:objectMap [ rr:column "creation_ts" ; rr:datatype xsd:dateTime ]
+    ] ;
+
+    # Link to run
+    rr:predicateObjectMap [
+        rr:predicate prov:wasInfluencedBy ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/runs/{run_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# VisualDocumentation -> Map from visual_documentation table
+# =============================================================================
+
+<#VisualDocumentationTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT run_id, document_id, filename, file_type, file_size,
+                   link_to_artifacts, description,
+                   to_timestamp(CASE WHEN creation_time > 10000000000 THEN creation_time / 1000.0 ELSE creation_time END) AS creation_ts,
+                   unnest(COALESCE(tags::text[], ARRAY['']::text[])) as tag
+            FROM visual_documentation
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/visual-doc/{run_id}/{document_id}" ;
+        rr:class aidoc:VisualDocumentation ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:identifier ;
+        rr:objectMap [ rr:column "document_id" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate schema:name ;
+        rr:objectMap [ rr:column "filename" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:format ;
+        rr:objectMap [ rr:column "file_type" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate schema:contentSize ;
+        rr:objectMap [ rr:column "file_size" ; rr:datatype xsd:integer ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate schema:url ;
+        rr:objectMap [ rr:column "link_to_artifacts" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:description ;
+        rr:objectMap [ rr:column "description" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate schema:keywords ;
+        rr:objectMap [ rr:column "tag" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:created ;
+        rr:objectMap [ rr:column "creation_ts" ; rr:datatype xsd:dateTime ]
+    ] ;
+
+    # Link to run
+    rr:predicateObjectMap [
+        rr:predicate prov:wasInfluencedBy ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/runs/{run_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# Risk -> Map from risks table
+# =============================================================================
+
+<#RiskTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [ rr:tableName "risks" ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/risk/{experiment_id}/{risk_id}" ;
+        rr:class airo:Risk ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:identifier ;
+        rr:objectMap [ rr:column "risk_id" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:description ;
+        rr:objectMap [ rr:column "risk_description" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:type ;
+        rr:objectMap [ rr:column "risk_type" ; rr:datatype xsd:string ]
+    ] ;
+
+    # Link to experiment
+    rr:predicateObjectMap [
+        rr:predicate prov:wasInfluencedBy ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/experiments/{experiment_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# ChangeLog -> Map from change_logs table
+# =============================================================================
+
+<#ChangeLogTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [ rr:tableName "change_logs" ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/changelog/{run_id}" ;
+        rr:class aidoc:ChangeLog ;
+        rr:class prov:Activity ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate prov:wasInfluencedBy ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/runs/{run_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] ;
+
+    # Collect every ChangeRecord that belongs to this run
+    rr:predicateObjectMap [
+        rr:predicate aidoc:hasChangeRecord ;
+        rr:objectMap [
+            rr:parentTriplesMap <#ChangeRecordTriplesMap> ;
+            rr:joinCondition [
+                rr:child "run_id" ;
+                rr:parent "run_id"
+            ]
+        ]
+    ] .
+
+
+# =============================================================================
+# ChangeRecord -> Map from change_logs table
+# =============================================================================
+
+<#ChangeRecordTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT run_id, log_id, change_description, changed_by,
+                   to_timestamp(CASE WHEN change_timestamp > 10000000000 THEN change_timestamp / 1000.0 ELSE change_timestamp END) AS change_ts
+            FROM change_logs
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/changelog/{run_id}/{log_id}" ;
+        rr:class aidoc:ChangeRecord ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:identifier ;
+        rr:objectMap [ rr:column "log_id" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:description ;
+        rr:objectMap [ rr:column "change_description" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate prov:wasAssociatedWith ;
+        rr:objectMap [ rr:column "changed_by" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate prov:endedAtTime ;
+        rr:objectMap [ rr:column "change_ts" ; rr:datatype xsd:dateTime ]
+    ] .
+
+
+# =============================================================================
+# PostMarketMonitoringActivity -> Map from drift_metrics and runtime_environment tables
+# =============================================================================
+
+<#PostMarketMonitoringActivityTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT dm.experiment_id, dm.deployment_id, dm.model_id,
+                   dm.value as drift_value,
+                   to_timestamp(CASE WHEN dm.timestamp > 10000000000 THEN dm.timestamp / 1000.0 ELSE dm.timestamp END) AS ts
+            FROM drift_metrics dm
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/post-market-monitoring/{experiment_id}/{deployment_id}/{model_id}" ;
+        rr:class aidoc:PostMarketMonitoringActivity ;
+        rr:class aidoc:AIActivity ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdfs:label ;
+        rr:objectMap [
+            rr:template "Post-Market Monitoring for {model_id}" ;
+            rr:termType rr:Literal
+        ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate prov:endedAtTime ;
+        rr:objectMap [ rr:column "ts" ; rr:datatype xsd:dateTime ]
+    ] ;
+
+    # Link to deployment
+    rr:predicateObjectMap [
+        rr:predicate prov:wasInfluencedBy ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/deployments/{experiment_id}/{model_id}/{deployment_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# PostMarketPerformanceEvaluationActivity -> Map from runtime_environment table
+# =============================================================================
+
+<#PostMarketPerformanceEvaluationActivityTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [ rr:tableName "runtime_environment" ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/post-market-performance/{experiment_id}/{deployment_id}/{model_id}" ;
+        rr:class aidoc:PostMarketPerformanceEvaluationActivity ;
+        rr:class aidoc:AIActivity ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdfs:label ;
+        rr:objectMap [
+            rr:template "Post-Market Performance Evaluation for {model_id}" ;
+            rr:termType rr:Literal
+        ]
+    ] ;
+
+    # Link to deployment
+    rr:predicateObjectMap [
+        rr:predicate prov:wasInfluencedBy ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/deployments/{experiment_id}/{model_id}/{deployment_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# HardwareComponent -> Map from resources table
+# =============================================================================
+
+<#HardwareComponentTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT DISTINCT run_id, model_id, key
+            FROM resources
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/hardware/{run_id}/{model_id}/{key}" ;
+        rr:class aidoc:HardwareComponent ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate schema:name ;
+        rr:objectMap [ rr:column "key" ; rr:datatype xsd:string ]
+    ] ;
+
+    # Link to model
+    rr:predicateObjectMap [
+        rr:predicate prov:wasInfluencedBy ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/models/{run_id}/{model_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# AILifecyclePhase -> Map from experiments table
+# =============================================================================
+
+<#AILifecyclePhaseTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT experiment_id, lifecycle_stage, description,
+                   to_timestamp(CASE WHEN creation_time > 10000000000 THEN creation_time / 1000.0 ELSE creation_time END) AS creation_ts,
+                   to_timestamp(CASE WHEN last_update_time > 10000000000 THEN last_update_time / 1000.0 ELSE last_update_time END) AS last_update_ts
+            FROM experiments
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/lifecycle-phase/{experiment_id}" ;
+        rr:class airo:AILifecyclePhase ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:identifier ;
+        rr:objectMap [ rr:column "experiment_id" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate schema:name ;
+        rr:objectMap [ rr:column "lifecycle_stage" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:description ;
+        rr:objectMap [ rr:column "description" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate prov:startedAtTime ;
+        rr:objectMap [ rr:column "creation_ts" ; rr:datatype xsd:dateTime ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate prov:endedAtTime ;
+        rr:objectMap [ rr:column "last_update_ts" ; rr:datatype xsd:dateTime ]
+    ] ;
+
+    # Link to experiment
+    rr:predicateObjectMap [
+        rr:predicate prov:wasInfluencedBy ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/experiments/{experiment_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+##############################################################################
+# Phase 2 — Coverage extensions
+##############################################################################
+
+
+# =============================================================================
+# AISystem -> Root node for each experiment
+# =============================================================================
+
+<#AISystemTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT DISTINCT experiment_id
+            FROM experiments
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/ai-system/{experiment_id}" ;
+        rr:class aidoc:AISystem ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:identifier ;
+        rr:objectMap [ rr:column "experiment_id" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate aidoc:hasLifecycleStage ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/lifecycle-phase/{experiment_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# Link AISystem -> AIModel via hasComponent (one AI model per run)
+<#AISystemHasComponentTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT DISTINCT r.experiment_id, im.run_id, im.model_id
+            FROM id_mapping im
+            JOIN runs r ON im.run_id = r.run_id
+            WHERE im.model_id IS NOT NULL
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/ai-system/{experiment_id}" ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate aidoc:hasComponent ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/models/{run_id}/{model_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# Link AISystem -> MLPipeline via hasAIActivity (one pipeline per run)
+<#AISystemHasActivityTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT DISTINCT experiment_id, run_id
+            FROM runs
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/ai-system/{experiment_id}" ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate aidoc:hasAIActivity ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/ml-pipeline/{run_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# MLPipeline -> One per run
+# =============================================================================
+
+<#MLPipelineTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT DISTINCT run_id, experiment_id
+            FROM runs
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/ml-pipeline/{run_id}" ;
+        rr:class aidoc:MLPipeline ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:identifier ;
+        rr:objectMap [ rr:column "run_id" ; rr:datatype xsd:string ]
+    ] ;
+
+    # MLPipeline includes the ModelEngineering activity for its parent experiment
+    rr:predicateObjectMap [
+        rr:predicate dcterms:hasPart ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/experiments/{experiment_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] ;
+
+    # MLPipeline includes the matching DataPipeline
+    rr:predicateObjectMap [
+        rr:predicate dcterms:hasPart ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/data-pipeline/{run_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# Link MLPipeline -> ModelEvaluation via hasPart
+<#MLPipelineHasEvaluationTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT DISTINCT im.run_id, im.model_id
+            FROM id_mapping im
+            WHERE im.model_id IS NOT NULL
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/ml-pipeline/{run_id}" ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:hasPart ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/model-evaluation/{run_id}/{model_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+<#MLPipelineHasDeploymentTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT DISTINCT im.run_id, md.experiment_id, md.model_id, md.deployment_id
+            FROM id_mapping im
+            JOIN model_deployed md
+              ON im.model_id = md.model_id
+             AND im.deployment_id = md.deployment_id
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/ml-pipeline/{run_id}" ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:hasPart ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/deployments/{experiment_id}/{model_id}/{deployment_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# DataPipeline -> One per run (covers data lineage per ML run)
+# =============================================================================
+
+<#DataPipelineTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT DISTINCT run_id
+            FROM data
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/data-pipeline/{run_id}" ;
+        rr:class aidoc:DataPipeline ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:identifier ;
+        rr:objectMap [ rr:column "run_id" ; rr:datatype xsd:string ]
+    ] .
+
+
+# DataPipeline -> Dataset via producesDataset (one per data row)
+<#DataPipelineProducesDatasetTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT DISTINCT run_id, data_id
+            FROM data
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/data-pipeline/{run_id}" ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate aidoc:producesDataset ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/data/{run_id}/{data_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# ModelVersioning -> Per (run, model)
+# =============================================================================
+
+<#ModelVersioningTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT DISTINCT md.run_id, md.model_id, md.model_version
+            FROM model_deployed md
+            WHERE md.model_version IS NOT NULL
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/model-versioning/{run_id}/{model_id}" ;
+        rr:class aidoc:ModelVersioning ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:identifier ;
+        rr:objectMap [ rr:column "model_id" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate aidoc:version ;
+        rr:objectMap [ rr:column "model_version" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate prov:wasInfluencedBy ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/models/{run_id}/{model_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# SoftwareVersioning -> Per run (source code versioning)
+# =============================================================================
+
+<#SoftwareVersioningTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT DISTINCT run_id, git_commit_hash
+            FROM runs_code
+            WHERE git_commit_hash IS NOT NULL
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/software-versioning/{run_id}" ;
+        rr:class aidoc:SoftwareVersioning ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:identifier ;
+        rr:objectMap [ rr:column "run_id" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate aidoc:version ;
+        rr:objectMap [ rr:column "git_commit_hash" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate prov:wasInfluencedBy ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/runs/{run_id}/code" ;
+            rr:termType rr:IRI
+        ]
+    ] .
+
+
+# =============================================================================
+# SoftwareComponent -> One per distinct framework
+# =============================================================================
+
+<#SoftwareComponentTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT DISTINCT framework
+            FROM model_architecture
+            WHERE framework IS NOT NULL
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/software-component/{framework}" ;
+        rr:class aidoc:SoftwareComponent ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate rdfs:label ;
+        rr:objectMap [ rr:column "framework" ; rr:datatype xsd:string ]
+    ] .
+
+
+# =============================================================================
+# DataSheet -> One per dataset
+# =============================================================================
+
+<#DataSheetTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT DISTINCT run_id, data_id, data_type, data_source, data_format
+            FROM data
+        """
+    ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/datasheet/{run_id}/{data_id}" ;
+        rr:class aidoc:DataSheet ;
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:identifier ;
+        rr:objectMap [ rr:column "data_id" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:type ;
+        rr:objectMap [ rr:column "data_type" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:source ;
+        rr:objectMap [ rr:column "data_source" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate dcterms:format ;
+        rr:objectMap [ rr:column "data_format" ; rr:datatype xsd:string ]
+    ] ;
+
+    rr:predicateObjectMap [
+        rr:predicate prov:wasInfluencedBy ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/data/{run_id}/{data_id}" ;
+            rr:termType rr:IRI
+        ]
+    ] .
