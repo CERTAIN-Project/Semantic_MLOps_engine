@@ -204,7 +204,8 @@ dcterms:hasPart rdf:type owl:ObjectProperty .
 
 ###  https://w3id.org/aidoc-ap#hasCapability
 :hasCapability rdf:type owl:ObjectProperty ;
-               owl:equivalentProperty <https://w3id.org/airo#hasCapability> ;
+              #  owl:equivalentProperty <https://w3id.org/airo#hasCapability> ;
+               skos:exactMatch <https://w3id.org/airo#hasCapability> ;
                rdfs:domain :AISystem ;
                rdfs:range :AISystemCapability ;
                rdfs:comment "Relates an AISystem to an AISystemCapability it is designed to exhibit or support" ;
@@ -252,7 +253,7 @@ dcterms:hasPart rdf:type owl:ObjectProperty .
 :hasLifecycleStage rdf:type owl:ObjectProperty ;
                    rdfs:domain :AISystem ;
                    rdfs:range <https://w3id.org/airo#AILifecyclePhase> ;
-                   rdfs:comment "Links an AISystem to a specific AI Lifecycle Phase."@en ;
+                   rdfs:comment "Links an AI system to its various phases throughout its entire lifecycle."@en ;
                    rdfs:label "has lifecycle stage"@en .
 
 
@@ -300,6 +301,14 @@ dcterms:hasPart rdf:type owl:ObjectProperty .
                         rdfs:range :VisualDocumentation ;
                         rdfs:comment "Links an AI system to visual documentation such as photographs, diagrams, or illustrations showing external features, markings, and internal layout."@en ;
                         rdfs:label "has visual documentation"@en .
+
+
+###  https://w3id.org/aidoc-ap#hasFrequency
+:hasFrequency rdf:type owl:ObjectProperty ;
+              rdfs:domain :AIActivity ;
+              rdfs:range <http://purl.org/dc/terms/Frequency> ;
+              rdfs:comment "Specifies the frequency or recurrence pattern at which an AI activity is performed."@en ;
+              rdfs:label "has Frequency"@en .
 
 
 ###  https://w3id.org/aidoc-ap#implementsTask
@@ -534,14 +543,6 @@ dcterms:hasPart rdf:type owl:ObjectProperty .
                   rdfs:label "evaluation method"@en .
 
 
-###  https://w3id.org/aidoc-ap#frequency
-:frequency rdf:type owl:DatatypeProperty ;
-           rdfs:domain :AIActivity ;
-           rdfs:range xsd:string ;
-           rdfs:comment "The frequency with which an activity (e.g., risk re-evaluation) is performed."@en ;
-           rdfs:label "frequency"@en .
-
-
 ###  https://w3id.org/aidoc-ap#hasArchitecture
 :hasArchitecture rdf:type owl:DatatypeProperty ;
                  rdfs:domain [ rdf:type owl:Class ;
@@ -639,10 +640,6 @@ dcterms:hasPart rdf:type owl:ObjectProperty .
 #    Classes
 #################################################################
 
-###  http://mlcommons.org/croissant/1.0#Dataset
-<http://mlcommons.org/croissant/1.0#Dataset> rdf:type owl:Class .
-
-
 ###  http://www.w3.org/ns/dqv#Metric
 <http://www.w3.org/ns/dqv#Metric> rdf:type owl:Class .
 
@@ -665,11 +662,6 @@ dcterms:hasPart rdf:type owl:ObjectProperty .
 
 ###  http://www.w3.org/ns/mls#Model
 <http://www.w3.org/ns/mls#Model> rdf:type owl:Class .
-
-
-###  http://www.w3.org/ns/mls#ModelEvaluation
-<http://www.w3.org/ns/mls#ModelEvaluation> rdf:type owl:Class ;
-                                           owl:equivalentClass :ModelEvaluation .
 
 
 ###  http://www.w3.org/ns/mls#Software
@@ -722,10 +714,11 @@ foaf:Person rdf:type owl:Class .
 
 ###  https://w3id.org/aidoc-ap#AIDeployer
 :AIDeployer rdf:type owl:Class ;
-            owl:equivalentClass <https://w3id.org/airo#AIDeployer> ;
+            # owl:equivalentClass <https://w3id.org/airo#AIDeployer> ;
             rdfs:subClassOf <http://www.w3.org/ns/prov#Agent> ,
                             foaf:Organization ,
                             :AIAgent ;
+            skos:exactMatch <https://w3id.org/airo#AIDeployer> ;
             dcterms:source "EU AI Act 2024/1689, Article 3(4)" ;
             rdfs:comment "Any natural or legal person, public authority, agency or other body using an AI system under its authority except where the AI system is used in the course of a personal non-professional activity"@en ;
             rdfs:label "AI Deployer"@en .
@@ -747,19 +740,21 @@ foaf:Person rdf:type owl:Class .
 
 ###  https://w3id.org/aidoc-ap#AIModel
 :AIModel rdf:type owl:Class ;
-         owl:equivalentClass <https://w3id.org/airo#AIModel> ;
+        #  owl:equivalentClass <https://w3id.org/airo#AIModel> ;
          rdfs:subClassOf <http://www.w3.org/ns/mls#Model> ,
                          :AIArtifact ;
+         skos:exactMatch <https://w3id.org/airo#AIModel> ;
          rdfs:comment "A computational representation that enables an AI method to execute an AI task."@en ;
          rdfs:label "AI Model"@en .
 
 
 ###  https://w3id.org/aidoc-ap#AIProvider
 :AIProvider rdf:type owl:Class ;
-            owl:equivalentClass <https://w3id.org/airo#AIProvider> ;
+            # owl:equivalentClass <https://w3id.org/airo#AIProvider> ;
             rdfs:subClassOf <http://www.w3.org/ns/prov#Agent> ,
                             foaf:Organization ,
                             :AIAgent ;
+            skos:exactMatch <https://w3id.org/airo#AIProvider> ;
             dcterms:source "EU AI Act 2024/1689, Article 3(3)" ;
             rdfs:comment "A natural or legal person, public authority, agency or other body that develops an AI system or a general-purpose AI model or that has an AI system or a general-purpose AI model developed and places it on the market or puts the AI system into service under its own name or trademark, whether for payment or free of charge."@en ;
             rdfs:label "AI Provider"@en .
@@ -777,8 +772,9 @@ foaf:Person rdf:type owl:Class .
 
 ###  https://w3id.org/aidoc-ap#AISystem
 :AISystem rdf:type owl:Class ;
-          owl:equivalentClass <https://w3id.org/airo#AISystem> ;
+          # owl:equivalentClass <https://w3id.org/airo#AISystem> ;
           rdfs:subClassOf <http://www.w3.org/ns/prov#Entity> ;
+          skos:exactMatch <https://w3id.org/airo#AISystem> ;
           dcterms:source "EU AI Act 2024/1689, Article 3(1)" ;
           rdfs:comment "An AI system is a machine-based system that is designed to operate with varying levels of autonomy and that may exhibit adaptiveness after deployment, and that, for explicit or implicit objectives, infers, from the input it receives, how to generate outputs such as predictions, content, recommendations, or decisions that can influence physical or virtual environments."@en ;
           rdfs:label "AI System"@en .
@@ -786,14 +782,16 @@ foaf:Person rdf:type owl:Class .
 
 ###  https://w3id.org/aidoc-ap#AISystemCapability
 :AISystemCapability rdf:type owl:Class ;
-                    owl:equivalentClass <https://w3id.org/airo#AICapability> ;
+                    # owl:equivalentClass <https://w3id.org/airo#AICapability> ;
+                    skos:exactMatch <https://w3id.org/airo#AICapability> ;
                     rdfs:comment "Represents a category of tasks or functions that an AI system can perform, such as sensory, knowledge, or control action processing."@en ;
                     rdfs:label "AI System Capability"@en .
 
 
 ###  https://w3id.org/aidoc-ap#AITask
 :AITask rdf:type owl:Class ;
-        owl:equivalentClass <https://w3id.org/airo#Purpose> ;
+        # owl:equivalentClass <https://w3id.org/airo#Purpose> ;
+        skos:exactMatch <https://w3id.org/airo#Purpose> ;
         rdfs:comment "An action to achieve a specific goal using an AI model."@en ;
         rdfs:label "AI Task"@en .
 
@@ -912,7 +910,8 @@ foaf:Person rdf:type owl:Class .
 
 ###  https://w3id.org/aidoc-ap#DataSheet
 :DataSheet rdf:type owl:Class ;
-           owl:equivalentClass <https://w3id.org/vair#Datasheet> ;
+          #  owl:equivalentClass <https://w3id.org/vair#Datasheet> ;
+           skos:exactMatch <https://w3id.org/vair#Datasheet> ;
            rdfs:subClassOf <http://www.w3.org/ns/prov#Entity> ;
            rdfs:comment "Structured documentation for a dataset or training configuration, including provenance, scope and main characteristics."@en ;
            rdfs:label "Data Sheet"@en .
@@ -958,8 +957,7 @@ foaf:Person rdf:type owl:Class .
 
 ###  https://w3id.org/aidoc-ap#Dataset
 :Dataset rdf:type owl:Class ;
-         rdfs:subClassOf <http://mlcommons.org/croissant/1.0#Dataset> ,
-                         <http://www.w3.org/ns/mls#Dataset> ,
+         rdfs:subClassOf <http://www.w3.org/ns/mls#Dataset> ,
                          :AIArtifact ,
                          <https://www.w3.org/ns/dcat#Dataset> ;
          rdfs:comment "Represents a dataset used in the AI lifecycle."@en ;
@@ -968,7 +966,7 @@ foaf:Person rdf:type owl:Class .
 
 ###  https://w3id.org/aidoc-ap#DeclarationOfConformity
 :DeclarationOfConformity rdf:type owl:Class ;
-                         owl:equivalentClass <https://w3id.org/vair#EUDeclarationOfConformity> ;
+                         skos:narrowMatch <https://w3id.org/vair#EUDeclarationOfConformity> ;
                          rdfs:subClassOf <http://www.w3.org/ns/prov#Entity> ;
                          rdfs:comment "A document declaring the system's conformity with standards, such as the EU Declaration of Conformity."@en ;
                          rdfs:label "Declaration of Conformity"@en .
@@ -1018,7 +1016,8 @@ foaf:Person rdf:type owl:Class .
 
 ###  https://w3id.org/aidoc-ap#HardwareComponent
 :HardwareComponent rdf:type owl:Class ;
-                   owl:equivalentClass <https://w3id.org/vair#Hardware> ;
+                  #  owl:equivalentClass <https://w3id.org/vair#Hardware> ;
+                   skos:exactMatch <https://w3id.org/vair#Hardware> ;
                    rdfs:subClassOf <http://www.w3.org/ns/prov#Entity> ;
                    rdfs:comment "Represents the hardware required for an AI system to run."@en ;
                    rdfs:label "Hardware Component"@en .
@@ -1026,7 +1025,8 @@ foaf:Person rdf:type owl:Class .
 
 ###  https://w3id.org/aidoc-ap#HumanOversightMechanism
 :HumanOversightMechanism rdf:type owl:Class ;
-                         owl:equivalentClass <https://w3id.org/airo#HumanInvolvement> ;
+                        #  owl:equivalentClass <https://w3id.org/airo#HumanInvolvement> ;
+                         skos:exactMatch <https://w3id.org/airo#HumanInvolvement> ;
                          rdfs:subClassOf <http://www.w3.org/ns/prov#Entity> ;
                          rdfs:comment "A mechanism or measure to facilitate human intervention or supervision."@en ;
                          rdfs:label "Human Oversight Mechanism"@en .
@@ -1139,7 +1139,8 @@ foaf:Person rdf:type owl:Class .
 
 ###  https://w3id.org/aidoc-ap#SoftwareImplementation
 :SoftwareImplementation rdf:type owl:Class ;
-                        owl:equivalentClass <https://w3id.org/vair#Software> ;
+                        # owl:equivalentClass <https://w3id.org/vair#Software> ;
+                        skos:exactMatch <https://w3id.org/vair#Software> ;
                         rdfs:subClassOf <http://www.w3.org/ns/mls#Implementation> ,
                                         :AIArtifact ;
                         rdfs:comment "Represents the concrete, executable software that realizes an algorithm."@en ;
@@ -1148,7 +1149,8 @@ foaf:Person rdf:type owl:Class .
 
 ###  https://w3id.org/aidoc-ap#Standard
 :Standard rdf:type owl:Class ;
-          owl:equivalentClass <https://w3id.org/airo#Standard> ;
+          # owl:equivalentClass <https://w3id.org/airo#Standard> ;
+          skos:exactMatch <https://w3id.org/airo#Standard> ;
           rdfs:subClassOf <http://www.w3.org/ns/prov#Entity> ;
           rdfs:comment "A harmonised or other standard applied to the AI system."@en ;
           rdfs:label "Standard"@en .
@@ -1238,6 +1240,10 @@ foaf:Person rdf:type owl:Class .
 
 ###  https://www.w3.org/ns/dcat#Dataset
 <https://www.w3.org/ns/dcat#Dataset> rdf:type owl:Class .
+
+
+###  http://purl.org/dc/terms/Frequency
+<http://purl.org/dc/terms/Frequency> rdf:type owl:Class .
 
 
 #################################################################
