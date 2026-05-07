@@ -1,5 +1,8 @@
 import uuid
+import io
+import sys
 import time
+import json
 import pandas as pd
 from fastapi import FastAPI
 from app.mlflow_connector import (
@@ -12,6 +15,7 @@ from app.mlflow_connector import (
     get_params_data,
     get_tags_data,
     get_artifacts_data,
+    get_json_artifacts_data,
 )
 from app.target_connector import insert_dataframe, bulk_upsert_metrics, target_engine
 from misc.data_transform import (
@@ -27,6 +31,28 @@ from misc.data_transform import (
     map_mlflow_model_params,
     map_mlflow_runs_tags,
     map_mlflow_data_resources,
+    map_run_code,
+    map_checkpoints,
+    map_weight_distribution,
+    map_examples,
+    map_run_logs,
+    # compliance maps
+    map_ai_actors,
+    map_labeling_procedures,
+    map_risk,
+    map_human_oversight,
+    map_transparency_measure,
+    map_change_log,
+    map_declaration_of_conformity,
+    map_visual_documentation,
+    map_explainable_ai,
+    map_model_packaging,
+    map_build_testing,
+    map_standard,
+    map_interface,
+    map_decommissioning,
+    map_tokenizer_config,
+    map_tokenization_stats,
 )
 
 app = FastAPI()
@@ -244,8 +270,31 @@ def sync_data_duration_leakage(id_mapping):
 # @app.post("/sync/model_architecture")
 def sync_model_architecture(id_mapping):
     layer_structure = get_artifacts_data(folder_name="model", file_extension=".pkl")
+
+    # Build a per-run lookup of all MLflow params so we can read optimizer data
+    params_df = get_params_data()
+    # { run_uuid: { key: value, ... } }
+    run_params: dict = (
+        params_df.groupby("run_uuid")
+        .apply(lambda g: dict(zip(g["key"], g["value"])))
+        .to_dict()
+        if not params_df.empty
+        else {}
+    )
+
     mapped_rows = []
     for run_id in id_mapping.keys():
+        params = run_params.get(run_id, {})
+
+        # Reconstruct the optimizer dict from logged params:
+        # log_model_architecture logs "optimizer" (name) and "optimizer.<key>" for hyperparams
+        optimizer_name = params.get("optimizer", "unknown")
+        optimizer_dict = {"name": optimizer_name}
+        for key, value in params.items():
+            if key.startswith("optimizer."):
+                hyperparam_name = key[len("optimizer.") :]
+                optimizer_dict[hyperparam_name] = value
+
         mapped_rows.append(
             {
                 "run_id": run_id,
@@ -257,13 +306,13 @@ def sync_model_architecture(id_mapping):
                 "layer_structure": (
                     layer_structure[run_id] if run_id in layer_structure.keys() else {},
                 ),
-                "activation_function": "ReLU",
-                "optimizer": "Adam",
-                "loss_function": "MSE",
-                "framework": "unknown",
+                "activation_function": params.get("activation_function", "ReLU"),
+                "optimizer": json.dumps(optimizer_dict),
+                "loss_function": params.get("losses", "MSE"),
+                "framework": params.get("framework", "unknown"),
                 "metrics": [],
-                "input_shape": "",
-                "output_shape": "",
+                "input_shape": params.get("input_shape", ""),
+                "output_shape": params.get("output_shape", ""),
                 "number_of_layers": 0,
                 "number_of_total_parameters": 0,
                 "number_of_trainable_parameters": 0,
@@ -353,7 +402,294 @@ def sync_tags():
     return {"rows_synced": len(df), "status": "success"}
 
 
-@app.post("/sync/id_mapping")
+# ---------------------------------------------------------------------------
+# New sync functions — previously missing certain_db tables
+# ---------------------------------------------------------------------------
+
+
+# @app.post("/sync/run_code")
+def sync_run_code(run_ids: list):
+    """Populate runs_code from MLflow system tags (git commit hash + source name)."""
+    tags_df = get_tags_data()
+
+    rows = []
+    for run_id in run_ids:
+        row = map_run_code(tags_df, run_id)
+        if row:
+            rows.append(row)
+
+    if not rows:
+        return {"rows_synced": 0, "status": "no git tags found"}
+
+    mapped_df = pd.DataFrame(rows)
+    insert_dataframe(mapped_df, "runs_code")
+    return {"rows_synced": len(mapped_df), "status": "success"}
+
+
+# @app.post("/sync/checkpoints")
+def sync_checkpoints(id_mapping: dict):
+    """Populate checkpoints from checkpoints/*.csv artifacts."""
+    try:
+        df = get_artifacts_data(folder_name="checkpoints", file_extension=".csv")
+    except Exception:
+        return {"rows_synced": 0, "status": "no checkpoint artifacts found"}
+
+    if not isinstance(df, pd.DataFrame) or df.empty:
+        return {"rows_synced": 0, "status": "no checkpoint artifacts found"}
+
+    mapped_rows = df.apply(
+        lambda row: map_checkpoints(row, id_mapping), axis=1
+    ).tolist()
+    mapped_df = pd.DataFrame(mapped_rows)
+    insert_dataframe(mapped_df, "checkpoints")
+    return {"rows_synced": len(mapped_df), "status": "success"}
+
+
+# @app.post("/sync/weight_distribution")
+def sync_weight_distribution(id_mapping: dict):
+    """Populate weight_distribution from weight_distribution/*.csv artifacts."""
+    try:
+        df = get_artifacts_data(
+            folder_name="weight_distribution", file_extension=".csv"
+        )
+    except Exception:
+        return {"rows_synced": 0, "status": "no weight distribution artifacts found"}
+
+    if not isinstance(df, pd.DataFrame) or df.empty:
+        return {"rows_synced": 0, "status": "no weight distribution artifacts found"}
+
+    mapped_rows = df.apply(
+        lambda row: map_weight_distribution(row, id_mapping), axis=1
+    ).tolist()
+    mapped_df = pd.DataFrame(mapped_rows)
+    insert_dataframe(mapped_df, "weight_distribution")
+    return {"rows_synced": len(mapped_df), "status": "success"}
+
+
+# @app.post("/sync/examples")
+def sync_examples(id_mapping: dict):
+    """Populate examples from examples/*.csv artifacts."""
+    try:
+        df = get_artifacts_data(folder_name="examples", file_extension=".csv")
+    except Exception:
+        return {"rows_synced": 0, "status": "no examples artifacts found"}
+
+    if not isinstance(df, pd.DataFrame) or df.empty:
+        return {"rows_synced": 0, "status": "no examples artifacts found"}
+
+    mapped_rows = df.apply(lambda row: map_examples(row, id_mapping), axis=1).tolist()
+    mapped_df = pd.DataFrame(mapped_rows)
+    insert_dataframe(mapped_df, "examples")
+    return {"rows_synced": len(mapped_df), "status": "success"}
+
+
+# @app.post("/sync/run_logs")
+def sync_run_logs(run_ids: list):
+    """Populate runs_logs from run_logs/*.csv artifacts."""
+    try:
+        df = get_artifacts_data(folder_name="run_logs", file_extension=".csv")
+    except Exception:
+        return {"rows_synced": 0, "status": "no run_logs artifacts found"}
+
+    if not isinstance(df, pd.DataFrame) or df.empty:
+        return {"rows_synced": 0, "status": "no run_logs artifacts found"}
+
+    mapped_rows = []
+    for _, row in df.iterrows():
+        run_id = row.get("run_id", "")
+        if run_id in run_ids:
+            mapped_rows.append(map_run_logs(row, run_id))
+
+    if not mapped_rows:
+        return {"rows_synced": 0, "status": "no matching run log rows"}
+
+    mapped_df = pd.DataFrame(mapped_rows)
+    insert_dataframe(mapped_df, "runs_logs")
+    return {"rows_synced": len(mapped_df), "status": "success"}
+
+
+def sync_tokenizer_config(run_ids: list):
+    """Populate tokenizer_config from tokenizer_config/*.json artifacts."""
+    return _sync_json_run_table(
+        "tokenizer_config", map_tokenizer_config, "tokenizer_config", run_ids
+    )
+
+
+def sync_tokenization_stats(run_ids: list):
+    """Populate tokenization_stats from tokenization_stats/*.json artifacts."""
+    return _sync_json_run_table(
+        "tokenization_stats", map_tokenization_stats, "tokenization_stats", run_ids
+    )
+
+
+# ---------------------------------------------------------------------------
+# Compliance / governance sync helpers (JSON artifacts)
+# ---------------------------------------------------------------------------
+
+
+def _sync_json_experiment_table(
+    folder_name: str, map_fn, table_name: str, run_ids: list
+):
+    """Generic sync for experiment-scoped JSON artifact tables."""
+    records = get_json_artifacts_data(folder_name=folder_name)
+    if not records:
+        return {"rows_synced": 0, "status": f"no {folder_name} artifacts found"}
+    rows = []
+    for run_id, experiment_id, record in records:
+        if run_id in run_ids:
+            rows.append(map_fn(record, experiment_id))
+    if not rows:
+        return {"rows_synced": 0, "status": f"no matching {folder_name} rows"}
+    insert_dataframe(pd.DataFrame(rows), table_name)
+    return {"rows_synced": len(rows), "status": "success"}
+
+
+def _sync_json_run_table(folder_name: str, map_fn, table_name: str, run_ids: list):
+    """Generic sync for run-scoped JSON artifact tables."""
+    records = get_json_artifacts_data(folder_name=folder_name)
+    if not records:
+        return {"rows_synced": 0, "status": f"no {folder_name} artifacts found"}
+    rows = []
+    for run_id, _experiment_id, record in records:
+        if run_id in run_ids:
+            rows.append(map_fn(record, run_id))
+    if not rows:
+        return {"rows_synced": 0, "status": f"no matching {folder_name} rows"}
+    insert_dataframe(pd.DataFrame(rows), table_name)
+    return {"rows_synced": len(rows), "status": "success"}
+
+
+def _sync_json_deployment_table(
+    folder_name: str, map_fn, table_name: str, run_ids: list, id_mapping: dict
+):
+    """Generic sync for deployment-scoped JSON artifact tables."""
+    records = get_json_artifacts_data(folder_name=folder_name)
+    if not records:
+        return {"rows_synced": 0, "status": f"no {folder_name} artifacts found"}
+    rows = []
+    for run_id, experiment_id, record in records:
+        if run_id in run_ids:
+            rows.append(map_fn(record, experiment_id, id_mapping))
+    if not rows:
+        return {"rows_synced": 0, "status": f"no matching {folder_name} rows"}
+    insert_dataframe(pd.DataFrame(rows), table_name)
+    return {"rows_synced": len(rows), "status": "success"}
+
+
+# -- Experiment-scoped -------------------------------------------------------
+
+
+def sync_ai_actors(run_ids: list, id_mapping: dict):  # noqa: ARG001
+    """Populate ai_actors from ai_actors/*.json artifacts."""
+    return _sync_json_experiment_table("ai_actors", map_ai_actors, "ai_actors", run_ids)
+
+
+def sync_labeling_procedures(run_ids: list, id_mapping: dict):  # noqa: ARG001
+    """Populate labeling_procedures from labeling_procedures/*.json artifacts."""
+    return _sync_json_experiment_table(
+        "labeling_procedures", map_labeling_procedures, "labeling_procedures", run_ids
+    )
+
+
+def sync_risks(run_ids: list, id_mapping: dict):  # noqa: ARG001
+    """Populate risks from risks/*.json artifacts."""
+    return _sync_json_experiment_table("risks", map_risk, "risks", run_ids)
+
+
+def sync_human_oversight(run_ids: list, id_mapping: dict):  # noqa: ARG001
+    """Populate human_oversight_mechanisms from human_oversight/*.json artifacts."""
+    return _sync_json_experiment_table(
+        "human_oversight", map_human_oversight, "human_oversight_mechanisms", run_ids
+    )
+
+
+def sync_transparency_measures(run_ids: list, id_mapping: dict):  # noqa: ARG001
+    """Populate transparency_measures from transparency_measures/*.json artifacts."""
+    return _sync_json_experiment_table(
+        "transparency_measures",
+        map_transparency_measure,
+        "transparency_measures",
+        run_ids,
+    )
+
+
+# -- Run-scoped --------------------------------------------------------------
+
+
+def sync_change_logs(run_ids: list):
+    """Populate change_logs from change_logs/*.json artifacts."""
+    return _sync_json_run_table("change_logs", map_change_log, "change_logs", run_ids)
+
+
+def sync_declaration_of_conformity(run_ids: list):
+    """Populate declaration_of_conformity from declaration_of_conformity/*.json artifacts."""
+    return _sync_json_run_table(
+        "declaration_of_conformity",
+        map_declaration_of_conformity,
+        "declaration_of_conformity",
+        run_ids,
+    )
+
+
+def sync_visual_documentation(run_ids: list):
+    """Populate visual_documentation from visual_documentation/*.json artifacts."""
+    return _sync_json_run_table(
+        "visual_documentation",
+        map_visual_documentation,
+        "visual_documentation",
+        run_ids,
+    )
+
+
+def sync_explainable_ai(run_ids: list):
+    """Populate explainable_ai_features from explainable_ai/*.json artifacts."""
+    return _sync_json_run_table(
+        "explainable_ai", map_explainable_ai, "explainable_ai_features", run_ids
+    )
+
+
+# -- Deployment-scoped -------------------------------------------------------
+
+
+def sync_model_packaging(run_ids: list, id_mapping: dict):
+    """Populate model_packaging from model_packaging/*.json artifacts."""
+    return _sync_json_deployment_table(
+        "model_packaging", map_model_packaging, "model_packaging", run_ids, id_mapping
+    )
+
+
+def sync_build_testing(run_ids: list, id_mapping: dict):
+    """Populate build_and_integration_testing from build_and_integration_testing/*.json artifacts."""
+    return _sync_json_deployment_table(
+        "build_and_integration_testing",
+        map_build_testing,
+        "build_and_integration_testing",
+        run_ids,
+        id_mapping,
+    )
+
+
+def sync_standards(run_ids: list, id_mapping: dict):
+    """Populate standards from standards/*.json artifacts."""
+    return _sync_json_deployment_table(
+        "standards", map_standard, "standards", run_ids, id_mapping
+    )
+
+
+def sync_interfaces(run_ids: list, id_mapping: dict):
+    """Populate interfaces from interfaces/*.json artifacts."""
+    return _sync_json_deployment_table(
+        "interfaces", map_interface, "interfaces", run_ids, id_mapping
+    )
+
+
+def sync_decommissioning(run_ids: list, id_mapping: dict):
+    """Populate decomissioning from decommissioning/*.json artifacts."""
+    return _sync_json_deployment_table(
+        "decommissioning", map_decommissioning, "decomissioning", run_ids, id_mapping
+    )
+
+
 def sync_id_mapping(run_ids: list):
     from sqlalchemy import MetaData, Table, select
     from app.target_connector import target_engine
@@ -397,30 +733,74 @@ def sync_id_mapping(run_ids: list):
 
 @app.post("/sync/all")
 def sync_all():
-    # Sync all data
-    sync_experiments()
-    sync_experiment_tags()
+    # Capture all print() output (warnings, etc.) to include in the response
+    captured = io.StringIO()
+    original_stdout = sys.stdout
+    sys.stdout = captured
 
-    run_ids = sync_runs()
-    id_mapping = sync_id_mapping(run_ids)
+    try:
+        # Sync all data
+        sync_experiments()
+        sync_experiment_tags()
 
-    sync_tags()
-    sync_model_architecture(id_mapping)
-    sync_metrics(id_mapping)
-    sync_latest_metrics(id_mapping)
-    sync_model_params(id_mapping)
-    sync_model_resources(id_mapping)
+        run_ids = sync_runs()
+        id_mapping = sync_id_mapping(run_ids)
 
-    sync_data(id_mapping)
-    sync_data_signatures(id_mapping)
-    sync_data_metrics(id_mapping)
-    sync_data_resources(id_mapping)
-    sync_data_drift(id_mapping)
+        sync_tags()
+        sync_model_architecture(id_mapping)
+        sync_metrics(id_mapping)
+        sync_latest_metrics(id_mapping)
+        sync_model_params(id_mapping)
+        sync_model_resources(id_mapping)
 
-    sync_time_series_data(id_mapping)
-    sync_data_duration_leakage(id_mapping)
+        sync_data(id_mapping)
+        sync_data_signatures(id_mapping)
+        sync_data_metrics(id_mapping)
+        sync_data_resources(id_mapping)
+        sync_data_drift(id_mapping)
 
-    return {"status": "all data synced successfully"}
+        sync_time_series_data(id_mapping)
+        sync_data_duration_leakage(id_mapping)
+
+        # New tables
+        sync_run_code(run_ids)
+        sync_run_logs(run_ids)
+        sync_checkpoints(id_mapping)
+        sync_weight_distribution(id_mapping)
+        sync_examples(id_mapping)
+        sync_tokenizer_config(run_ids)
+        sync_tokenization_stats(run_ids)
+
+        # Compliance tables (experiment-level)
+        sync_ai_actors(run_ids, id_mapping)
+        sync_labeling_procedures(run_ids, id_mapping)
+        sync_risks(run_ids, id_mapping)
+        sync_human_oversight(run_ids, id_mapping)
+        sync_transparency_measures(run_ids, id_mapping)
+
+        # Compliance tables (run-level)
+        sync_change_logs(run_ids)
+        sync_declaration_of_conformity(run_ids)
+        sync_visual_documentation(run_ids)
+        sync_explainable_ai(run_ids)
+
+        # Compliance tables (deployment-level)
+        sync_model_packaging(run_ids, id_mapping)
+        sync_build_testing(run_ids, id_mapping)
+        sync_standards(run_ids, id_mapping)
+        sync_interfaces(run_ids, id_mapping)
+        sync_decommissioning(run_ids, id_mapping)
+
+    finally:
+        sys.stdout = original_stdout
+
+    output = captured.getvalue()
+    warnings = [line for line in output.splitlines() if line.strip()]
+
+    return {
+        "status": "all data synced successfully",
+        "warnings": warnings if warnings else [],
+    }
 
 
 @app.get("/all/data")

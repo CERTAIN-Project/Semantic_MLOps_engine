@@ -1087,3 +1087,72 @@ class ChangeLog(Base):
         PrimaryKeyConstraint("log_id", "run_id"),
         ForeignKeyConstraint(["run_id"], ["runs.run_id"]),
     )
+
+
+class TokenizerConfig(Base):
+    """Configuration of the tokenizer used for an LLM/NLP run.
+
+    One row per run — stores the tokenizer type, vocabulary details, and all
+    encoding settings so the exact tokenisation behaviour can be reproduced.
+    """
+
+    __tablename__ = "tokenizer_config"
+
+    tokenizer_id = Column(
+        String,
+        primary_key=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+    run_id = Column(String, nullable=False)
+    # Tokenizer identity
+    tokenizer_type = Column(
+        String, nullable=False
+    )  # e.g. "BPE", "WordPiece", "SentencePiece"
+    model_name_or_path = Column(String)  # e.g. "bert-base-uncased"
+    vocab_size = Column(Integer)
+    # Encoding settings
+    max_length = Column(Integer)
+    padding = Column(String)  # "max_length", "longest", "do_not_pad"
+    truncation = Column(Boolean)
+    stride = Column(Integer)
+    # Special tokens stored as a JSON object {token_name: token_string}
+    special_tokens = Column(JSON)
+    creation_time = Column(Numeric, nullable=False, default=1672531200)
+
+    __table_args__ = (
+        PrimaryKeyConstraint("tokenizer_id", "run_id"),
+        ForeignKeyConstraint(["run_id"], ["runs.run_id"]),
+    )
+
+
+class TokenizationStats(Base):
+    """Per-split tokenization statistics for an LLM/NLP run.
+
+    One row per (run, split) — e.g. ``split="train"`` and ``split="test"``.
+    Captures sequence length distribution, out-of-vocabulary rate, and
+    truncation/padding rates so data quality can be tracked over time.
+    """
+
+    __tablename__ = "tokenization_stats"
+
+    stats_id = Column(
+        String,
+        primary_key=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+    run_id = Column(String, nullable=False)
+    split = Column(String, nullable=False)  # "train", "val", "test", "full", …
+    total_sequences = Column(Integer)
+    total_tokens = Column(Integer)
+    avg_token_length = Column(Float)
+    max_token_length = Column(Integer)
+    min_token_length = Column(Integer)
+    truncation_rate = Column(Float)  # fraction of sequences that were truncated
+    padding_rate = Column(Float)  # fraction of sequences that were padded
+    oov_rate = Column(Float)  # fraction of tokens that are [UNK]
+    creation_time = Column(Numeric, nullable=False, default=1672531200)
+
+    __table_args__ = (
+        PrimaryKeyConstraint("stats_id", "run_id"),
+        ForeignKeyConstraint(["run_id"], ["runs.run_id"]),
+    )

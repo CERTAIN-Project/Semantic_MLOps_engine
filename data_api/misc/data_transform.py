@@ -1,3 +1,4 @@
+import json
 import pandas as pd
 from scipy.stats import ks_2samp
 
@@ -374,3 +375,425 @@ def map_mlflow_data_duration_leakage(dataset, id_mapping):
                 print(f"Error analyzing temporal data for run_id {run_id}: {e}")
 
     return pd.DataFrame(results) if results else pd.DataFrame()
+
+
+# ---------------------------------------------------------------------------
+# New map functions — missing certain_db tables
+# ---------------------------------------------------------------------------
+
+
+def map_run_code(tags_df: "pd.DataFrame", run_id: str) -> dict:
+    """
+    Build a ``runs_code`` row from MLflow system tags.
+
+    MLflow automatically stores ``mlflow.source.git.commit`` and
+    ``mlflow.source.name`` as run tags when the code is version-controlled.
+
+    Parameters
+    ----------
+    tags_df : pd.DataFrame
+        DataFrame produced by ``get_tags_data()`` (columns: run_uuid, key, value).
+    run_id : str
+        The run identifier to extract tags for.
+
+    Returns
+    -------
+    dict
+        A single row dict matching the ``runs_code`` schema, or an empty dict
+        if the tags are not present.
+    """
+    run_tags = tags_df[tags_df["run_uuid"] == run_id]
+    git_hash = run_tags.loc[
+        run_tags["key"] == "mlflow.source.git.commit", "value"
+    ].values
+    source_name = run_tags.loc[run_tags["key"] == "mlflow.source.name", "value"].values
+
+    commit = git_hash[0] if len(git_hash) > 0 else "unknown"
+    name = source_name[0] if len(source_name) > 0 else "unknown"
+
+    if commit == "unknown" and name == "unknown":
+        return {}
+
+    return {
+        "run_id": run_id,
+        "git_commit_hash": commit,
+        "name": name,
+    }
+
+
+def map_checkpoints(row: "pd.Series", id_mapping: dict) -> dict:
+    """
+    Map a row from a ``checkpoints/*.csv`` artifact into a ``checkpoints`` row.
+
+    Parameters
+    ----------
+    row : pd.Series
+        A row with at least ``checkpoint_id``, ``checkpoint_name``,
+        ``checkpoint_location``, ``creation_time``, and ``run_id`` columns.
+    id_mapping : dict
+        Mapping of ``run_id`` → ``{model_id, data_id, deployment_id}``.
+
+    Returns
+    -------
+    dict
+        A single row dict matching the ``checkpoints`` schema.
+    """
+    run_id = row["run_id"]
+    return {
+        "checkpoint_id": row.get("checkpoint_id", ""),
+        "run_id": run_id,
+        "model_id": id_mapping.get(run_id, {}).get("model_id", ""),
+        "checkpoint_name": row.get("checkpoint_name", ""),
+        "checkpoint_location": row.get("checkpoint_location", ""),
+        "creation_time": row.get(
+            "creation_time", int(pd.Timestamp.now(tz="UTC").timestamp())
+        ),
+    }
+
+
+def map_weight_distribution(row: "pd.Series", id_mapping: dict) -> dict:
+    """
+    Map a row from a ``weight_distribution/*.csv`` artifact into a
+    ``weight_distribution`` row.
+
+    Parameters
+    ----------
+    row : pd.Series
+        A row with columns ``layer_name``, ``mean``, ``std``, ``step``,
+        ``stage``, ``is_NaN``, ``timestamp``, and ``run_id``.
+    id_mapping : dict
+        Mapping of ``run_id`` → ``{model_id, data_id, deployment_id}``.
+
+    Returns
+    -------
+    dict
+        A single row dict matching the ``weight_distribution`` schema.
+    """
+    run_id = row["run_id"]
+    value_mean = row.get("mean", 0.0)
+    value_std = row.get("std", 0.0)
+    return {
+        "run_id": run_id,
+        "model_id": id_mapping.get(run_id, {}).get("model_id", ""),
+        "layer_name": row.get("layer_name", "unknown"),
+        "mean": 0.0 if pd.isna(value_mean) else float(value_mean),
+        "std": 0.0 if pd.isna(value_std) else float(value_std),
+        "step": int(row.get("step", 0)),
+        "stage": row.get("stage", "train"),
+        "is_NaN": bool(pd.isna(value_mean)),
+        "timestamp": row.get("timestamp", int(pd.Timestamp.now(tz="UTC").timestamp())),
+    }
+
+
+def map_examples(row: "pd.Series", id_mapping: dict) -> dict:
+    """
+    Map a row from an ``examples/*.csv`` artifact into an ``examples`` row.
+
+    Parameters
+    ----------
+    row : pd.Series
+        A row with columns ``input``, ``prediction``, ``ground_truth``,
+        ``step``, ``stage``, ``timestamp``, and ``run_id``.
+    id_mapping : dict
+        Mapping of ``run_id`` → ``{model_id, data_id, deployment_id}``.
+
+    Returns
+    -------
+    dict
+        A single row dict matching the ``examples`` schema.
+    """
+    run_id = row["run_id"]
+    return {
+        "run_id": run_id,
+        "model_id": id_mapping.get(run_id, {}).get("model_id", ""),
+        "input": str(row.get("input", "")),
+        "prediction": str(row.get("prediction", "")),
+        "ground_truth": str(row.get("ground_truth", "")),
+        "step": int(row.get("step", 0)),
+        "stage": row.get("stage", "inference"),
+        "timestamp": row.get("timestamp", int(pd.Timestamp.now(tz="UTC").timestamp())),
+    }
+
+
+def map_run_logs(row: "pd.Series", run_id: str) -> dict:
+    """
+    Map a row from a ``run_logs/*.csv`` artifact into a ``runs_logs`` row.
+
+    Parameters
+    ----------
+    row : pd.Series
+        A row with columns ``log_id``, ``log_type``, ``log_message``,
+        ``log_creation_time``.
+    run_id : str
+        The run identifier that owns this log entry.
+
+    Returns
+    -------
+    dict
+        A single row dict matching the ``runs_logs`` schema.
+    """
+    return {
+        "run_id": run_id,
+        "log_id": row.get("log_id", ""),
+        "log_type": row.get("log_type", "stdout"),
+        "log_message": row.get("log_message", ""),
+        "log_creation_time": row.get(
+            "log_creation_time", int(pd.Timestamp.now(tz="UTC").timestamp())
+        ),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Compliance map functions — governance, documentation, deployment lifecycle
+# ---------------------------------------------------------------------------
+
+
+def map_ai_actors(record: dict, experiment_id: str) -> dict:
+    """Map a JSON artifact record into an ``ai_actors`` row."""
+    providers = record.get("ai_providers", [])
+    deployers = record.get("ai_deployers", [])
+    return {
+        "ai_actors_id": record.get("ai_actors_id", ""),
+        "experiment_id": experiment_id,
+        "ai_provider": (
+            json.dumps(providers) if isinstance(providers, list) else str(providers)
+        ),
+        "ai_deployer": (
+            json.dumps(deployers) if isinstance(deployers, list) else str(deployers)
+        ),
+        "auditor": record.get("auditor", ""),
+        "organization": record.get("organization", ""),
+    }
+
+
+def map_labeling_procedures(record: dict, experiment_id: str) -> dict:
+    """Map a JSON artifact record into a ``labeling_procedures`` row."""
+    qa_methods = record.get("quality_assurance_methods", [])
+    annotators = record.get("annotators", [])
+    annotation_tool = record.get("annotation_tool", "")
+    return {
+        "labeling_id": record.get("labeling_id", ""),
+        "experiment_id": experiment_id,
+        "procedure_description": record.get("description", ""),
+        "quality_assurance_methods": (
+            json.dumps(qa_methods) if isinstance(qa_methods, list) else str(qa_methods)
+        ),
+        "annotator_details": (
+            json.dumps(annotators) if isinstance(annotators, list) else str(annotators)
+        ),
+        "annotation_tools": (
+            [annotation_tool] if isinstance(annotation_tool, str) else annotation_tool
+        ),
+    }
+
+
+def map_risk(record: dict, experiment_id: str) -> dict:
+    """Map a JSON artifact record into a ``risks`` row."""
+    return {
+        "risk_id": record.get("risk_id", ""),
+        "experiment_id": experiment_id,
+        "risk_description": record.get("risk_description", ""),
+        "risk_type": record.get("risk_type", ""),
+        "risk_level": float(record.get("risk_level", 0.0)),
+    }
+
+
+def map_human_oversight(record: dict, experiment_id: str) -> dict:
+    """Map a JSON artifact record into a ``human_oversight_mechanisms`` row."""
+    return {
+        "mechanism_id": record.get("mechanism_id", ""),
+        "experiment_id": experiment_id,
+        "oversight_type": record.get("oversight_type", ""),
+        "description": record.get("description", ""),
+        "implementation_details": record.get("implementation_details", ""),
+    }
+
+
+def map_transparency_measure(record: dict, experiment_id: str) -> dict:
+    """Map a JSON artifact record into a ``transparency_measures`` row."""
+    return {
+        "measure_id": record.get("measure_id", ""),
+        "experiment_id": experiment_id,
+        "measure_type": record.get("measure_type", []),
+        "measure_value": record.get("measure_value", []),
+        "description": record.get("description", ""),
+        "implementation_details": record.get("implementation_details", ""),
+    }
+
+
+def map_change_log(record: dict, run_id: str) -> dict:
+    """Map a JSON artifact record into a ``change_logs`` row."""
+    return {
+        "log_id": record.get("log_id", ""),
+        "run_id": run_id,
+        "change_description": record.get("change_description", ""),
+        "changed_by": record.get("changed_by", ""),
+        "change_timestamp": record.get(
+            "change_timestamp", int(pd.Timestamp.now(tz="UTC").timestamp())
+        ),
+    }
+
+
+def map_declaration_of_conformity(record: dict, run_id: str) -> dict:
+    """Map a JSON artifact record into a ``declaration_of_conformity`` row."""
+    return {
+        "declaration_id": record.get("declaration_id", ""),
+        "run_id": run_id,
+        "filename": record.get("filename", ""),
+        "file_type": record.get("file_type", ""),
+        "mime_type": record.get("mime_type", ""),
+        "file_size": record.get("file_size"),
+        "description": record.get("description", ""),
+        "creation_time": record.get(
+            "creation_time", int(pd.Timestamp.now(tz="UTC").timestamp())
+        ),
+        "link_to_artifacts": record.get("link_to_artifacts", ""),
+    }
+
+
+def map_visual_documentation(record: dict, run_id: str) -> dict:
+    """Map a JSON artifact record into a ``visual_documentation`` row."""
+    return {
+        "document_id": record.get("document_id", ""),
+        "run_id": run_id,
+        "filename": record.get("filename", ""),
+        "file_type": record.get("file_type", ""),
+        "file_size": record.get("file_size"),
+        "description": record.get("description", ""),
+        "tags": record.get("tags", []),
+        "creation_time": record.get(
+            "creation_time", int(pd.Timestamp.now(tz="UTC").timestamp())
+        ),
+        "link_to_artifacts": record.get("link_to_artifacts", ""),
+    }
+
+
+def map_explainable_ai(record: dict, run_id: str) -> dict:
+    """Map a JSON artifact record into an ``explainable_ai_features`` row."""
+    return {
+        "feature_id": record.get("feature_id", ""),
+        "run_id": run_id,
+        "feature_name": record.get("feature_name", []),
+        "feature_values": record.get("feature_values", []),
+        "implementation_details": record.get("implementation_details", ""),
+    }
+
+
+def map_model_packaging(record: dict, experiment_id: str, id_mapping: dict) -> dict:
+    """Map a JSON artifact record into a ``model_packaging`` row."""
+    deployment_id = record.get("deployment_id", "")
+    model_id = record.get("model_id", "")
+    return {
+        "packaging_id": record.get("packaging_id", ""),
+        "experiment_id": experiment_id,
+        "deployment_id": deployment_id,
+        "model_id": model_id,
+        "packaging_format": record.get("packaging_format", ""),
+        "dependencies": record.get("dependencies", []),
+        "containerization_details": (
+            json.dumps(record.get("containerization_details", {}))
+            if isinstance(record.get("containerization_details"), dict)
+            else record.get("containerization_details", "")
+        ),
+    }
+
+
+def map_build_testing(record: dict, experiment_id: str) -> dict:
+    """Map a JSON artifact record into a ``build_and_integration_testing`` row."""
+    test_results = record.get("test_results", {})
+    if isinstance(test_results, dict):
+        test_results = json.dumps(test_results)
+    return {
+        "test_id": record.get("test_id", ""),
+        "experiment_id": experiment_id,
+        "deployment_id": record.get("deployment_id", ""),
+        "model_id": record.get("model_id", ""),
+        "build_status": record.get("build_status", ""),
+        "build_logs": record.get("build_logs", ""),
+        "build_timestamp": record.get(
+            "build_timestamp", int(pd.Timestamp.now(tz="UTC").timestamp())
+        ),
+        "test_type": record.get("test_type", ""),
+        "test_results": test_results,
+    }
+
+
+def map_standard(record: dict, experiment_id: str) -> dict:
+    """Map a JSON artifact record into a ``standards`` row."""
+    return {
+        "standard_id": record.get("standard_id", ""),
+        "experiment_id": experiment_id,
+        "deployment_id": record.get("deployment_id", ""),
+        "model_id": record.get("model_id", ""),
+        "name": record.get("name", ""),
+        "description": record.get("description", ""),
+        "version": record.get("version", ""),
+        "publication_date": record.get("publication_date"),
+    }
+
+
+def map_interface(record: dict, experiment_id: str) -> dict:
+    """Map a JSON artifact record into an ``interfaces`` row."""
+    return {
+        "interface_id": record.get("interface_id", ""),
+        "experiment_id": experiment_id,
+        "deployment_id": record.get("deployment_id", ""),
+        "model_id": record.get("model_id", ""),
+        "interface_type": record.get("interface_type", ""),
+        "specifications": record.get("specifications", ""),
+        "version": record.get("version", ""),
+        "documentation_link": record.get("documentation_link", ""),
+    }
+
+
+def map_decommissioning(record: dict, experiment_id: str) -> dict:
+    """Map a JSON artifact record into a ``decomissioning`` row."""
+    return {
+        "decomissioning_id": record.get("decomissioning_id", ""),
+        "experiment_id": experiment_id,
+        "deployment_id": record.get("deployment_id", ""),
+        "model_id": record.get("model_id", ""),
+        "decomissioning_date": record.get(
+            "decomissioning_date", int(pd.Timestamp.now(tz="UTC").timestamp())
+        ),
+        "decomissioning_actions": record.get("decomissioning_actions", []),
+        "reason": record.get("reason", ""),
+        "procedure_details": record.get("procedure_details", ""),
+    }
+
+
+def map_tokenizer_config(record: dict, run_id: str) -> dict:
+    """Map a JSON artifact record into a ``tokenizer_config`` row."""
+    return {
+        "tokenizer_id": record.get("tokenizer_id", ""),
+        "run_id": run_id,
+        "tokenizer_type": record.get("tokenizer_type", ""),
+        "model_name_or_path": record.get("model_name_or_path"),
+        "vocab_size": record.get("vocab_size"),
+        "max_length": record.get("max_length"),
+        "padding": (
+            str(record["padding"]) if record.get("padding") is not None else None
+        ),
+        "truncation": (
+            bool(record["truncation"]) if record.get("truncation") is not None else None
+        ),
+        "stride": record.get("stride"),
+        "special_tokens": record.get("special_tokens"),
+    }
+
+
+def map_tokenization_stats(record: dict, run_id: str) -> dict:
+    """Map a JSON artifact record into a ``tokenization_stats`` row."""
+    return {
+        "stats_id": record.get("stats_id", ""),
+        "run_id": run_id,
+        "split": record.get("split", ""),
+        "total_sequences": record.get("total_sequences"),
+        "total_tokens": record.get("total_tokens"),
+        "avg_token_length": record.get("avg_token_length"),
+        "min_token_length": record.get("min_token_length"),
+        "max_token_length": record.get("max_token_length"),
+        "truncation_rate": record.get("truncation_rate"),
+        "padding_rate": record.get("padding_rate"),
+        "oov_rate": record.get("oov_rate"),
+    }

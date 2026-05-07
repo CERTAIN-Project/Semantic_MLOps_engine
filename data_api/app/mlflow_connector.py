@@ -196,10 +196,11 @@ def get_artifacts_data(folder_name: str = "whylogs", file_extension: str = ".csv
                 # Artifacts sub folder
                 folder_path = os.path.join(run_path, f"artifacts/{folder_name}")
                 if not os.path.exists(folder_path):
-                    raise HTTPException(
-                        status_code=404,
-                        detail=f"2: Local artifacts directory not found, file {folder_path} does not exist",
+                    print(
+                        f"[WARNING] Skipping run {run_id}: "
+                        f"artifact folder '{folder_name}' not found at {folder_path}"
                     )
+                    continue
                 if len(file_extension.split(".")[0]) != 0:
                     files_list = [file_extension]
                 else:
@@ -207,6 +208,12 @@ def get_artifacts_data(folder_name: str = "whylogs", file_extension: str = ".csv
                 for file_name in files_list:
                     if file_name.endswith(file_extension):
                         file_path = os.path.join(folder_path, file_name)
+                        if not os.path.exists(file_path):
+                            print(
+                                f"[WARNING] Skipping run {run_id}: "
+                                f"artifact file '{file_name}' not found at {file_path}"
+                            )
+                            continue
                         data = None
                         if ".csv" in file_extension:
                             data = pd.read_csv(file_path)
@@ -302,3 +309,62 @@ def get_artifacts_data(folder_name: str = "whylogs", file_extension: str = ".csv
     #         return {"data": "Redirecting to remote artifacts", "status": 00000000000}
 
     return pd.DataFrame()
+
+
+def get_json_artifacts_data(folder_name: str) -> list:
+    """Collect JSON artifact records from MLflow local artifacts store.
+
+    Walks the artifacts directory tree looking for ``folder_name`` subdirectories
+    and reads every ``*.json`` file found there.  Each JSON file is expected to
+    contain a single dict (the record written by the corresponding
+    ``certain_library`` logging function).
+
+    Parameters:
+        folder_name (str): Subfolder under ``<experiment>/<run>/artifacts/`` to search.
+
+    Returns:
+        list[tuple[str, str, dict]]: A list of ``(run_id, experiment_id, record)``
+        tuples for every JSON file discovered.  Returns an empty list when the
+        folder does not exist for any run (no ``HTTPException`` is raised, unlike
+        :func:`get_artifacts_data`).
+    """
+    unwanted = {".trash", ".DS_Store"}
+    parsed_uri = urlparse(mlflow_artifacts_uri)
+    artifacts_path = parsed_uri.path if parsed_uri.path else mlflow_artifacts_uri
+
+    results: list = []
+    if not os.path.isdir(artifacts_path):
+        return results
+
+    for experiment_id in os.listdir(artifacts_path):
+        if experiment_id in unwanted:
+            continue
+        experiment_path = os.path.join(artifacts_path, experiment_id)
+        if not os.path.isdir(experiment_path):
+            continue
+        for run_id in os.listdir(experiment_path):
+            if run_id in unwanted:
+                continue
+            folder_path = os.path.join(
+                experiment_path, run_id, "artifacts", folder_name
+            )
+            if not os.path.isdir(folder_path):
+                continue
+            for file_name in os.listdir(folder_path):
+                if not file_name.endswith(".json"):
+                    continue
+                file_path = os.path.join(folder_path, file_name)
+                try:
+                    with open(file_path, "r", encoding="utf-8") as fh:
+                        record = json.load(fh)
+                    if isinstance(record, dict):
+                        results.append((run_id, experiment_id, record))
+                    elif isinstance(record, list):
+                        for item in record:
+                            if isinstance(item, dict):
+                                results.append((run_id, experiment_id, item))
+                except Exception as exc:
+                    print(
+                        f"[get_json_artifacts_data] Could not read {file_path}: {exc}"
+                    )
+    return results

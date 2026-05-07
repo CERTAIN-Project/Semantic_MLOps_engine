@@ -85,6 +85,7 @@ services:
       - MLFLOW_DB=postgresql://postgres:postgres@postgres:5432/mlflow
       - TARGET_DB=postgresql://postgres:postgres@postgres:5432/certain_db
       - MLFLOW_ARTIFACTS=/app/mlruns
+      - MLFLOW_TRACKING_URI=http://certain_mlflow:5001
       - PYTHONPATH=/app:/app/data_api
     volumes:
       - ./docker_data/mlflow_artifacts:/app/mlruns

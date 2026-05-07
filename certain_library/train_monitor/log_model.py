@@ -1,5 +1,5 @@
 import pandas as pd
-from typing import Dict, Union
+from typing import Any, Dict, Union
 
 import mlflow
 from mlflow.models import infer_signature
@@ -42,7 +42,10 @@ def log_model_info(model_information: Dict[str, str]) -> None:
 
 
 def log_model_architecture(
-    losses: list, optimizer: str, regularization: str, early_stopping: bool
+    losses: list,
+    optimizer: Union[str, Dict[str, Any]],
+    regularization: str,
+    early_stopping: bool,
 ) -> None:
     """
     Log model architecture to MLflow.
@@ -54,8 +57,22 @@ def log_model_architecture(
     ----------
     losses : list
         List of loss functions used in the model.
-    optimizer : str
-        Name of the optimizer used.
+    optimizer : str or dict
+        The optimizer used during training. Accepts two formats:
+
+        * **Simple string** — just the optimizer name::
+
+              optimizer="Adam"
+
+        * **Dict** — name plus any optimizer-specific hyperparameters::
+
+              optimizer={"name": "Adam", "lr": 0.001, "weight_decay": 1e-4}
+              optimizer={"name": "SGD", "momentum": 0.9, "nesterov": True}
+              optimizer={"name": "gbdt"}   # XGBoost / LightGBM style
+
+        The ``"name"`` key is required when a dict is provided.
+        All additional keys are logged individually as
+        ``optimizer.<key>`` MLflow parameters, making them queryable.
     regularization : str
         Type of regularization applied.
     early_stopping : bool
@@ -69,13 +86,14 @@ def log_model_architecture(
     Raises
     ------
     ValueError
-        If any input parameter is of incorrect type or has invalid values.
+        If any input parameter is of incorrect type, has invalid values, or
+        the optimizer dict is missing the ``"name"`` key.
     """
     # Validate input types
     if not isinstance(losses, list):
         raise ValueError("losses must be a list")
-    if not isinstance(optimizer, str):
-        raise ValueError("optimizer must be a string")
+    if not isinstance(optimizer, (str, dict)):
+        raise ValueError("optimizer must be a string or a dict")
     if not isinstance(regularization, str):
         raise ValueError("regularization must be a string")
     if not isinstance(early_stopping, bool):
@@ -84,13 +102,28 @@ def log_model_architecture(
     # Validate non-empty values
     if not losses:
         raise ValueError("losses list cannot be empty")
-    if not optimizer:
-        raise ValueError("optimizer cannot be empty")
     if not regularization:
         raise ValueError("regularization cannot be empty")
 
+    # Normalise optimizer → always work with a dict internally
+    if isinstance(optimizer, str):
+        if not optimizer:
+            raise ValueError("optimizer cannot be empty")
+        optimizer_dict: Dict[str, Any] = {"name": optimizer}
+    else:
+        if "name" not in optimizer:
+            raise ValueError("optimizer dict must contain a 'name' key")
+        if not optimizer["name"]:
+            raise ValueError("optimizer 'name' cannot be empty")
+        optimizer_dict = optimizer
+
     mlflow.log_param("losses", losses)
-    mlflow.log_param("optimizer", optimizer)
+    # Log the optimizer name as the primary "optimizer" param for backwards compat
+    mlflow.log_param("optimizer", optimizer_dict["name"])
+    # Log every additional optimizer hyperparameter under "optimizer.<key>"
+    for key, value in optimizer_dict.items():
+        if key != "name":
+            mlflow.log_param(f"optimizer.{key}", value)
     mlflow.log_param("regularization", regularization)
     mlflow.log_param("early_stopping", early_stopping)
 
