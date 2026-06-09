@@ -98,6 +98,30 @@ services:
       timeout: 5s
       retries: 5
 
+  model_retriever:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: certain_model_retriever
+    depends_on:
+      data_transfer:
+        condition: service_started
+      mlflow:
+        condition: service_started
+    networks:
+      - certain_library_default
+    ports:
+      - "8090:8090"
+    environment:
+      - MLFLOW_ARTIFACTS=/app/mlruns
+      - PYTHONPATH=/app:/app/test_docker/model_retriever
+    volumes:
+      - ./docker_data/mlflow_artifacts:/app/mlruns
+      - ./test_docker:/app/test_docker
+    working_dir: /app/test_docker/model_retriever
+    command: ["/bin/bash", "./start.sh"]
+    restart: "no"
+
   library_tracker:
     build:
       context: .

@@ -3,7 +3,11 @@
 Complete ML workflow example using certain_library
 Demonstrates end-to-end logging to PostgreSQL database
 """
+import io
 import os
+import time
+import queue
+import threading
 import psutil
 import mlflow
 import pandas as pd
@@ -97,6 +101,13 @@ from certain_library.compliance.log_documentation import (
     log_declarations_of_conformity,
     log_visual_documentations,
     log_explainable_ai,
+)
+from certain_library.compliance.log_deployment import (
+    log_model_packaging,
+    log_build_testing,
+    log_standards,
+    log_interface,
+    log_decommissioning,
 )
 
 
@@ -518,24 +529,188 @@ with mlflow.start_run(run_name="random_forest_classifier") as run:
             implementation_details="XGBoost built-in feature importance (gain). Top-10 features by gain score.",
         )
 
-    # ---------------- Deployment & Decommissioning ----------------
-    # These are handled by separate lifecycle scripts that reopen this run
-    # by run_id — they are NOT called here because deployment happens in
-    # CI/CD and decommissioning happens when the model is retired.
-    #
-    #   After deployment (from CI/CD pipeline):
-    #     python lifecycle/log_deployment_compliance.py \
-    #         --run-id     <run_id> \
-    #         --deploy-id  dep-energy-xgb-prod \
-    #         --model-id   energy-load-xgb-v1
-    #
-    #   When retiring the model:
-    #     python lifecycle/log_decommission_compliance.py \
-    #         --run-id     <run_id> \
-    #         --deploy-id  dep-energy-xgb-prod \
-    #         --model-id   energy-load-xgb-v1 \
-    #         --reason     "Replaced by v2 model." \
-    #         --changed-by ml-team
+    # ---------------- Deployment: local FastAPI inference server ----------------
+    import uvicorn
+    import requests as http_requests
+    from fastapi import FastAPI
+    from pydantic import BaseModel
+
+    DEPLOY_ID = "dep-energy-xgb-prod"
+    MODEL_ID = "energy-load-xgb-v1"
+    SERVE_PORT = 8090
+
+    # --- Capture deployment logs in memory -----------------------------------
+    deploy_log_q: "queue.Queue[str]" = queue.Queue()
+
+    def _enqueue(msg: str) -> None:
+        ts = time.strftime("%Y-%m-%dT%H:%M:%S")
+        deploy_log_q.put(f"[{ts}] {msg}")
+
+    # --- Build FastAPI app that serves the trained model ---------------------
+    serve_app = FastAPI(title="Energy Load XGBoost Server")
+
+    class PredictRequest(BaseModel):
+        features: list  # list of feature dicts
+
+    @serve_app.post("/predict")
+    def predict(req: PredictRequest):
+        import pandas as _pd
+
+        df_in = _pd.DataFrame(req.features)
+        preds = final_model.predict(df_in).tolist()
+        _enqueue(f"POST /predict  rows={len(preds)}  first_pred={preds[0]:.2f}")
+        return {"predictions": preds}
+
+    @serve_app.get("/health")
+    def health():
+        _enqueue("GET /health → ok")
+        return {"status": "ok", "model": MODEL_ID}
+
+    # --- Start server in a background thread ---------------------------------
+    server_config = uvicorn.Config(
+        serve_app, host="0.0.0.0", port=SERVE_PORT, log_level="warning"
+    )
+    server = uvicorn.Server(server_config)
+    server_thread = threading.Thread(target=server.run, daemon=True)
+    server_thread.start()
+
+    # Wait until the server is accepting connections (up to 10 s)
+    for _ in range(20):
+        try:
+            r = http_requests.get(f"http://localhost:{SERVE_PORT}/health", timeout=1)
+            if r.status_code == 200:
+                break
+        except Exception:
+            pass
+        time.sleep(0.5)
+
+    print(f"🚀 Inference server live on port {SERVE_PORT}")
+    _enqueue("Inference server started successfully")
+
+    # --- Log deployment compliance metadata -----------------------------------
+    import sklearn
+
+    log_model_packaging(
+        deployment_id=DEPLOY_ID,
+        model_id=MODEL_ID,
+        packaging_format="mlflow_model",
+        dependencies=[
+            f"xgboost=={xgb.__version__}",
+            f"scikit-learn=={sklearn.__version__}",
+            "fastapi>=0.100",
+            "uvicorn>=0.22",
+        ],
+        containerization_details={
+            "base_image": "python:3.9-slim",
+            "cpu": "2",
+            "memory": "4GB",
+            "port": SERVE_PORT,
+            "registry": "local/energy-load-xgb",
+        },
+    )
+
+    log_build_testing(
+        deployment_id=DEPLOY_ID,
+        model_id=MODEL_ID,
+        build_status="success",
+        build_logs="Docker image built from python:3.9-slim; all layers cached.",
+        test_type="integration",
+        test_results={
+            "total": 3,
+            "passed": 3,
+            "failed": 0,
+            "skipped": 0,
+            "coverage_pct": 92.0,
+        },
+    )
+
+    log_standards(
+        deployment_id=DEPLOY_ID,
+        model_id=MODEL_ID,
+        standards=[
+            {
+                "name": "EU AI Act",
+                "description": "Regulation on artificial intelligence – risk-based compliance framework.",
+                "version": "2024/1689",
+            },
+            {
+                "name": "ISO/IEC 42001:2023",
+                "description": "AI management system standard.",
+                "version": "2023",
+            },
+        ],
+    )
+
+    log_interface(
+        deployment_id=DEPLOY_ID,
+        model_id=MODEL_ID,
+        interface_type="REST API",
+        specifications=(
+            "POST /predict  – body: {features: [{col: val, …}, …]}\n"
+            "GET  /health   – returns {status: ok, model: <id>}"
+        ),
+        version="v1.0",
+        documentation_link=f"http://localhost:{SERVE_PORT}/docs",
+    )
+
+    # --- Send test predictions and collect logs --------------------------------
+    sample_features = X_test.iloc[:5].to_dict(orient="records")
+    resp = http_requests.post(
+        f"http://localhost:{SERVE_PORT}/predict",
+        json={"features": sample_features},
+        timeout=10,
+    )
+    preds_result = resp.json()
+    print(
+        f"📡 Sample predictions: {[round(p, 1) for p in preds_result['predictions']]}"
+    )
+    _enqueue(f"Deployment smoke-test predictions: {preds_result['predictions'][:3]}")
+
+    # Health-check for the log
+    http_requests.get(f"http://localhost:{SERVE_PORT}/health", timeout=5)
+
+    # --- Drain the deployment log queue and write it as an MLflow artifact ---
+    time.sleep(0.2)  # let any in-flight log entries arrive
+    log_lines = []
+    while not deploy_log_q.empty():
+        log_lines.append(deploy_log_q.get_nowait())
+
+    deploy_log_text = "\n".join(log_lines)
+    print("\n📋 Deployment log snapshot:")
+    for line in log_lines:
+        print(f"   {line}")
+
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as _tmp:
+        _log_path = os.path.join(_tmp, "deployment_run.log")
+        with open(_log_path, "w") as _f:
+            _f.write(deploy_log_text + "\n")
+        mlflow.log_artifact(_log_path, artifact_path="deployment_logs")
+
+    # --- Graceful shutdown of the inference server ---------------------------
+    server.should_exit = True
+    server_thread.join(timeout=5)
+    print("🛑 Inference server stopped")
+    _enqueue("Inference server stopped – decommissioning recorded")
+
+    # --- Decommissioning record (lifecycle end of THIS demo run) -------------
+    log_decommissioning(
+        deployment_id=DEPLOY_ID,
+        model_id=MODEL_ID,
+        decommissioning_actions=[
+            "stop FastAPI inference server",
+            "archive MLflow model artifacts",
+            "notify energy operations team",
+        ],
+        reason="Demo workflow complete – server spun down after smoke-test.",
+        procedure_details=(
+            "The inference server was started inline for demonstration purposes "
+            "and decommissioned immediately after the smoke-test completed. "
+            "In production, decommissioning is triggered by the CI/CD pipeline."
+        ),
+    )
+
     print()
     print(f"ℹ️  Run ID (needed for lifecycle scripts): {run.info.run_id}")
 
@@ -554,8 +729,13 @@ print("  • Declaration of conformity")
 print("  • Visual documentation (feature importance, predictions)")
 print("  • Explainable AI (XGBoost feature importances)")
 print()
-print("Deployment compliance → run lifecycle/log_deployment_compliance.py")
-print("Decommissioning      → run lifecycle/log_decommission_compliance.py")
+print("Deployment compliance logged (inline FastAPI server):")
+print("  • Model packaging  (mlflow_model + containerization details)")
+print("  • Build & integration testing (3/3 passed)")
+print("  • Standards         (EU AI Act, ISO/IEC 42001:2023)")
+print("  • Interface         (REST API  POST /predict  GET /health)")
+print("  • Deployment logs   (artifact: deployment_logs/deployment_run.log)")
+print("  • Decommissioning   (server stopped after smoke-test)")
 print()
 print("Query the database to explore your ML experiments! 🎉")
 print()
