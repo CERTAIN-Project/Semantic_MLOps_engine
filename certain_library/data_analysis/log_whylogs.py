@@ -1,5 +1,5 @@
+from certain_library.tracking.tracker import tracker
 import os
-import mlflow
 
 import pandas as pd
 import whylogs as why
@@ -68,7 +68,7 @@ def log_whylogs_profile(
         profile_df.to_csv(profile_csv_path, index=False)
 
         # Save the local .csv file to MLflow
-        mlflow.log_artifact(profile_csv_path, artifact_path="whylogs")
+        tracker.log_artifact(profile_csv_path, artifact_path="whylogs")
 
     except Exception as e:
         # If there's an error saving, still try to clean up

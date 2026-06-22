@@ -1,7 +1,7 @@
+from certain_library.tracking.tracker import tracker
 import os
 from typing import Any, List, Optional, Union
 
-import mlflow
 import numpy as np
 import pandas as pd
 from mlflow.data.pandas_dataset import from_pandas
@@ -300,6 +300,23 @@ torch.Tensor | torch.DataLoader | torch.Dataset | tf.Tensor | tf.data.Dataset
         If the dataset is empty, contains NaN values (when ``non_nan=True``),
         or ``columns`` length mismatches the data width.
     """
+    # Backwards-compatible: callers may pass (train, test, output_dir) as
+    # positional args (older API). If `name` is not a string, treat it as
+    # the test split and delegate to `log_train_test_dataset`.
+    # Backwards-compatibility: allow calling log_dataset(train, test, output_dir)
+    # If `name` is actually a dataset-like object, delegate to log_train_test_dataset
+    if isinstance(name, (pd.DataFrame, np.ndarray, list, dict)):
+        test_data = name  # type: ignore
+        # When called with two datasets, enforce NaN checks on training split
+        return log_train_test_dataset(
+            data,
+            test_data,
+            output_dir=output_dir,
+            non_nan=True,
+            save_full_dataset=save_full_dataset,
+            columns=columns,
+        )
+
     # For loaders, only pull what we need upfront to avoid a full pass
     n_rows = 0 if save_full_dataset else 10
     df = _to_dataframe(data, columns=columns, n_rows=n_rows)
@@ -314,12 +331,12 @@ torch.Tensor | torch.DataLoader | torch.Dataset | tf.Tensor | tf.data.Dataset
         raise ValueError("Input data is empty")
 
     mlflow_dataset = from_pandas(df, source="logged dataset", name=name)
-    mlflow.log_input(mlflow_dataset, context="data_analysis")
+    tracker.log_input(mlflow_dataset, context="data_analysis")
 
     data_to_save = df if save_full_dataset else df.head(10)
     csv_path = os.path.join(output_dir, f"{name}.csv")
     data_to_save.to_csv(csv_path, index=False)
-    mlflow.log_artifact(csv_path, artifact_path=output_dir)
+    tracker.log_artifact(csv_path, artifact_path=output_dir)
 
     if os.path.exists(csv_path):
         os.remove(csv_path)
@@ -381,6 +398,9 @@ torch.Tensor | torch.DataLoader | torch.Dataset | tf.Tensor | tf.data.Dataset
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
+    if train_df.empty:
+        raise ValueError("Training data is empty")
+
     if non_nan and train_df.isna().any().any():
         raise ValueError("Training data contains NaN values")
     if non_nan and test_df.isna().any().any():
@@ -395,19 +415,19 @@ torch.Tensor | torch.DataLoader | torch.Dataset | tf.Tensor | tf.data.Dataset
 
     if not train_df.empty:
         dataset = from_pandas(train_df, source="X_train split", name="X_train")
-        mlflow.log_input(dataset, context="training")
+        tracker.log_input(dataset, context="training")
 
         train_to_save = train_df if save_full_dataset else train_df.head(10)
         train_to_save.to_csv(train_csv_path, index=False)
-        mlflow.log_artifact(train_csv_path, artifact_path="dataset")
+        tracker.log_artifact(train_csv_path, artifact_path="dataset")
 
     if not test_df.empty:
         dataset_test = from_pandas(test_df, source="X_test split", name="X_test")
-        mlflow.log_input(dataset_test, context="testing")
+        tracker.log_input(dataset_test, context="testing")
 
         test_to_save = test_df if save_full_dataset else test_df.head(10)
         test_to_save.to_csv(test_csv_path, index=False)
-        mlflow.log_artifact(test_csv_path, artifact_path="dataset")
+        tracker.log_artifact(test_csv_path, artifact_path="dataset")
 
     if os.path.exists(train_csv_path):
         os.remove(train_csv_path)

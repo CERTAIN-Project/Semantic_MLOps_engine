@@ -17,6 +17,8 @@ The script reopens the existing MLflow run (no new run is created) and appends:
   • change_log artifact       → change_logs table  (records who retired the model)
 """
 
+from certain_library.tracking.tracker import tracker
+
 import argparse
 import os
 import time
@@ -76,7 +78,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
 
-    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+    tracker.set_tracking_uri(MLFLOW_TRACKING_URI)
 
     print(f"🗑️  Attaching decommissioning record to run: {args.run_id}")
     print(f"   deployment_id : {args.deploy_id}")
@@ -85,7 +87,7 @@ def main() -> None:
     print()
 
     # Reopen the existing training run — no new run is created
-    with mlflow.start_run(run_id=args.run_id):
+    with tracker.start_run(run_id=args.run_id):
 
         # ------------------------------------------------------------------ #
         # 1. Decommissioning record

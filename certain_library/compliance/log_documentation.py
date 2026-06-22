@@ -8,6 +8,8 @@ log_visual_documentations      → ``visual_documentation/``        → ``visual
 log_explainable_ai             → ``explainable_ai/``              → ``explainable_ai_features`` table
 """
 
+from certain_library.tracking.tracker import tracker
+
 import os
 import json
 import time
@@ -15,7 +17,6 @@ import tempfile
 import uuid
 from typing import List, Optional
 
-import mlflow
 
 
 def log_declarations_of_conformity(
@@ -146,7 +147,7 @@ def log_declarations_of_conformity(
             path = os.path.join(tmp_dir, fname)
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(record, f, indent=2)
-            mlflow.log_artifact(path, artifact_path="declaration_of_conformity")
+            tracker.log_artifact(path, artifact_path="declaration_of_conformity")
 
 
 def log_visual_documentations(
@@ -267,7 +268,7 @@ def log_visual_documentations(
             path = os.path.join(tmp_dir, fname)
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(record, f, indent=2)
-            mlflow.log_artifact(path, artifact_path="visual_documentation")
+            tracker.log_artifact(path, artifact_path="visual_documentation")
 
 
 def log_explainable_ai(
@@ -324,4 +325,4 @@ def log_explainable_ai(
         path = os.path.join(tmp_dir, fname)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(record, f, indent=2)
-        mlflow.log_artifact(path, artifact_path="explainable_ai")
+        tracker.log_artifact(path, artifact_path="explainable_ai")

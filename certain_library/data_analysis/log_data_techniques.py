@@ -1,8 +1,8 @@
+from certain_library.tracking.tracker import tracker
 import os
 import json
 import tempfile
 from typing import Dict
-import mlflow
 
 
 def log_data_techniques(data_techniques: Dict[str, Dict[str, str]]) -> None:
@@ -36,7 +36,7 @@ def log_data_techniques(data_techniques: Dict[str, Dict[str, str]]) -> None:
         temp_file_name = f.name
 
     # Log the JSON file as an artifact
-    mlflow.log_artifact(temp_file_name, artifact_path="data_techniques")
+    tracker.log_artifact(temp_file_name, artifact_path="data_techniques")
 
     # Clean up the temporary file
     os.remove(temp_file_name)

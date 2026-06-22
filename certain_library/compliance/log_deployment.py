@@ -15,6 +15,8 @@ log_interface        → ``interfaces/``                  → ``interfaces`` tab
 log_decommissioning  → ``decommissioning/``             → ``decomissioning`` table
 """
 
+from certain_library.tracking.tracker import tracker
+
 import os
 import json
 import time
@@ -22,7 +24,6 @@ import tempfile
 import uuid
 from typing import List, Optional
 
-import mlflow
 
 
 def log_model_packaging(
@@ -94,7 +95,7 @@ def log_model_packaging(
         path = os.path.join(tmp_dir, "model_packaging.json")
         with open(path, "w", encoding="utf-8") as f:
             json.dump(record, f, indent=2)
-        mlflow.log_artifact(path, artifact_path="model_packaging")
+        tracker.log_artifact(path, artifact_path="model_packaging")
 
 
 def log_build_testing(
@@ -165,7 +166,7 @@ def log_build_testing(
         path = os.path.join(tmp_dir, fname)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(record, f, indent=2)
-        mlflow.log_artifact(path, artifact_path="build_and_integration_testing")
+        tracker.log_artifact(path, artifact_path="build_and_integration_testing")
 
 
 def log_standards(
@@ -240,7 +241,7 @@ def log_standards(
             path = os.path.join(tmp_dir, fname)
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(record, f, indent=2)
-            mlflow.log_artifact(path, artifact_path="standards")
+            tracker.log_artifact(path, artifact_path="standards")
 
 
 def log_interface(
@@ -293,7 +294,7 @@ def log_interface(
         path = os.path.join(tmp_dir, fname)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(record, f, indent=2)
-        mlflow.log_artifact(path, artifact_path="interfaces")
+        tracker.log_artifact(path, artifact_path="interfaces")
 
 
 def log_decommissioning(
@@ -356,4 +357,4 @@ def log_decommissioning(
         path = os.path.join(tmp_dir, "decommissioning.json")
         with open(path, "w", encoding="utf-8") as f:
             json.dump(record, f, indent=2)
-        mlflow.log_artifact(path, artifact_path="decommissioning")
+        tracker.log_artifact(path, artifact_path="decommissioning")

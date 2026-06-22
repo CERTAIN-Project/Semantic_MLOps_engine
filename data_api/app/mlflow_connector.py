@@ -24,7 +24,6 @@ from mlflow.store.tracking.dbmodels import models as tracking_models
 
 from data_api.app import models as certain_db_models
 
-
 load_dotenv()
 MLFLOW_DB = os.getenv("MLFLOW_DB")
 if MLFLOW_DB is None:
@@ -48,6 +47,28 @@ def get_experiments_data():
     Returns:
         pandas.DataFrame: DataFrame containing MLflow experiments.
     """
+    # Try to construct experiments from artifacts if possible (artifact-first)
+    experiments = []
+    parsed_uri = urlparse(mlflow_artifacts_uri)
+    artifacts_root = parsed_uri.path if parsed_uri.path else mlflow_artifacts_uri
+
+    if os.path.isdir(artifacts_root):
+        # Each top-level directory under artifacts_root is an experiment id
+        for experiment_id in os.listdir(artifacts_root):
+            exp_path = os.path.join(artifacts_root, experiment_id)
+            if not os.path.isdir(exp_path):
+                continue
+            experiments.append(
+                {
+                    "experiment_id": experiment_id,
+                    "name": None,
+                }
+            )
+
+        if experiments:
+            return pd.DataFrame(experiments)
+
+    # Fallback to SQL-backed reads
     return pd.read_sql(tracking_models.SqlExperiment.__tablename__, mlflow_engine)
 
 
@@ -57,6 +78,8 @@ def get_experiment_tags_data():
     Returns:
         pandas.DataFrame: DataFrame containing experiment tags.
     """
+    # Artifact store does not currently keep experiment-level tags in a
+    # standard place; fallback to SQL.
     return pd.read_sql(tracking_models.SqlExperimentTag.__tablename__, mlflow_engine)
 
 
@@ -78,6 +101,68 @@ def get_runs_data():
     Returns:
         pandas.DataFrame: DataFrame containing runs with adjusted time fields.
     """
+    # Prefer artifact-based run metadata when available
+    parsed_uri = urlparse(mlflow_artifacts_uri)
+    artifacts_root = parsed_uri.path if parsed_uri.path else mlflow_artifacts_uri
+
+    runs = []
+    if os.path.isdir(artifacts_root):
+        for experiment_id in os.listdir(artifacts_root):
+            exp_path = os.path.join(artifacts_root, experiment_id)
+            if not os.path.isdir(exp_path):
+                continue
+            for run_id in os.listdir(exp_path):
+                run_path = os.path.join(exp_path, run_id)
+                if not os.path.isdir(run_path):
+                    continue
+                metadata_path = os.path.join(
+                    run_path, "artifacts", "metadata", "run_metadata.json"
+                )
+                if os.path.exists(metadata_path):
+                    try:
+                        with open(metadata_path, "r", encoding="utf-8") as fh:
+                            data = json.load(fh)
+                        runs.append(data)
+                    except Exception:
+                        continue
+
+    if runs:
+        df = pd.DataFrame(runs)
+
+        # Normalize artifact fields to match SQL-backed schema expected by
+        # downstream mappers (they expect 'run_uuid', 'name', etc.).
+        if "run_id" in df.columns:
+            df = df.rename(columns={"run_id": "run_uuid"})
+        if "run_name" in df.columns and "name" not in df.columns:
+            df = df.rename(columns={"run_name": "name"})
+
+        # Ensure commonly expected columns exist with safe defaults
+        expected = [
+            "run_uuid",
+            "name",
+            "source_type",
+            "source_name",
+            "user_id",
+            "status",
+            "start_time",
+            "end_time",
+            "source_version",
+            "experiment_id",
+        ]
+        for col in expected:
+            if col not in df.columns:
+                df[col] = None
+
+        # Coerce time columns to integers (ms) and fill missing values
+        for col in ("start_time", "end_time"):
+            try:
+                df[col] = df[col].fillna(0).astype(int)
+            except Exception:
+                df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
+
+        return df
+
+    # Fallback to SQL-backed reads
     runs_df = pd.read_sql(tracking_models.SqlRun.__tablename__, mlflow_engine)
     # Ensure start_time and end_time are within BIGINT range
     runs_df["start_time"] = runs_df["start_time"].apply(
@@ -95,6 +180,60 @@ def get_metrics_data():
     Returns:
         pandas.DataFrame: DataFrame containing metric records.
     """
+    # Metrics are best reconstructed from events.jsonl if present
+    parsed_uri = urlparse(mlflow_artifacts_uri)
+    artifacts_root = parsed_uri.path if parsed_uri.path else mlflow_artifacts_uri
+
+    metrics = []
+    if os.path.isdir(artifacts_root):
+        for exp in os.listdir(artifacts_root):
+            exp_path = os.path.join(artifacts_root, exp)
+            if not os.path.isdir(exp_path):
+                continue
+            for run in os.listdir(exp_path):
+                events_path = os.path.join(
+                    exp_path, run, "artifacts", "metadata", "events.jsonl"
+                )
+                if not os.path.exists(events_path):
+                    continue
+                try:
+                    with open(events_path, "r", encoding="utf-8") as fh:
+                        for line in fh:
+                            try:
+                                ev = json.loads(line)
+                            except Exception:
+                                continue
+                            if ev.get("event_type") == "metric":
+                                metrics.append(ev)
+                except Exception:
+                    continue
+
+    if metrics:
+        df = pd.DataFrame(metrics)
+
+        # Standardize field names
+        if "run_id" in df.columns:
+            df = df.rename(columns={"run_id": "run_uuid"})
+
+        if "is_NaN" in df.columns and "is_nan" not in df.columns:
+            df = df.rename(columns={"is_NaN": "is_nan"})
+
+        for col in ("run_uuid", "key", "value", "step", "timestamp", "is_nan"):
+            if col not in df.columns:
+                df[col] = None
+
+        if "timestamp" in df.columns:
+            try:
+                df["timestamp"] = df["timestamp"].fillna(0).astype(int)
+            except Exception:
+                df["timestamp"] = (
+                    pd.to_numeric(df["timestamp"], errors="coerce")
+                    .fillna(0)
+                    .astype(int)
+                )
+
+        return df
+
     return pd.read_sql(tracking_models.SqlMetric.__tablename__, mlflow_engine)
 
 
@@ -113,6 +252,46 @@ def get_params_data():
     Returns:
         pandas.DataFrame: DataFrame containing parameter records.
     """
+    # Reconstruct params from artifact events when available
+    parsed_uri = urlparse(mlflow_artifacts_uri)
+    artifacts_root = parsed_uri.path if parsed_uri.path else mlflow_artifacts_uri
+
+    params = []
+    if os.path.isdir(artifacts_root):
+        for exp in os.listdir(artifacts_root):
+            exp_path = os.path.join(artifacts_root, exp)
+            if not os.path.isdir(exp_path):
+                continue
+            for run in os.listdir(exp_path):
+                events_path = os.path.join(
+                    exp_path, run, "artifacts", "metadata", "events.jsonl"
+                )
+                if not os.path.exists(events_path):
+                    continue
+                try:
+                    with open(events_path, "r", encoding="utf-8") as fh:
+                        for line in fh:
+                            try:
+                                ev = json.loads(line)
+                            except Exception:
+                                continue
+                            if ev.get("event_type") == "param":
+                                params.append(ev)
+                except Exception:
+                    continue
+
+    if params:
+        df = pd.DataFrame(params)
+
+        if "run_id" in df.columns:
+            df = df.rename(columns={"run_id": "run_uuid"})
+
+        for col in ("run_uuid", "key", "value"):
+            if col not in df.columns:
+                df[col] = None
+
+        return df
+
     return pd.read_sql(tracking_models.SqlParam.__tablename__, mlflow_engine)
 
 
@@ -122,6 +301,46 @@ def get_tags_data():
     Returns:
         pandas.DataFrame: DataFrame containing run tags.
     """
+    # Reconstruct tags from artifact events when available
+    parsed_uri = urlparse(mlflow_artifacts_uri)
+    artifacts_root = parsed_uri.path if parsed_uri.path else mlflow_artifacts_uri
+
+    tags = []
+    if os.path.isdir(artifacts_root):
+        for exp in os.listdir(artifacts_root):
+            exp_path = os.path.join(artifacts_root, exp)
+            if not os.path.isdir(exp_path):
+                continue
+            for run in os.listdir(exp_path):
+                events_path = os.path.join(
+                    exp_path, run, "artifacts", "metadata", "events.jsonl"
+                )
+                if not os.path.exists(events_path):
+                    continue
+                try:
+                    with open(events_path, "r", encoding="utf-8") as fh:
+                        for line in fh:
+                            try:
+                                ev = json.loads(line)
+                            except Exception:
+                                continue
+                            if ev.get("event_type") == "tag":
+                                tags.append(ev)
+                except Exception:
+                    continue
+
+    if tags:
+        df = pd.DataFrame(tags)
+
+        if "run_id" in df.columns:
+            df = df.rename(columns={"run_id": "run_uuid"})
+
+        for col in ("run_uuid", "key", "value"):
+            if col not in df.columns:
+                df[col] = None
+
+        return df
+
     return pd.read_sql(tracking_models.SqlTag.__tablename__, mlflow_engine)
 
 

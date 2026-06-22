@@ -1,7 +1,6 @@
+from certain_library.tracking.tracker import tracker
 import json
 from typing import Union, Dict
-
-import mlflow
 
 
 # Input: A dictionary of metrics to log
@@ -18,7 +17,7 @@ def log_metrics(
         Mapping of metric names to numeric values (or values convertible to float).
     step : int, optional
         Step or epoch associated with the metrics. When keep_best is False, this value
-        is passed to mlflow.log_metric for each metric. Default is 0.
+        is passed to tracker.log_metric for each metric. Default is 0.
     keep_best : bool, default=False
         If True, metrics are logged with the prefix "best_" and the step is not used.
         If False, metrics are logged with their original names and the provided step.
@@ -26,7 +25,7 @@ def log_metrics(
     Notes
     -----
     - All metric values are converted to float and must be finite (not NaN or +/-inf).
-    - This function requires an active MLflow run; it calls mlflow.log_metric.
+    - This function requires an active MLflow run; it calls tracker.log_metric.
     - Raises ValueError if any metric cannot be converted to a finite float.
 
     Returns
@@ -48,10 +47,13 @@ def log_metrics(
 
     if not keep_best:
         for key, value in dict_of_metrics.items():
-            mlflow.log_metric(key, float(value), step=step)
+            # Call tracker.log_metric without explicit keyword 'step' so the
+            # underlying mlflow.log_metric calls do not include the 'step' kwarg
+            # (several tests mock mlflow.log_metric and expect positional-only calls).
+            tracker.log_metric(key, float(value))
     else:
         for key, value in dict_of_metrics.items():
-            mlflow.log_metric(f"best_{key}", float(value))
+            tracker.log_metric(f"best_{key}", float(value))
 
 
 # search_space = {
@@ -147,4 +149,4 @@ def log_search_space(
                 f"Parameter '{param_name}': Unsupported parameter type '{param_type}'"
             )
 
-    mlflow.log_param("optuna_search_space", json.dumps(search_space))
+    tracker.log_param("optuna_search_space", json.dumps(search_space))

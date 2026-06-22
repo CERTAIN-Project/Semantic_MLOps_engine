@@ -1,7 +1,7 @@
+from certain_library.tracking.tracker import tracker
 import pandas as pd
 from typing import Any, Dict, Union
 
-import mlflow
 from mlflow.models import infer_signature
 
 
@@ -38,7 +38,7 @@ def log_model_info(model_information: Dict[str, str]) -> None:
             raise ValueError(f"Value for key '{key}' must be a string")
 
     for key, value in model_information.items():
-        mlflow.log_param(key, value)
+        tracker.log_param(key, value)
 
 
 def log_model_architecture(
@@ -117,15 +117,15 @@ def log_model_architecture(
             raise ValueError("optimizer 'name' cannot be empty")
         optimizer_dict = optimizer
 
-    mlflow.log_param("losses", losses)
+    tracker.log_param("losses", losses)
     # Log the optimizer name as the primary "optimizer" param for backwards compat
-    mlflow.log_param("optimizer", optimizer_dict["name"])
+    tracker.log_param("optimizer", optimizer_dict["name"])
     # Log every additional optimizer hyperparameter under "optimizer.<key>"
     for key, value in optimizer_dict.items():
         if key != "name":
-            mlflow.log_param(f"optimizer.{key}", value)
-    mlflow.log_param("regularization", regularization)
-    mlflow.log_param("early_stopping", early_stopping)
+            tracker.log_param(f"optimizer.{key}", value)
+    tracker.log_param("regularization", regularization)
+    tracker.log_param("early_stopping", early_stopping)
 
 
 # Input: A dictionary of hyperparameters to log
@@ -166,14 +166,19 @@ def log_model_hyperparameters(
 
     if not keep_best:
         for key, value in dict_of_hyperparameters.items():
-            mlflow.log_param(key, value)
+            tracker.log_param(key, value)
     else:
         for key, value in dict_of_hyperparameters.items():
-            mlflow.log_param(f"best_{key}", value)
+            tracker.log_param(f"best_{key}", value)
 
 
 # model should be generic since the type can vary based on the framework used
-def log_model_signature(model, train_data: pd.DataFrame, y_train: pd.Series) -> None:
+from typing import Optional
+
+
+def log_model_signature(
+    model, train_data: pd.DataFrame, y_train: Optional[pd.Series] = None
+) -> None:
     """
     Log the model architecture to MLflow.
 
@@ -230,14 +235,14 @@ def log_model_signature(model, train_data: pd.DataFrame, y_train: pd.Series) -> 
     signature = infer_signature(train_data, predictions)
 
     # Log the model with input example and signature
-    mlflow.xgboost.log_model(
-        xgb_model=model,
+    tracker.log_xgboost_model(
+        model,
         artifact_path="model",  # This creates a separate "model" folder
         input_example=input_example,
         signature=signature,
     )
 
     # Log the model signature as a parameter for tracking
-    mlflow.log_param("model_signature", str(signature))
-    mlflow.log_param("input_shape", str(train_data.shape))
-    mlflow.log_param("n_features", len(train_data.columns))
+    tracker.log_param("model_signature", str(signature))
+    tracker.log_param("input_shape", str(train_data.shape))
+    tracker.log_param("n_features", len(train_data.columns))

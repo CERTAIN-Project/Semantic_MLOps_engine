@@ -27,6 +27,7 @@ from typing import Any, Optional
 import mlflow.pyfunc
 import pandas as pd
 from fastapi import FastAPI, HTTPException
+from certain_library.tracking.manifest import recover_unfinished_runs
 from pydantic import BaseModel
 
 # ---------------------------------------------------------------------------
@@ -231,6 +232,8 @@ def watch_for_model(poll_interval: float = 3.0, timeout: float = 3600.0) -> None
 
 @app.on_event("startup")
 def startup_event():
+    recovery = recover_unfinished_runs()
+    logger.info("[model_retriever] Mirror recovery result: %s", recovery)
     t = threading.Thread(target=watch_for_model, daemon=True)
     t.start()
     logger.info("[model_retriever] Watcher thread started.")

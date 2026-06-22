@@ -1,9 +1,9 @@
+from certain_library.tracking.tracker import tracker
 import os
 import tempfile
 import time
 from typing import Any
 
-import mlflow
 import pandas as pd
 
 
@@ -132,4 +132,4 @@ def log_weight_distribution(
     with tempfile.TemporaryDirectory() as tmp_dir:
         csv_path = os.path.join(tmp_dir, f"weights_{stage}.csv")
         df.to_csv(csv_path, index=False)
-        mlflow.log_artifact(csv_path, artifact_path="weight_distribution")
+        tracker.log_artifact(csv_path, artifact_path="weight_distribution")

@@ -3,6 +3,8 @@
 Complete ML workflow example using certain_library
 Demonstrates end-to-end logging to PostgreSQL database
 """
+
+from certain_library.tracking.tracker import tracker
 import io
 import os
 import time
@@ -153,12 +155,12 @@ print()
 
 # Set up experiment
 experiment_name = "complete_ml_workflow_demo"
-mlflow.set_experiment(experiment_name)
+tracker.set_experiment(experiment_name)
 print(f"📊 Experiment: {experiment_name}")
 print()
 
 # Start MLflow run
-with mlflow.start_run(run_name="random_forest_classifier") as run:
+with tracker.start_run(run_name="random_forest_classifier") as run:
     print(f"🏃 Run Started: {run.info.run_id}")
     print()
 
@@ -378,7 +380,7 @@ with mlflow.start_run(run_name="random_forest_classifier") as run:
     best_trial = study.best_trial
 
     for trial in study.trials:
-        with mlflow.start_run(nested=True, run_name=f"Trial_{trial.number}"):
+        with tracker.start_run(nested=True, run_name=f"Trial_{trial.number}"):
             log_param("trial_number", trial.number)
             log_param("n_estimators", trial.params["n_estimators"])
             log_param("max_depth", trial.params["max_depth"])
@@ -686,7 +688,7 @@ with mlflow.start_run(run_name="random_forest_classifier") as run:
         _log_path = os.path.join(_tmp, "deployment_run.log")
         with open(_log_path, "w") as _f:
             _f.write(deploy_log_text + "\n")
-        mlflow.log_artifact(_log_path, artifact_path="deployment_logs")
+        tracker.log_artifact(_log_path, artifact_path="deployment_logs")
 
     # --- Graceful shutdown of the inference server ---------------------------
     server.should_exit = True

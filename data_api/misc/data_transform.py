@@ -552,15 +552,12 @@ def map_ai_actors(record: dict, experiment_id: str) -> dict:
     """Map a JSON artifact record into an ``ai_actors`` row."""
     providers = record.get("ai_providers", [])
     deployers = record.get("ai_deployers", [])
+    # Return lists in the mapped row (tests expect raw lists, not JSON strings)
     return {
         "ai_actors_id": record.get("ai_actors_id", ""),
         "experiment_id": experiment_id,
-        "ai_provider": (
-            json.dumps(providers) if isinstance(providers, list) else str(providers)
-        ),
-        "ai_deployer": (
-            json.dumps(deployers) if isinstance(deployers, list) else str(deployers)
-        ),
+        "ai_providers": providers if isinstance(providers, list) else [providers],
+        "ai_deployers": deployers if isinstance(deployers, list) else [deployers],
         "auditor": record.get("auditor", ""),
         "organization": record.get("organization", ""),
     }
@@ -571,19 +568,17 @@ def map_labeling_procedures(record: dict, experiment_id: str) -> dict:
     qa_methods = record.get("quality_assurance_methods", [])
     annotators = record.get("annotators", [])
     annotation_tool = record.get("annotation_tool", "")
+    # Tests expect raw lists/strings for these fields
     return {
         "labeling_id": record.get("labeling_id", ""),
         "experiment_id": experiment_id,
-        "procedure_description": record.get("description", ""),
+        "description": record.get("description", ""),
         "quality_assurance_methods": (
-            json.dumps(qa_methods) if isinstance(qa_methods, list) else str(qa_methods)
+            qa_methods if isinstance(qa_methods, list) else [qa_methods]
         ),
-        "annotator_details": (
-            json.dumps(annotators) if isinstance(annotators, list) else str(annotators)
-        ),
-        "annotation_tools": (
-            [annotation_tool] if isinstance(annotation_tool, str) else annotation_tool
-        ),
+        "annotators": annotators if isinstance(annotators, list) else [annotators],
+        "annotation_tool": annotation_tool,
+        "link": record.get("link", ""),
     }
 
 
@@ -644,6 +639,11 @@ def map_declaration_of_conformity(record: dict, run_id: str) -> dict:
         "mime_type": record.get("mime_type", ""),
         "file_size": record.get("file_size"),
         "description": record.get("description", ""),
+        "issuer": record.get("issuer", ""),
+        "version": record.get("version", ""),
+        "valid_from": record.get("valid_from"),
+        "valid_until": record.get("valid_until"),
+        "standard_references": record.get("standard_references", []),
         "creation_time": record.get(
             "creation_time", int(pd.Timestamp.now(tz="UTC").timestamp())
         ),
@@ -660,6 +660,9 @@ def map_visual_documentation(record: dict, run_id: str) -> dict:
         "file_type": record.get("file_type", ""),
         "file_size": record.get("file_size"),
         "description": record.get("description", ""),
+        "stage": record.get("stage", ""),
+        "generated_by": record.get("generated_by", ""),
+        "model_version": record.get("model_version", ""),
         "tags": record.get("tags", []),
         "creation_time": record.get(
             "creation_time", int(pd.Timestamp.now(tz="UTC").timestamp())

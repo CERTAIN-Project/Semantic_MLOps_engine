@@ -1,5 +1,5 @@
+from certain_library.tracking.tracker import tracker
 import os
-import mlflow
 
 import pandas as pd
 
@@ -64,13 +64,13 @@ def timestamp_analysis(
     # Ensure output directory exists
     os.makedirs(output_dir, exist_ok=True)
 
-    mlflow.log_param("train_min_timestamp", str(train_timestamps.min()))
-    mlflow.log_param("train_max_timestamp", str(train_timestamps.max()))
-    mlflow.log_param("train_mean_timestamp", str(train_timestamps.mean()))
+    tracker.log_param("train_min_timestamp", str(train_timestamps.min()))
+    tracker.log_param("train_max_timestamp", str(train_timestamps.max()))
+    tracker.log_param("train_mean_timestamp", str(train_timestamps.mean()))
 
-    mlflow.log_param("test_min_timestamp", str(test_timestamps.min()))
-    mlflow.log_param("test_max_timestamp", str(test_timestamps.max()))
-    mlflow.log_param("test_mean_timestamp", str(test_timestamps.mean()))
+    tracker.log_param("test_min_timestamp", str(test_timestamps.min()))
+    tracker.log_param("test_max_timestamp", str(test_timestamps.max()))
+    tracker.log_param("test_mean_timestamp", str(test_timestamps.mean()))
 
     all_timestamps_file = os.path.join(output_dir, "all_timestamps.txt")
     with open(all_timestamps_file, "w", encoding="utf-8") as f:
@@ -81,7 +81,7 @@ def timestamp_analysis(
         for ts in test_timestamps:
             f.write(f"{str(ts)}\n")
 
-    mlflow.log_artifact(all_timestamps_file, artifact_path="timestamps")
+    tracker.log_artifact(all_timestamps_file, artifact_path="timestamps")
 
     # Remove the local file after logging
     if os.path.exists(all_timestamps_file):

@@ -1,9 +1,9 @@
+from certain_library.tracking.tracker import tracker
 import os
 import tempfile
 import time
 from typing import List, Any
 
-import mlflow
 import pandas as pd
 
 
@@ -68,4 +68,4 @@ def log_examples(
     with tempfile.TemporaryDirectory() as tmp_dir:
         csv_path = os.path.join(tmp_dir, f"examples_{stage}.csv")
         df.to_csv(csv_path, index=False)
-        mlflow.log_artifact(csv_path, artifact_path="examples")
+        tracker.log_artifact(csv_path, artifact_path="examples")

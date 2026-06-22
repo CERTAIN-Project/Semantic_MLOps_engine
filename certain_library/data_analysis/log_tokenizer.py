@@ -1,12 +1,13 @@
 """Utilities for logging LLM tokenizer configuration and tokenization statistics."""
 
+from certain_library.tracking.tracker import tracker
+
 import json
 import os
 import tempfile
 import uuid
 from typing import Any, Dict, List, Optional, Union
 
-import mlflow
 
 # ---------------------------------------------------------------------------
 # Allowed keys for each artifact type
@@ -106,7 +107,7 @@ def log_tokenizer_config(
         )
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(record, f, indent=2)
-        mlflow.log_artifact(file_path, artifact_path="tokenizer_config")
+        tracker.log_artifact(file_path, artifact_path="tokenizer_config")
 
 
 def log_tokenization_stats(stats: List[dict]) -> None:
@@ -156,4 +157,4 @@ def log_tokenization_stats(stats: List[dict]) -> None:
             file_path = os.path.join(tmp_dir, f"tokenization_stats_{split_label}.json")
             with open(file_path, "w", encoding="utf-8") as f:
                 json.dump(record, f, indent=2)
-            mlflow.log_artifact(file_path, artifact_path="tokenization_stats")
+            tracker.log_artifact(file_path, artifact_path="tokenization_stats")

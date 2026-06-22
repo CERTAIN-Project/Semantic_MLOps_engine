@@ -35,6 +35,8 @@ Set USE_DUMMY_DATA = True (default) for fully offline execution.
 Set USE_DUMMY_DATA = False to download the real OPSD dataset.
 """
 
+from certain_library.tracking.tracker import tracker
+
 import os
 import time
 import psutil
@@ -392,7 +394,7 @@ def phase_training(mlflow_run) -> tuple:
     best_trial = study.best_trial
 
     for trial in study.trials:
-        with mlflow.start_run(nested=True, run_name=f"Trial_{trial.number}"):
+        with tracker.start_run(nested=True, run_name=f"Trial_{trial.number}"):
             log_param("trial_number", trial.number)
             log_param("n_estimators", trial.params["n_estimators"])
             log_param("max_depth", trial.params["max_depth"])
@@ -538,7 +540,7 @@ def phase_deployment(run_id: str, xgb_version: str) -> str:
     model_id = "energy-load-xgb-v1"
 
     # Reopen the existing run — no new run is created
-    with mlflow.start_run(run_id=run_id):
+    with tracker.start_run(run_id=run_id):
 
         log_model_packaging(
             deployment_id=deployment_id,
@@ -628,7 +630,7 @@ def phase_decommissioning(run_id: str, deployment_id: str) -> None:
     """
     model_id = "energy-load-xgb-v1"
 
-    with mlflow.start_run(run_id=run_id):
+    with tracker.start_run(run_id=run_id):
 
         log_decommissioning(
             deployment_id=deployment_id,
@@ -669,8 +671,8 @@ def phase_decommissioning(run_id: str, deployment_id: str) -> None:
 #  MAIN
 # ===========================================================================
 def main() -> None:
-    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
-    mlflow.set_experiment(EXPERIMENT_NAME)
+    tracker.set_tracking_uri(MLFLOW_TRACKING_URI)
+    tracker.set_experiment(EXPERIMENT_NAME)
 
     _sep = "=" * 70
 
@@ -681,7 +683,7 @@ def main() -> None:
     print("PHASE 1 — TRAINING")
     print(_sep)
 
-    with mlflow.start_run(run_name="energy_xgb_v1_training") as run:
+    with tracker.start_run(run_name="energy_xgb_v1_training") as run:
         final_model, X_train, y_train, best_params, xgb_version, run_id = (
             phase_training(run)
         )

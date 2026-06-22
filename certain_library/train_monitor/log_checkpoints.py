@@ -1,16 +1,18 @@
+from certain_library.tracking.tracker import tracker
 import os
 import tempfile
 import uuid
 import time
 
-import mlflow
+from typing import Optional
+
 import pandas as pd
 
 
 def log_checkpoint(
     checkpoint_name: str,
     checkpoint_location: str,
-    checkpoint_id: str | None = None,
+    checkpoint_id: Optional[str] = None,
 ) -> None:
     """
     Log a model checkpoint record to MLflow as a CSV artifact.
@@ -53,4 +55,4 @@ def log_checkpoint(
     with tempfile.TemporaryDirectory() as tmp_dir:
         csv_path = os.path.join(tmp_dir, f"checkpoint_{checkpoint_name}.csv")
         record.to_csv(csv_path, index=False)
-        mlflow.log_artifact(csv_path, artifact_path="checkpoints")
+        tracker.log_artifact(csv_path, artifact_path="checkpoints")

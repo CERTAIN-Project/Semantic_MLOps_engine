@@ -3,6 +3,8 @@
 Test script to verify certain_library logs data to MLflow PostgreSQL database
 """
 
+from certain_library.tracking.tracker import tracker
+
 import mlflow
 import pandas as pd
 from certain_library.train_monitor.log_metrics import log_metrics
@@ -28,21 +30,21 @@ try:
     experiment = mlflow.get_experiment_by_name(experiment_name)
     if experiment is None:
         # Create with custom artifact location
-        experiment_id = mlflow.create_experiment(
+        experiment_id = tracker.create_experiment(
             experiment_name, artifact_location=artifact_location
         )
         experiment = mlflow.get_experiment(experiment_id)
         print(f"   Created experiment with artifact location: {artifact_location}")
-    mlflow.set_experiment(experiment_name)
+    tracker.set_experiment(experiment_name)
 except Exception as e:
     print(f"   Warning: {e}")
-    mlflow.set_experiment(experiment_name)
+    tracker.set_experiment(experiment_name)
 
 print(f"2. Created/Set Experiment: {experiment_name}")
 print()
 
 # Start a run
-with mlflow.start_run(run_name="library_test_run") as run:
+with tracker.start_run(run_name="library_test_run") as run:
     print("3. Started MLflow Run")
     print(f"   Run ID: {run.info.run_id}")
     print()

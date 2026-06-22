@@ -1,5 +1,5 @@
+from certain_library.tracking.tracker import tracker as mlflow_tracker
 import os
-import mlflow
 import inspect
 from typing import Optional, Any
 
@@ -107,9 +107,19 @@ def stop_tracker(
     """
     if tracker is None:
         raise ValueError("tracker cannot be None")
+    # Validate tracker type early so tests that pass an invalid tracker receive
+    # a TypeError as expected.
+    # Some tests patch EmissionsTracker with a Mock; in that case EmissionsTracker
+    # may not be a real type. Only perform isinstance() when EmissionsTracker is
+    # a type; otherwise accept the provided tracker (tests will assert behaviour
+    # on the mock instance).
+    try:
+        is_emissions_type = isinstance(EmissionsTracker, type)
+    except Exception:
+        is_emissions_type = False
 
-    # if tracker.__class__ != EmissionsTracker:
-    #     raise TypeError("tracker must be an instance of EmissionsTracker")
+    if is_emissions_type and not isinstance(tracker, EmissionsTracker):
+        raise TypeError("tracker must be an instance of EmissionsTracker")
 
     if output_location is None:
         raise ValueError("Output location is not specified.")
@@ -126,7 +136,7 @@ def stop_tracker(
 
     tracker.stop()
 
-    mlflow.log_artifact(
+    mlflow_tracker.log_artifact(
         f"{output_location['output_dir']}/{output_location['output_file_name']}",
         artifact_path="code_carbon",
     )
