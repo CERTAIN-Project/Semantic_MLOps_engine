@@ -30,3 +30,5 @@ platformdirs==3.11.0
 backoff==2.2.1
 typing-extensions==4.13.0
 whylabs-client==0.6.16
+torch
+tabulate

@@ -3,6 +3,7 @@ import io
 import sys
 import time
 import json
+import inspect
 import pandas as pd
 from fastapi import FastAPI
 from app.mlflow_connector import (
@@ -569,7 +570,25 @@ def _sync_json_deployment_table(
     rows = []
     for run_id, experiment_id, record in records:
         if run_id in run_ids:
-            rows.append(map_fn(record, experiment_id, id_mapping))
+            sig = inspect.signature(map_fn)
+            required_positional = [
+                p
+                for p in sig.parameters.values()
+                if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+                and p.default is inspect._empty
+            ]
+
+            if len(required_positional) >= 3:
+                # e.g. map_model_packaging(record, experiment_id, id_mapping)
+                mapped = map_fn(record, experiment_id, id_mapping)
+            elif len(required_positional) == 2:
+                # e.g. map_build_testing(record, experiment_id)
+                mapped = map_fn(record, experiment_id)
+            elif len(required_positional) == 1:
+                mapped = map_fn(record)
+            else:
+                mapped = map_fn()
+            rows.append(mapped)
     if not rows:
         return {"rows_synced": 0, "status": f"no matching {folder_name} rows"}
     insert_dataframe(pd.DataFrame(rows), table_name)
@@ -690,6 +709,68 @@ def sync_decommissioning(run_ids: list, id_mapping: dict):
     )
 
 
+def sync_model_deployed(run_ids: list, id_mapping: dict):
+    """Ensure parent rows exist in `model_deployed` before inserting deployment-scoped rows.
+
+    This scans deployment-scoped JSON artifact folders for records that contain
+    `deployment_id` and `model_id` and upserts a minimal `model_deployed` row for
+    each unique (experiment_id, deployment_id, model_id) triple found for the
+    provided run_ids. The goal is to avoid FK violations when inserting dependent
+    tables such as `model_packaging`.
+    """
+    folders = [
+        "model_packaging",
+        "build_and_integration_testing",
+        "standards",
+        "interfaces",
+        "decommissioning",
+    ]
+
+    seen = set()
+    rows = []
+    for folder in folders:
+        records = get_json_artifacts_data(folder_name=folder)
+        if not records:
+            continue
+        for run_id, experiment_id, record in records:
+            if run_id not in run_ids:
+                continue
+
+            deployment_id = record.get("deployment_id") or id_mapping.get(
+                run_id, {}
+            ).get("deployment_id")
+            model_id = record.get("model_id") or id_mapping.get(run_id, {}).get(
+                "model_id"
+            )
+
+            if not deployment_id or not model_id:
+                # Skip incomplete records
+                continue
+
+            key = (experiment_id, deployment_id, model_id)
+            if key in seen:
+                continue
+            seen.add(key)
+
+            rows.append(
+                {
+                    "experiment_id": experiment_id,
+                    "deployment_id": deployment_id,
+                    "model_id": model_id,
+                    # minimal required fields; other columns can be NULL
+                    "deployed_time": int(pd.Timestamp.now(tz="UTC").timestamp()),
+                    "run_id": run_id,
+                }
+            )
+
+    if not rows:
+        return {"rows_synced": 0, "status": "no deployment parent rows found"}
+
+    mapped_df = pd.DataFrame(rows)
+    insert_dataframe(mapped_df, "model_deployed")
+    return {"rows_synced": len(rows), "status": "success"}
+
+
 def sync_id_mapping(run_ids: list):
     from sqlalchemy import MetaData, Table, select
     from app.target_connector import target_engine
@@ -783,6 +864,9 @@ def sync_all():
         sync_declaration_of_conformity(run_ids)
         sync_visual_documentation(run_ids)
         sync_explainable_ai(run_ids)
+
+        # Ensure model_deployed parent rows exist before deployment-level tables
+        sync_model_deployed(run_ids, id_mapping)
 
         # Compliance tables (deployment-level)
         sync_model_packaging(run_ids, id_mapping)
