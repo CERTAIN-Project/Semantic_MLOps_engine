@@ -25,7 +25,6 @@ import uuid
 from typing import List, Optional
 
 
-
 def log_model_packaging(
     deployment_id: str,
     model_id: str,
@@ -151,6 +150,13 @@ def log_build_testing(
     """
     if not isinstance(test_results, dict):
         raise ValueError("test_results must be a dict")
+    # Normalize and require deployment and model identifiers. If missing,
+    # don't write the artifact — build/test artifacts should be emitted at
+    # deployment time when those identifiers are known.
+    if not deployment_id or not model_id:
+        # no deployment context -> no artifact written
+        return
+
     record = {
         "test_id": test_id or str(uuid.uuid4()),
         "deployment_id": deployment_id,
@@ -162,10 +168,33 @@ def log_build_testing(
         "test_results": test_results,
     }
     with tempfile.TemporaryDirectory() as tmp_dir:
-        fname = f"build_test_{record['test_id']}.json"
+        fname = f"build_test.json"
         path = os.path.join(tmp_dir, fname)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(record, f, indent=2)
+        # When run under an active MLflow run, include the run_id so the
+        # data_api sync can resolve deployment/model ids from id_mapping if
+        # necessary. The tracker will attach the artifact to the active run.
+        try:
+            import mlflow
+
+            arun = mlflow.active_run()
+            if arun is not None:
+                # read-modify-write the JSON to include run_id
+                try:
+                    with open(path, "r+", encoding="utf-8") as fh:
+                        data = json.load(fh)
+                        data.setdefault("run_id", arun.info.run_id)
+                        fh.seek(0)
+                        json.dump(data, fh, indent=2)
+                        fh.truncate()
+                except Exception:
+                    # if file ops fail, ignore and proceed to log artifact
+                    pass
+        except Exception:
+            # mlflow not available — continue and write artifact without run_id
+            pass
+
         tracker.log_artifact(path, artifact_path="build_and_integration_testing")
 
 
@@ -217,6 +246,11 @@ def log_standards(
     -------
     None
     """
+    # Only log standards when tied to a deployment/model. If deployment
+    # identifiers are missing, do not persist deployment-scoped standards.
+    if not deployment_id or not model_id:
+        return
+
     if not isinstance(standards, list) or not standards:
         raise ValueError("standards must be a non-empty list of dicts")
     for i, s in enumerate(standards):
@@ -224,6 +258,11 @@ def log_standards(
             raise ValueError(
                 f"standards[{i}] must be a dict with at least a 'name' key"
             )
+
+    # Require deployment and model identifiers — only emit standards when
+    # tied to a deployment.
+    if not deployment_id or not model_id:
+        return
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         for s in standards:
@@ -237,10 +276,23 @@ def log_standards(
                 "version": s.get("version") or "",
                 "publication_date": s.get("publication_date"),
             }
-            fname = f"standard_{standard_id}.json"
+            fname = f"standard.json"
             path = os.path.join(tmp_dir, fname)
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(record, f, indent=2)
+            try:
+                import mlflow
+
+                run = mlflow.active_run()
+                if run is not None:
+                    # annotate artifact with run_id for downstream mapping
+                    with open(path, "r", encoding="utf-8") as fh:
+                        payload = json.load(fh)
+                    payload.setdefault("run_id", run.info.run_id)
+                    with open(path, "w", encoding="utf-8") as fh:
+                        json.dump(payload, fh, indent=2)
+            except Exception:
+                pass
             tracker.log_artifact(path, artifact_path="standards")
 
 
@@ -290,7 +342,7 @@ def log_interface(
         "documentation_link": documentation_link or "",
     }
     with tempfile.TemporaryDirectory() as tmp_dir:
-        fname = f"interface_{record['interface_id']}.json"
+        fname = f"interface.json"
         path = os.path.join(tmp_dir, fname)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(record, f, indent=2)

@@ -53,6 +53,6 @@ def log_checkpoint(
     )
 
     with tempfile.TemporaryDirectory() as tmp_dir:
-        csv_path = os.path.join(tmp_dir, f"checkpoint_{checkpoint_name}.csv")
+        csv_path = os.path.join(tmp_dir, f"checkpoint.csv")
         record.to_csv(csv_path, index=False)
         tracker.log_artifact(csv_path, artifact_path="checkpoints")

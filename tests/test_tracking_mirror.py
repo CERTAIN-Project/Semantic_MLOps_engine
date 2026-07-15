@@ -17,11 +17,7 @@ from certain_library.tracking.tracker import Tracker
 
 def read_jsonl(path: Path):
     with path.open(encoding="utf-8") as handle:
-        return [
-            json.loads(line)
-            for line in handle
-            if line.strip()
-        ]
+        return [json.loads(line) for line in handle if line.strip()]
 
 
 @pytest.fixture
@@ -52,16 +48,14 @@ def test_param_metric_artifact_and_manifest(
         run_id = run.info.run_id
         experiment_id = run.info.experiment_id
 
-        tracker.log_param("model", "bert")
-        tracker.log_metric(
-            "accuracy",
-            0.80,
+        tracker.log_params({"model": "bert"})
+        tracker.log_metrics(
+            {"accuracy": 0.80},
             step=1,
             timestamp=1710000000000,
         )
-        tracker.log_metric(
-            "accuracy",
-            0.91,
+        tracker.log_metrics(
+            {"accuracy": 0.91},
             step=10,
             timestamp=1710000001000,
         )
@@ -72,26 +66,17 @@ def test_param_metric_artifact_and_manifest(
 
     root = tmp_path / "certain"
 
-    parameter_events = read_jsonl(
-        root / "events" / "params.jsonl"
-    )
+    parameter_events = read_jsonl(root / "events" / "params.jsonl")
     assert parameter_events[-1]["key"] == "model"
     assert parameter_events[-1]["value"] == "bert"
 
-    metric_events = read_jsonl(
-        root / "events" / "metrics.jsonl"
-    )
-    assert [
-        (event["step"], event["value"])
-        for event in metric_events
-    ] == [
+    metric_events = read_jsonl(root / "events" / "metrics.jsonl")
+    assert [(event["step"], event["value"]) for event in metric_events] == [
         (1, 0.80),
         (10, 0.91),
     ]
 
-    artifact_events = read_jsonl(
-        root / "events" / "artifacts.jsonl"
-    )
+    artifact_events = read_jsonl(root / "events" / "artifacts.jsonl")
     artifact_event = artifact_events[-1]
 
     assert artifact_event["run_id"] == run_id
@@ -130,6 +115,7 @@ def test_mlflow_failure_does_not_write_mirror(
     tracker.set_experiment("failure-test")
 
     with tracker.start_run():
+
         def fail_log_param(key, value):
             raise RuntimeError("MLflow failed")
 
@@ -140,11 +126,9 @@ def test_mlflow_failure_does_not_write_mirror(
         )
 
         with pytest.raises(RuntimeError, match="MLflow failed"):
-            tracker.log_param("model", "bert")
+            tracker.log_params({"model": "bert"})
 
-    parameter_path = (
-        tmp_path / "certain" / "events" / "params.jsonl"
-    )
+    parameter_path = tmp_path / "certain" / "events" / "params.jsonl"
     assert not parameter_path.exists()
 
 
@@ -216,15 +200,14 @@ def test_export_creates_compact_json_files(
     tracker.set_experiment("export-test")
 
     with tracker.start_run():
-        tracker.log_param("model", "bert")
-        tracker.log_metric(
-            "accuracy",
-            0.80,
+        tracker.log_params({"model": "bert"})
+        tracker.log_metrics(
+            {"accuracy": 0.80},
             step=1,
             timestamp=1000,
         )
-        tracker.log_metric(
-            "accuracy",
+        tracker.log_metrics(
+            {"accuracy": 0.91},
             0.91,
             step=2,
             timestamp=2000,
@@ -244,17 +227,10 @@ def test_export_creates_compact_json_files(
         "artifacts.json",
     }
 
-    assert {
-        path.name
-        for path in output.iterdir()
-    } == expected_files
+    assert {path.name for path in output.iterdir()} == expected_files
 
-    metrics = json.loads(
-        (output / "metrics.json").read_text()
-    )
-    latest_metrics = json.loads(
-        (output / "latest_metrics.json").read_text()
-    )
+    metrics = json.loads((output / "metrics.json").read_text())
+    latest_metrics = json.loads((output / "latest_metrics.json").read_text())
 
     assert len(metrics) == 2
     assert latest_metrics[0]["value"] == 0.91

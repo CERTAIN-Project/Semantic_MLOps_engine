@@ -64,6 +64,7 @@ class Runs(Base):
 
     run_id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     run_name = Column(String)
+    parent_id = Column(String)
     source_type = Column(String)
     source_name = Column(String)
     user_id = Column(String)
@@ -316,7 +317,12 @@ class RunCode(Base):
         nullable=False,
         default=lambda: str(uuid.uuid4()),
     )
-    git_commit_hash = Column(String, nullable=False)
+    git_commit_hash = Column(String, nullable=True)
+    git_commit_short = Column(String, nullable=True)
+    git_branch = Column(String, nullable=True)
+    git_message = Column(String, nullable=True)
+    git_author = Column(String, nullable=True)
+    git_author_email = Column(String, nullable=True)
     name = Column(String)
 
     run = relationship("Run", back_populates="code", uselist=False)
@@ -435,6 +441,8 @@ class DataTechniques(Base):
     data_id = Column(String, nullable=False, default=lambda: str(uuid.uuid4()))
     technique_name = Column(ARRAY(String), nullable=False)
     data_technique_stage = Column(String)
+    # JSON blob containing method, library, parameters, notes, etc.
+    technique_details = Column(JSON)
 
     __table_args__ = (
         PrimaryKeyConstraint("run_id", "data_id", "technique_name"),
@@ -738,15 +746,17 @@ class AIActors(Base):
         primary_key=True,
         default=lambda: str(uuid.uuid4()),
     )
-    experiment_id = Column(String, primary_key=True, nullable=False)
+    # Use run_id (runs.run_id) instead of experiment_id as the parent reference.
+    # This allows ai_actors rows to be associated with a specific run.
+    run_id = Column(String, primary_key=True, nullable=False)
     ai_provider = Column(String)
     ai_deployer = Column(String)
     auditor = Column(String)
     organization = Column(String)
 
     __table_args__ = (
-        PrimaryKeyConstraint("ai_actors_id", "experiment_id"),
-        ForeignKeyConstraint(["experiment_id"], ["experiments.experiment_id"]),
+        PrimaryKeyConstraint("ai_actors_id", "run_id"),
+        ForeignKeyConstraint(["run_id"], ["runs.run_id"]),
     )
 
 

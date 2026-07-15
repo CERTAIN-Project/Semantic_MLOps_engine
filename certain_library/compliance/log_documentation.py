@@ -18,7 +18,6 @@ import uuid
 from typing import List, Optional
 
 
-
 def log_declarations_of_conformity(
     issuer: str,
     declarations: List[dict],
@@ -143,7 +142,7 @@ def log_declarations_of_conformity(
                 "file_size": d.get("file_size"),
                 "creation_time": int(time.time()),
             }
-            fname = f"declaration_{declaration_id}.json"
+            fname = f"declaration.json"
             path = os.path.join(tmp_dir, fname)
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(record, f, indent=2)
@@ -264,7 +263,7 @@ def log_visual_documentations(
                 "file_size": d.get("file_size"),
                 "creation_time": int(time.time()),
             }
-            fname = f"visual_doc_{document_id}.json"
+            fname = f"visual_doc.json"
             path = os.path.join(tmp_dir, fname)
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(record, f, indent=2)
@@ -321,7 +320,7 @@ def log_explainable_ai(
         "implementation_details": implementation_details or "",
     }
     with tempfile.TemporaryDirectory() as tmp_dir:
-        fname = f"xai_{record['feature_id']}.json"
+        fname = f"xai.json"
         path = os.path.join(tmp_dir, fname)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(record, f, indent=2)

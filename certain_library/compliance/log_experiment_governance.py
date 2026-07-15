@@ -199,6 +199,19 @@ def log_ai_actors(
         "auditor": auditor,
         "organization": organization,
     }
+    # If an MLflow active run exists, include canonical experiment_id and run_id
+    # inside the artifact so downstream sync can use those values directly.
+    try:
+        import mlflow
+
+        run = mlflow.active_run()
+        if run is not None:
+            record["experiment_id"] = run.info.experiment_id
+            record["run_id"] = run.info.run_id
+    except Exception:
+        # mlflow not available or failure to read active run — fall back to
+        # leaving the artifact without run/experiment fields.
+        pass
     with tempfile.TemporaryDirectory() as tmp_dir:
         path = os.path.join(tmp_dir, "ai_actors.json")
         with open(path, "w", encoding="utf-8") as f:
@@ -303,7 +316,7 @@ def log_labeling_procedures(
                 "annotators": p.get("annotators") or [],
                 "link": p.get("link") or "",
             }
-            fname = f"labeling_{labeling_id}.json"
+            fname = f"labeling.json"
             path = os.path.join(tmp_dir, fname)
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(record, f, indent=2)

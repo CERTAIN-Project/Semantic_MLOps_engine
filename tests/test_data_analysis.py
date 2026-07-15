@@ -287,10 +287,11 @@ class TestLogDataTechniques:
         }
 
         with patch("mlflow.log_artifact") as mock_log_artifact, patch(
-            "tempfile.NamedTemporaryFile"
-        ) as mock_temp, patch("os.remove"):
+            "tempfile.mkdtemp", return_value="/tmp/testdir"
+        ), patch("os.path.exists", return_value=True), patch("os.remove"), patch(
+            "os.rmdir"
+        ):
 
-            mock_temp.return_value.__enter__.return_value.name = "/tmp/test.json"
             log_data_techniques(opsd_techniques)
 
             mock_log_artifact.assert_called_once()

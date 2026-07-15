@@ -1,12 +1,18 @@
 import json
+import os
+import logging
 import pandas as pd
 from scipy.stats import ks_2samp
+from urllib.parse import urlparse
+
+logger = logging.getLogger(__name__)
 
 
 def map_mlflow_runs(run):
     return {
         "run_id": run.run_uuid,
         "run_name": run.name,
+        "parent_id": run.get("parent_id", None),
         "source_type": run.source_type,
         "source_name": run.source_name,
         "user_id": run.user_id,
@@ -38,16 +44,166 @@ def map_mlflow_experiments(experiments):
 
 
 def map_mlflow_datasets(datasets, run_id, id_mapping):
+    # Normalize incoming dataset record (could be a pandas Series)
+    record = {}
+    try:
+        if isinstance(datasets, pd.Series):
+            record = datasets.to_dict()
+        elif isinstance(datasets, dict):
+            record = dict(datasets)
+        else:
+            # fallback: treat as empty mapping
+            record = {}
+    except Exception:
+        record = {}
+
+    # Helper: try several likely keys for location and size
+    def first_present(keys):
+        for k in keys:
+            v = record.get(k) if isinstance(record, dict) else None
+            if v is not None and not (isinstance(v, float) and pd.isna(v)):
+                return v
+        return None
+
+    location_keys = [
+        "location",
+        "uri",
+        "path",
+        "artifact_uri",
+        "dataset_uri",
+        "source",
+        "file_path",
+        "absolute_path",
+    ]
+    size_keys = ["size", "file_size", "bytes", "length"]
+
+    data_location = first_present(location_keys)
+    data_size = first_present(size_keys)
+
+    # If a candidate location was found, try to normalize and stat it
+    resolved_location = None
+    resolved_size = None
+    try:
+        if isinstance(data_location, str):
+            loc = data_location
+            # strip file:// prefix if present
+            if loc.startswith("file://"):
+                loc = urlparse(loc).path
+            # If it's an absolute path on disk, and exists, stat it
+            if os.path.isabs(loc) and os.path.exists(loc):
+                resolved_location = loc
+                try:
+                    resolved_size = int(os.path.getsize(loc))
+                except Exception:
+                    resolved_size = None
+            else:
+                # It might be an artifact-path relative to MLflow artifacts root
+                mlflow_artifacts = os.getenv("MLFLOW_ARTIFACTS")
+                if mlflow_artifacts:
+                    parsed = urlparse(mlflow_artifacts)
+                    artifacts_root = parsed.path if parsed.path else mlflow_artifacts
+                    # look for files under <artifacts_root>/**/<run_id>/artifacts/**
+                    run_base = None
+                    # search for a matching run folder
+                    if os.path.isdir(artifacts_root):
+                        for exp in os.listdir(artifacts_root):
+                            run_path = os.path.join(artifacts_root, exp, str(run_id))
+                            if os.path.isdir(run_path):
+                                run_base = run_path
+                                break
+
+                    if run_base:
+                        # Look for any file whose name or path contains the provided location fragment
+                        for root, _, files in os.walk(run_base):
+                            for fname in files:
+                                candidate = os.path.join(root, fname)
+                                if (
+                                    loc in candidate
+                                    or fname == loc
+                                    or fname.startswith(loc)
+                                ):
+                                    resolved_location = candidate
+                                    try:
+                                        resolved_size = int(os.path.getsize(candidate))
+                                    except Exception:
+                                        resolved_size = None
+                                    break
+                            if resolved_location:
+                                break
+
+    except Exception:
+        resolved_location = None
+        resolved_size = None
+
+    # If size candidate exists but not yet resolved, coerce numeric-like values
+    if resolved_size is None and data_size is not None:
+        try:
+            resolved_size = int(data_size)
+        except Exception:
+            resolved_size = None
+
+    # Prefer dataset manifest if present (written by save_dataset_manifest)
+    try:
+        from data_api.app.mlflow_connector import get_dataset_manifest_for_run
+
+        manifest = get_dataset_manifest_for_run(str(run_id))
+        if manifest and isinstance(manifest, dict):
+            # Manifest may be the full data_manifest (with 'files' and 'total_size_bytes')
+            # or a lightweight metadata/data.json (with 'data_location' and 'data_size').
+            if "data_size" in manifest:
+                try:
+                    resolved_size = int(
+                        manifest.get("data_size")
+                        or manifest.get("total_size_bytes")
+                        or 0
+                    )
+                except Exception:
+                    resolved_size = resolved_size
+            else:
+                msize = manifest.get("total_size_bytes")
+                if msize is not None:
+                    try:
+                        resolved_size = int(msize)
+                    except Exception:
+                        pass
+
+            # Prefer explicit data_location if present
+            if manifest.get("data_location"):
+                resolved_location = manifest.get("data_location")
+            else:
+                files = manifest.get("files") or []
+                if files:
+                    first = files[0]
+                    if isinstance(first, dict) and first.get("path"):
+                        resolved_location = first.get("path")
+    except Exception:
+        # ignore failure to import or parse manifest
+        manifest = None
+
+    # Final fallbacks to keep previous behaviour but avoid using '/home' as a default
+    final_location = resolved_location or (
+        data_location if data_location is not None else ""
+    )
+    final_size = (
+        resolved_size
+        if resolved_size is not None
+        else (
+            int(data_size)
+            if isinstance(data_size, (int, float)) and not pd.isna(data_size)
+            else 0
+        )
+    )
+
     return {
         "run_id": run_id,
         "data_id": id_mapping[run_id]["data_id"],
-        "data_stage": datasets.get("data_stage", "training"),
-        "data_type": datasets.get("data_type", "int"),
-        "data_source": datasets.get("source", "local"),
-        "data_version": datasets.get("version", "v1"),
-        "data_location": datasets.get("location", "/home"),
-        "data_size": datasets.get("size", 0),
-        "data_format": datasets.get("format", "should be csv"),
+        "data_stage": record.get("data_stage", "training"),
+        "data_type": record.get("data_type", "int"),
+        "data_source": record.get("source", "local"),
+        "data_version": record.get("version", "v1"),
+        "data_location": final_location,
+        "data_size": final_size,
+        "data_format": record.get("format", "csv"),
         "creation_time": int(pd.Timestamp.now(tz="UTC").timestamp()),
         "last_update_time": int(pd.Timestamp.now(tz="UTC").timestamp()),
     }
@@ -254,10 +410,19 @@ def map_mlflow_data_drift(dataset, id_mapping):
     training_data = dataset[dataset["stage"] == "train"]
     testing_data = dataset[dataset["stage"] == "test"]
 
+    logger.debug(
+        "map_mlflow_data_drift called: dataset shape=%s, training=%s, testing=%s",
+        getattr(dataset, "shape", None),
+        getattr(training_data, "shape", None),
+        getattr(testing_data, "shape", None),
+    )
+
     # Compute the drift between training and testing data
     drift_results = []
     # Group data by run_id
     run_ids = set(training_data["run_id"]).intersection(set(testing_data["run_id"]))
+
+    logger.debug("run_ids with both train and test: %s", run_ids)
 
     for run_id in run_ids:
         # Filter data for this run_id
@@ -272,10 +437,34 @@ def map_mlflow_data_drift(dataset, id_mapping):
             col for col in common_columns if col not in ["run_id", "stage"]
         ]
 
-        # Perform KS test on each column
-        for column in common_columns:
+        logger.debug("run_id=%s common_columns=%s", run_id, common_columns)
+
+        # Prefer testing numeric columns only
+        numeric_columns = [
+            col
+            for col in common_columns
+            if pd.api.types.is_numeric_dtype(train_subset[col])
+            and pd.api.types.is_numeric_dtype(test_subset[col])
+        ]
+        logger.debug("run_id=%s numeric_columns=%s", run_id, numeric_columns)
+
+        # Perform KS test on each numeric column
+        for column in numeric_columns:
             try:
-                _, p_value = ks_2samp(train_subset[column], test_subset[column])
+                # Drop NA values before testing
+                a = train_subset[column].dropna().values
+                b = test_subset[column].dropna().values
+                if len(a) < 2 or len(b) < 2:
+                    logger.debug(
+                        "Skipping column %s for run %s due to insufficient samples: %s vs %s",
+                        column,
+                        run_id,
+                        len(a),
+                        len(b),
+                    )
+                    continue
+
+                _, p_value = ks_2samp(a, b)
                 drift_results.append(
                     {
                         "run_id": run_id,
@@ -286,8 +475,10 @@ def map_mlflow_data_drift(dataset, id_mapping):
                         "timestamp": int(pd.Timestamp.now(tz="UTC").timestamp()),
                     }
                 )
-            except (ValueError, TypeError, RuntimeError) as e:
-                print(f"Error analyzing drift for column {column}: {e}")
+            except Exception:
+                logger.exception(
+                    "Error analyzing drift for column %s (run %s)", column, run_id
+                )
 
     # Convert the list of dictionaries to a pandas DataFrame
     if not drift_results:
@@ -382,43 +573,86 @@ def map_mlflow_data_duration_leakage(dataset, id_mapping):
 # ---------------------------------------------------------------------------
 
 
-def map_run_code(tags_df: "pd.DataFrame", run_id: str) -> dict:
+def map_run_code(
+    tags_df: "pd.DataFrame", run_id: str, artifact_git_record: dict = None
+) -> dict:
     """
-    Build a ``runs_code`` row from MLflow system tags.
+    Build a runs_code row only for parent runs.
 
-    MLflow automatically stores ``mlflow.source.git.commit`` and
-    ``mlflow.source.name`` as run tags when the code is version-controlled.
-
-    Parameters
-    ----------
-    tags_df : pd.DataFrame
-        DataFrame produced by ``get_tags_data()`` (columns: run_uuid, key, value).
-    run_id : str
-        The run identifier to extract tags for.
-
-    Returns
-    -------
-    dict
-        A single row dict matching the ``runs_code`` schema, or an empty dict
-        if the tags are not present.
+    Child runs are skipped. A child run is detected by the presence of
+    the MLflow tag: mlflow.parentRunId.
     """
+    # Normalize MLflow SQL column name if needed
+    if "run_id" in tags_df.columns and "run_uuid" not in tags_df.columns:
+        tags_df = tags_df.rename(columns={"run_id": "run_uuid"})
+
+    run_id = str(run_id)
+    tags_df["run_uuid"] = tags_df["run_uuid"].astype(str)
+
     run_tags = tags_df[tags_df["run_uuid"] == run_id]
-    git_hash = run_tags.loc[
-        run_tags["key"] == "mlflow.source.git.commit", "value"
-    ].values
-    source_name = run_tags.loc[run_tags["key"] == "mlflow.source.name", "value"].values
 
-    commit = git_hash[0] if len(git_hash) > 0 else "unknown"
-    name = source_name[0] if len(source_name) > 0 else "unknown"
+    def get_tag_value(key: str):
+        values = run_tags.loc[run_tags["key"] == key, "value"].values
+        return values[0] if len(values) > 0 else None
 
-    if commit == "unknown" and name == "unknown":
+    # If this run has a parent, it is a child run.
+    # Do not save child runs into runs_code.
+    parent_id = get_tag_value("mlflow.parentRunId")
+    if parent_id is not None:
         return {}
 
-    return {
-        "run_id": run_id,
-        "git_commit_hash": commit,
-        "name": name,
-    }
+    # If artifact-provided git metadata is available, prefer it
+    if artifact_git_record and isinstance(artifact_git_record, dict):
+        commit = artifact_git_record.get("git.commit") or artifact_git_record.get(
+            "mlflow.source.git.commit"
+        )
+        name = artifact_git_record.get("mlflow.source.name") or artifact_git_record.get(
+            "git.source.name"
+        )
+
+        if not commit:
+            return {}
+
+        return {
+            "run_id": run_id,
+            "git_commit_hash": commit,
+            "git_commit_short": artifact_git_record.get("git.commit.short"),
+            "git_branch": artifact_git_record.get("git.branch"),
+            "git_message": artifact_git_record.get("git.message"),
+            "git_author": artifact_git_record.get("git.author"),
+            "git_author_email": artifact_git_record.get("git.author.email"),
+            "name": name or "unknown",
+        }
+
+    # # MLflow default tags
+    # mlflow_commit = get_tag_value("mlflow.source.git.commit")
+    # source_name = get_tag_value("mlflow.source.name")
+
+    # # Custom Git tags
+    # git_commit = get_tag_value("git.commit")
+    # git_short = get_tag_value("git.commit.short")
+    # git_branch = get_tag_value("git.branch")
+    # git_message = get_tag_value("git.message")
+    # git_author = get_tag_value("git.author")
+    # git_author_email = get_tag_value("git.author.email")
+
+    # # Prefer custom git.commit, fallback to MLflow automatic commit tag
+    # commit = git_commit or mlflow_commit
+
+    # # If no commit exists, do not insert into runs_code
+    # if commit is None or commit == "" or commit == "unknown":
+    #     return {}
+
+    # return {
+    #     "run_id": run_id,
+    #     "git_commit_hash": commit,
+    #     "git_commit_short": git_short,
+    #     "git_branch": git_branch,
+    #     "git_message": git_message,
+    #     "git_author": git_author,
+    #     "git_author_email": git_author_email,
+    #     "name": source_name or "unknown",
+    # }
 
 
 def map_checkpoints(row: "pd.Series", id_mapping: dict) -> dict:
@@ -548,14 +782,23 @@ def map_run_logs(row: "pd.Series", run_id: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def map_ai_actors(record: dict, experiment_id: str) -> dict:
-    """Map a JSON artifact record into an ``ai_actors`` row."""
+def map_ai_actors(record: dict, run_id: str) -> dict:
+    """Map a JSON artifact record into an ``ai_actors`` row.
+
+    The ai_actors table is associated with a run (runs.run_id). The mapper
+    therefore accepts the *run_id* and returns a dictionary containing that
+    run_id so it can be inserted into the database.
+    """
     providers = record.get("ai_providers", [])
     deployers = record.get("ai_deployers", [])
     # Return lists in the mapped row (tests expect raw lists, not JSON strings)
     return {
         "ai_actors_id": record.get("ai_actors_id", ""),
-        "experiment_id": experiment_id,
+        # Prefer experiment_id embedded in the artifact if present (backwards
+        # compatibility). Otherwise fall back to NULL — the DB schema requires
+        # experiment_id for the current PK; we include it when available.
+        "experiment_id": record.get("experiment_id", ""),
+        "run_id": run_id,
         "ai_providers": providers if isinstance(providers, list) else [providers],
         "ai_deployers": deployers if isinstance(deployers, list) else [deployers],
         "auditor": record.get("auditor", ""),
@@ -800,3 +1043,61 @@ def map_tokenization_stats(record: dict, run_id: str) -> dict:
         "padding_rate": record.get("padding_rate"),
         "oov_rate": record.get("oov_rate"),
     }
+
+
+def map_mlflow_data_techniques(record: dict, run_id: str) -> dict:
+    """Map a data_techniques JSON artifact into rows for
+    ``data_techniques`` and ``data_hyperparameters``.
+
+    Returns a dict with two lists:
+      - 'techniques': list of rows matching the data_techniques schema
+      - 'hyperparameters': list of rows matching the data_hyperparameters schema
+    """
+    if not isinstance(record, dict):
+        record = {}
+
+    container = record.get("techniques") if "techniques" in record else record
+    if not isinstance(container, dict):
+        container = {}
+
+    techniques_rows = []
+    hyperparams_rows = []
+
+    global_stage = record.get("data_technique_stage") or record.get("stage")
+
+    for tname, props in container.items():
+        if not isinstance(props, dict):
+            props = {"method": props}
+
+        stage = props.get("stage") or global_stage
+
+        techniques_rows.append(
+            {
+                "run_id": run_id,
+                "data_id": None,
+                "technique_name": [tname],
+                "data_technique_stage": stage,
+                "technique_details": {
+                    "name": tname,
+                    "method": props.get("method"),
+                    "library": props.get("library"),
+                    "notes": props.get("notes"),
+                    "parameters": props.get("parameters", {}),
+                },
+            }
+        )
+
+        params = props.get("parameters") or {}
+        if isinstance(params, dict):
+            for pname, pval in params.items():
+                hyperparams_rows.append(
+                    {
+                        "run_id": run_id,
+                        "data_id": None,
+                        "technique_name": tname,
+                        "technique_parameter_name": pname,
+                        "technique_parameter_value": str(pval),
+                    }
+                )
+
+    return {"techniques": techniques_rows, "hyperparameters": hyperparams_rows}

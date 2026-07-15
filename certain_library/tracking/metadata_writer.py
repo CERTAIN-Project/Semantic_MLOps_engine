@@ -19,6 +19,8 @@ EVENT_FILES = {
     "metric": "metrics.jsonl",
     "tag": "tags.jsonl",
     "artifact": "artifacts.jsonl",
+    "resource": "resources.jsonl",
+    "input": "inputs.jsonl",
 }
 
 

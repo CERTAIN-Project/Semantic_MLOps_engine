@@ -37,8 +37,7 @@ def log_model_info(model_information: Dict[str, str]) -> None:
         if not isinstance(value, str):
             raise ValueError(f"Value for key '{key}' must be a string")
 
-    for key, value in model_information.items():
-        tracker.log_param(key, value)
+    tracker.log_params(model_information)
 
 
 def log_model_architecture(
@@ -117,15 +116,15 @@ def log_model_architecture(
             raise ValueError("optimizer 'name' cannot be empty")
         optimizer_dict = optimizer
 
-    tracker.log_param("losses", losses)
+    tracker.log_params({"losses": losses})
     # Log the optimizer name as the primary "optimizer" param for backwards compat
-    tracker.log_param("optimizer", optimizer_dict["name"])
+    tracker.log_params({"optimizer": optimizer_dict["name"]})
     # Log every additional optimizer hyperparameter under "optimizer.<key>"
     for key, value in optimizer_dict.items():
         if key != "name":
-            tracker.log_param(f"optimizer.{key}", value)
-    tracker.log_param("regularization", regularization)
-    tracker.log_param("early_stopping", early_stopping)
+            tracker.log_params({f"optimizer.{key}": value})
+    tracker.log_params({"regularization": regularization})
+    tracker.log_params({"early_stopping": early_stopping})
 
 
 # Input: A dictionary of hyperparameters to log
@@ -165,11 +164,12 @@ def log_model_hyperparameters(
             raise ValueError(f"Value for key '{key}' is not of type float, int, or str")
 
     if not keep_best:
-        for key, value in dict_of_hyperparameters.items():
-            tracker.log_param(key, value)
+        tracker.log_params(dict_of_hyperparameters)
     else:
-        for key, value in dict_of_hyperparameters.items():
-            tracker.log_param(f"best_{key}", value)
+        best_hyperparameters = {
+            f"best_{key}": value for key, value in dict_of_hyperparameters.items()
+        }
+        tracker.log_params(best_hyperparameters)
 
 
 # model should be generic since the type can vary based on the framework used
@@ -243,6 +243,6 @@ def log_model_signature(
     )
 
     # Log the model signature as a parameter for tracking
-    tracker.log_param("model_signature", str(signature))
-    tracker.log_param("input_shape", str(train_data.shape))
-    tracker.log_param("n_features", len(train_data.columns))
+    tracker.log_params({"model_signature": str(signature)})
+    tracker.log_params({"input_shape": str(train_data.shape)})
+    tracker.log_params({"n_features": len(train_data.columns)})

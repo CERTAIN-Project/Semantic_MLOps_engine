@@ -68,7 +68,10 @@ from certain_library.train_monitor.log_model import (
     log_model_signature,
 )
 from certain_library.data_analysis.log_whylogs import log_whylogs_profile
-from certain_library.log_basic.log_param import log_param
+from Semantic_MLOps_engine.certain_library.log_basic.log_params import (
+    log_param,
+    log_params,
+)
 from certain_library.data_analysis.log_dataset import (
     log_dataset,
     log_train_test_dataset,
@@ -314,14 +317,13 @@ def phase_training(mlflow_run) -> tuple:
     if USE_DUMMY_DATA:
         print("  🧪 Using synthetic dummy energy data")
         df = _make_dummy_energy_df(n_rows=2000)
-        log_param("data_url", "synthetic_dummy_data")
+        log_params({"data_url": "synthetic_dummy_data"})
     else:
         print(f"  🌐 Downloading OPSD dataset...")
         df = pd.read_csv(OPSD_URL, parse_dates=["utc_timestamp"])
-        log_param("data_url", OPSD_URL)
+        log_params({"data_url": OPSD_URL})
 
-    log_param("num_rows", df.shape[0])
-    log_param("num_columns", df.shape[1])
+    log_params({"num_rows": df.shape[0], "num_columns": df.shape[1]})
 
     # ---- Data cleaning pipeline ----
     df = df.dropna(subset=["DE_load_actual_entsoe_transparency"])
@@ -395,10 +397,14 @@ def phase_training(mlflow_run) -> tuple:
 
     for trial in study.trials:
         with tracker.start_run(nested=True, run_name=f"Trial_{trial.number}"):
-            log_param("trial_number", trial.number)
-            log_param("n_estimators", trial.params["n_estimators"])
-            log_param("max_depth", trial.params["max_depth"])
-            log_param("learning_rate", trial.params["learning_rate"])
+            log_params(
+                {
+                    "trial_number": trial.number,
+                    "n_estimators": trial.params["n_estimators"],
+                    "max_depth": trial.params["max_depth"],
+                    "learning_rate": trial.params["learning_rate"],
+                }
+            )
             if trial.value is not None:
                 log_metrics({"trial_mse": float(trial.value)}, step=trial.number)
             proc = psutil.Process(os.getpid())

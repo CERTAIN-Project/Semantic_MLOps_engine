@@ -10,9 +10,11 @@ Prerequisites
 - Clone repository and run commands from the project root (where docker-compose.yml lives)
 
 1. Create required host folders (Docker volumes cannot be empty)
+!!!! We changed this one so this folders are not required
 ```bash
 # from project root
 mkdir docker_data/mlflow_artifacts
+# You don't need the postgres folder any more
 mkdir docker_data/postgres
 ```
 

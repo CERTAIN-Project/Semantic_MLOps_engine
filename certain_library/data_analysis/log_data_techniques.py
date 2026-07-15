@@ -22,21 +22,41 @@ def log_data_techniques(data_techniques: Dict[str, Dict[str, str]]) -> None:
     Raises:
         TypeError: If data_techniques is not a dictionary or if any value is not a dictionary.
     """
-    # Check if data_techniques is a dictionary
+    # Accept either the old flat mapping {technique: props} or the new
+    # wrapped form {"techniques": { ... }, "data_technique_stage": ...}.
     if not isinstance(data_techniques, dict):
         raise TypeError("data_techniques must be a dictionary")
 
-    # Check if all values in data_techniques are dictionaries
-    if not all(isinstance(value, dict) for value in data_techniques.values()):
-        raise TypeError("All values in data_techniques must be dictionaries")
+    # Normalize to canonical form: {"techniques": {...}, "data_technique_stage": ...}
+    if "techniques" in data_techniques and isinstance(
+        data_techniques.get("techniques"), dict
+    ):
+        canonical = dict(data_techniques)
+    else:
+        # Validate that all values are dict-like for the old shape
+        if not all(isinstance(v, dict) for v in data_techniques.values()):
+            raise TypeError("All values in data_techniques must be dictionaries")
+        canonical = {"techniques": dict(data_techniques)}
 
-    # Create a temporary file to store the JSON data
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-        json.dump(data_techniques, f, indent=2)
-        temp_file_name = f.name
+    # Create a temporary directory and write a deterministically named JSON file
+    temp_dir = tempfile.mkdtemp()
+    temp_file_name = os.path.join(temp_dir, "data_techniques.json")
+    try:
+        with open(temp_file_name, "w") as f:
+            json.dump(canonical, f, indent=2)
 
-    # Log the JSON file as an artifact
-    tracker.log_artifact(temp_file_name, artifact_path="data_techniques")
-
-    # Clean up the temporary file
-    os.remove(temp_file_name)
+        # Log the JSON file as an artifact. MLflow will preserve the filename
+        # when uploading into the `data_techniques` artifact folder.
+        tracker.log_artifact(temp_file_name, artifact_path="data_techniques")
+    finally:
+        # Clean up the temporary file and directory if they exist
+        try:
+            if os.path.exists(temp_file_name):
+                os.remove(temp_file_name)
+        except Exception:
+            pass
+        try:
+            if os.path.exists(temp_dir):
+                os.rmdir(temp_dir)
+        except Exception:
+            pass

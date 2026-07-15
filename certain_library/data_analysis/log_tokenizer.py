@@ -8,7 +8,6 @@ import tempfile
 import uuid
 from typing import Any, Dict, List, Optional, Union
 
-
 # ---------------------------------------------------------------------------
 # Allowed keys for each artifact type
 # ---------------------------------------------------------------------------
@@ -102,9 +101,7 @@ def log_tokenizer_config(
         )
 
     with tempfile.TemporaryDirectory() as tmp_dir:
-        file_path = os.path.join(
-            tmp_dir, f"tokenizer_config_{record['tokenizer_id']}.json"
-        )
+        file_path = os.path.join(tmp_dir, f"tokenizer_config.json")
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(record, f, indent=2)
         tracker.log_artifact(file_path, artifact_path="tokenizer_config")
@@ -154,7 +151,7 @@ def log_tokenization_stats(stats: List[dict]) -> None:
                 record["stats_id"] = str(uuid.uuid4())
 
             split_label = record.get("split", record["stats_id"])
-            file_path = os.path.join(tmp_dir, f"tokenization_stats_{split_label}.json")
+            file_path = os.path.join(tmp_dir, f"tokenization_stats.json")
             with open(file_path, "w", encoding="utf-8") as f:
                 json.dump(record, f, indent=2)
             tracker.log_artifact(file_path, artifact_path="tokenization_stats")

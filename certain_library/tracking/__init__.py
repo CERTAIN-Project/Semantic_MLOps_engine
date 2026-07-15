@@ -12,5 +12,4 @@ __all__ = [
     "ManifestStore",
     "Tracker",
     "recover_unfinished_runs",
-    "tracker",
 ]

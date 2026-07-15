@@ -80,6 +80,12 @@ def compact(root: Path, output: Path) -> Dict[str, int]:
                 {
                     "experiment_id": str(experiment_id),
                     "name": event.get("experiment_name"),
+                    # Add requested metadata fields
+                    "lifecycle_stage": "active",
+                    "artifact_location": event.get("artifact_uri"),
+                    "creation_time": event.get("start_time"),
+                    "last_update_time": event.get("end_time")
+                    or event.get("start_time"),
                 },
             )
 
@@ -115,10 +121,7 @@ def compact(root: Path, output: Path) -> Dict[str, int]:
             json.dump(records, handle, indent=2, sort_keys=True)
             handle.write("\n")
 
-    return {
-        name: len(records)
-        for name, records in exports.items()
-    }
+    return {name: len(records) for name, records in exports.items()}
 
 
 def main() -> None:

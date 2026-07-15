@@ -19,8 +19,6 @@ import tempfile
 import uuid
 from typing import List
 
-
-
 _RISK_ALLOWED_KEYS = {"risk_description", "risk_type", "risk_level", "risk_id"}
 
 
@@ -71,7 +69,7 @@ def log_risk(risks: List[dict]) -> None:
             "risk_level": risk_level,
         }
         with tempfile.TemporaryDirectory() as tmp_dir:
-            fname = f"risk_{record['risk_id']}.json"
+            fname = f"risk.json"
             path = os.path.join(tmp_dir, fname)
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(record, f, indent=2)
@@ -129,7 +127,7 @@ def log_human_oversight(oversights: List[dict]) -> None:
             "implementation_details": item.get("implementation_details") or "",
         }
         with tempfile.TemporaryDirectory() as tmp_dir:
-            fname = f"oversight_{record['mechanism_id']}.json"
+            fname = f"oversight.json"
             path = os.path.join(tmp_dir, fname)
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(record, f, indent=2)
@@ -196,7 +194,7 @@ def log_transparency_measure(measures: List[dict]) -> None:
             "implementation_details": item.get("implementation_details") or "",
         }
         with tempfile.TemporaryDirectory() as tmp_dir:
-            fname = f"transparency_{record['measure_id']}.json"
+            fname = f"transparency.json"
             path = os.path.join(tmp_dir, fname)
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(record, f, indent=2)
@@ -247,7 +245,7 @@ def log_change(changes: List[dict]) -> None:
             "change_timestamp": int(time.time()),
         }
         with tempfile.TemporaryDirectory() as tmp_dir:
-            fname = f"change_{record['log_id']}.json"
+            fname = f"change.json"
             path = os.path.join(tmp_dir, fname)
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(record, f, indent=2)

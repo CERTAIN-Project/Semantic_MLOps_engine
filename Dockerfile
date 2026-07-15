@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y \
     && echo "deb http://apt.postgresql.org/pub/repos/apt/ bullseye-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
     && apt-get update && apt-get install -y \
     postgresql-13 \
+    git \
     postgresql-client-13 \
     postgresql-contrib-13 \
     && rm -rf /var/lib/apt/lists/*

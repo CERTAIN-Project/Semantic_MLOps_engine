@@ -4,7 +4,6 @@ Complete ML workflow example using certain_library
 Demonstrates end-to-end logging to PostgreSQL database
 """
 
-from certain_library.tracking.tracker import tracker
 import io
 import os
 import time
@@ -17,6 +16,62 @@ import numpy as np
 
 from typing import Dict, Union
 from sklearn.metrics import mean_squared_error, r2_score
+
+from certain_library.tracking.tracker import tracker
+from certain_library.train_monitor.log_metrics import (
+    log_metrics,
+    log_resources,
+    log_search_space,
+)
+from certain_library.train_monitor.log_model import (
+    log_model_info,
+    log_model_architecture,
+    log_model_hyperparameters,
+    log_model_signature,
+)
+from certain_library.data_analysis.log_whylogs import log_whylogs_profile
+from certain_library.log_basic.log_params import log_params
+from certain_library.data_analysis.log_dataset import (
+    log_dataset,
+    log_train_test_dataset,
+)
+from certain_library.data_analysis.log_timeseries import timestamp_analysis
+from certain_library.resource_monitor.resource import start_tracker, stop_tracker
+from certain_library.compliance.log_governance import (
+    log_risk,
+    log_human_oversight,
+    log_transparency_measure,
+    log_change,
+)
+from certain_library.compliance.log_experiment_governance import (
+    log_ai_actors,
+    log_labeling_procedures,
+)
+from certain_library.compliance.log_documentation import (
+    log_declarations_of_conformity,
+    log_visual_documentations,
+    log_explainable_ai,
+)
+from certain_library.compliance.log_deployment import (
+    log_model_packaging,
+    log_build_testing,
+    log_standards,
+    log_interface,
+    log_decommissioning,
+)
+
+from certain_library.data_analysis.log_drift_metrics import (
+    log_drift_metrics,
+)
+
+from certain_library.git_tracking import log_git_metadata
+from certain_library.metadata.artifact_metadata import (
+    collect_runtime_environment,
+    save_runtime_env_as_artifact,
+    save_dataset_manifest,
+)
+from certain_library.data_analysis.log_data_techniques import log_data_techniques
+from data_api.misc.data_transform import map_mlflow_data_drift
 
 # ---------------------------------------------------------------------------
 # Set USE_DUMMY_DATA = True to run fully offline with synthetic energy data.
@@ -74,45 +129,6 @@ def _make_dummy_energy_df(n_rows: int = 2000, seed: int = 42) -> pd.DataFrame:
     return df
 
 
-from certain_library.train_monitor.log_metrics import log_metrics, log_search_space
-from certain_library.train_monitor.log_model import (
-    log_model_info,
-    log_model_architecture,
-    log_model_hyperparameters,
-    log_model_signature,
-)
-from certain_library.data_analysis.log_whylogs import log_whylogs_profile
-from certain_library.log_basic.log_param import log_param
-from certain_library.data_analysis.log_dataset import (
-    log_dataset,
-    log_train_test_dataset,
-)
-from certain_library.data_analysis.log_timeseries import timestamp_analysis
-from certain_library.resource_monitor.resource import start_tracker, stop_tracker
-from certain_library.compliance.log_governance import (
-    log_risk,
-    log_human_oversight,
-    log_transparency_measure,
-    log_change,
-)
-from certain_library.compliance.log_experiment_governance import (
-    log_ai_actors,
-    log_labeling_procedures,
-)
-from certain_library.compliance.log_documentation import (
-    log_declarations_of_conformity,
-    log_visual_documentations,
-    log_explainable_ai,
-)
-from certain_library.compliance.log_deployment import (
-    log_model_packaging,
-    log_build_testing,
-    log_standards,
-    log_interface,
-    log_decommissioning,
-)
-
-
 # Define helper functions ------------------------------------------------------
 def clean_missing_values(input_df: pd.DataFrame) -> pd.DataFrame:
     """Replace missing values with the column forward fill."""
@@ -154,15 +170,38 @@ print("=" * 70)
 print()
 
 # Set up experiment
-experiment_name = "complete_ml_workflow_demo"
-tracker.set_experiment(experiment_name)
+experiment_name = "complete_ml_workflow_demo_v2"
+tracker.set_experiment(
+    experiment_name=experiment_name,
+    tags={"team": "energy", "project": "opsd_demo", "owner": "dimitrios"},
+)
 print(f"📊 Experiment: {experiment_name}")
 print()
 
 # Start MLflow run
-with tracker.start_run(run_name="random_forest_classifier") as run:
+with tracker.start_run(
+    run_name="random_forest_classifier",
+    tags={"project": "opsd_demo", "test_run": "1"},
+) as run:
     print(f"🏃 Run Started: {run.info.run_id}")
     print()
+
+    # Log git metadata into the active MLflow run (if git is available)
+    try:
+        git_meta = log_git_metadata()
+        print(f"🔖 Logged git metadata tags: {git_meta}")
+    except Exception as e:
+        print(f"⚠️  Could not log git metadata: {e}")
+
+    tracker.set_tags({"run_stage": "data_preprocessing", "run_type": "demo"})
+
+    # Collect and save runtime environment artifact
+    try:
+        env = collect_runtime_environment()
+        save_runtime_env_as_artifact(env)
+        print("🧭 Wrote runtime_env.json artifact")
+    except Exception:
+        pass
 
     tracker_data, output_location = start_tracker(output_file_name="emissions_data")
     print("⚡ Resource monitoring started")
@@ -262,14 +301,29 @@ with tracker.start_run(run_name="random_forest_classifier") as run:
     if USE_DUMMY_DATA:
         print("🧪 Using synthetic dummy energy data (USE_DUMMY_DATA=True)")
         df = _make_dummy_energy_df(n_rows=2000)
-        log_param("data_url", "synthetic_dummy_data")
+        log_params({"data_url": "synthetic_dummy_data"})
     else:
         print(f"🌐 Downloading real OPSD dataset from {data_url}")
         df = pd.read_csv(data_url, parse_dates=["utc_timestamp"])
-        log_param("data_url", data_url)
+        log_params({"data_url": data_url})
+    # Persist the raw dataset to disk so we can compute an accurate size for
+    # data.json. This covers both synthetic and downloaded datasets.
+    try:
+        os.makedirs("data", exist_ok=True)
+        raw_path = os.path.join("data", "raw_dataset.csv")
+        df.to_csv(raw_path, index=False)
+        # write only the lightweight metadata (data.json)
+        try:
+            save_dataset_manifest(
+                run_id=run.info.run_id, files_or_path=raw_path, write_manifest=False
+            )
+        except Exception:
+            pass
+    except Exception:
+        pass
 
-    log_param("num_rows", df.shape[0])
-    log_param("num_columns", df.shape[1])
+    log_params({"num_rows": df.shape[0]})
+    log_params({"num_columns": df.shape[1]})
 
     # ---------------- Data Cleaning Pipeline ----------------
     # Drop rows missing the target column
@@ -317,6 +371,140 @@ with tracker.start_run(run_name="random_forest_classifier") as run:
         [X_test.reset_index(drop=True), y_test.reset_index(drop=True)], axis=1
     )
     log_train_test_dataset(train_combined, test_combined)
+    # Save dataset manifest and lightweight metadata into artifacts/certain so
+    # the sync process can read data_location and data_size. This will write
+    # both data_manifest.json and certain/metadata/data.json into the active
+    # run's artifacts when an MLflow run is active.
+    try:
+        # Save a combined CSV to disk so we can compute its size reliably.
+        os.makedirs("data", exist_ok=True)
+        combined_path = os.path.join("data", "train_test_combined.csv")
+        # write train+test combined to a CSV file (no index)
+        pd.concat([train_combined, test_combined]).to_csv(combined_path, index=False)
+
+        # Write only the lightweight metadata (data.json) and skip the full
+        # manifest file since we only need size/location information.
+        save_dataset_manifest(
+            run_id=run.info.run_id, files_or_path=combined_path, write_manifest=False
+        )
+    except Exception:
+        pass
+
+    # Log data preprocessing techniques as an artifact so they are discoverable
+    try:
+        dt = {
+            # We allow a global stage, but each technique may also declare its own stage.
+            "data_technique_stage": "preprocessing",
+            "techniques": {
+                "scaling": {
+                    "method": "standard",
+                    "library": "sklearn",
+                    "parameters": {"with_mean": True, "with_std": True},
+                    "stage": "preprocessing",
+                },
+                "imputation": {
+                    "method": "ffill",
+                    "notes": "forward fill",
+                    "parameters": {},
+                    "stage": "preprocessing",
+                },
+                "noise_injection": {
+                    "method": "additive_gaussian",
+                    "parameters": {"noise_factor": 0.01},
+                    "stage": "augmentation",
+                },
+                "normalization": {
+                    "method": "minmax",
+                    "library": "sklearn",
+                    "parameters": {"feature_range": [0, 1]},
+                    "stage": "preprocessing",
+                },
+                "encoding": {
+                    "method": "one_hot",
+                    "library": "pandas",
+                    "parameters": {"columns": ["DE_price_day_ahead"]},
+                    "stage": "preprocessing",
+                },
+                "augmentation_time_warp": {
+                    "method": "time_warp",
+                    "library": "tsaug",
+                    "parameters": {"warp_factor": 0.2},
+                    "stage": "augmentation",
+                },
+            },
+        }
+        log_data_techniques(dt)
+        print("🧾 Wrote data_techniques artifact")
+    except Exception:
+        pass
+
+    # Compute simple drift metrics between train and test for the active run and
+    # log them as metrics. This uses the server-side helper for consistency.
+    try:
+        # Build dataset with required columns for drift computation
+        train_df = train_combined.copy()
+        test_df = test_combined.copy()
+
+        # Call the new helper which computes per-column KS tests and writes
+        # a deterministic artifact under certain/drift_metrics/drift_metrics.json
+        try:
+            model_info = {"experiment_id": run.info.experiment_id}
+            artifact = log_drift_metrics(
+                train_df, test_df, run_id=run.info.run_id, model_info=model_info
+            )
+            print("⚖️  Computed and wrote drift artifact")
+        except Exception as e:
+            print("Could not compute drift metrics:", e)
+    except Exception as e:
+        print("Could not compute drift metrics:", e)
+
+    # Persist drift metrics as a small JSON artifact so host-side sync can read them
+    try:
+        # Convert drift_df into a JSON-serializable structure
+        drift_records = []
+        if hasattr(drift_df, "to_dict") and not drift_df.empty:
+            for _, r in drift_df.iterrows():
+                # r may have 'key' like '[drift_metrics]feature1'
+                k = r.get("key")
+                col = k.replace("[drift_metrics]", "") if isinstance(k, str) else None
+                drift_records.append(
+                    {
+                        "column": col,
+                        "key": k,
+                        "p_value": float(r.get("value") or 0.0),
+                        "timestamp": int(
+                            r.get("timestamp") or pd.Timestamp.now(tz="UTC").timestamp()
+                        ),
+                    }
+                )
+
+        summary = {
+            "num_tested": len(drift_records),
+            "num_drift": sum(1 for d in drift_records if d.get("p_value", 1) < 0.05),
+        }
+
+        drift_artifact = {
+            "run_id": run.info.run_id,
+            "model": {
+                # Demo run has no deployed model; indicate that explicitly
+                "experiment_id": run.info.experiment_id,
+                "deployment_id": "not deployed yet",
+                "model_id": "not deployed yet",
+            },
+            "columns": drift_records,
+            "summary": summary,
+        }
+
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as _tmp:
+            path = os.path.join(_tmp, "drift_metrics.json")
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(drift_artifact, fh, indent=2)
+            tracker.log_artifact(path, artifact_path="drift_metrics")
+        print("🧾 Wrote drift_metrics artifact")
+    except Exception as e:
+        print("⚠️ Could not write drift artifact:", e)
 
     timestamp_analysis(
         train_timestamps=df_sorted["utc_timestamp"].iloc[: len(X_train)],
@@ -381,20 +569,20 @@ with tracker.start_run(run_name="random_forest_classifier") as run:
 
     for trial in study.trials:
         with tracker.start_run(nested=True, run_name=f"Trial_{trial.number}"):
-            log_param("trial_number", trial.number)
-            log_param("n_estimators", trial.params["n_estimators"])
-            log_param("max_depth", trial.params["max_depth"])
-            log_param("learning_rate", trial.params["learning_rate"])
+            log_params({"trial_number": trial.number})
+            log_params({"n_estimators": trial.params["n_estimators"]})
+            log_params({"max_depth": trial.params["max_depth"]})
+            log_params({"learning_rate": trial.params["learning_rate"]})
             if trial.value is not None:
                 log_metrics({"trial_mse": float(trial.value)}, step=trial.number)
 
             # Log system resource usage for this trial
             process = psutil.Process(os.getpid())
             mem_info = process.memory_info()
-            log_metrics(
+            log_resources(
                 {"trial_memory_usage_mb": mem_info.rss / 1024 / 1024}, step=trial.number
             )
-            log_metrics(
+            log_resources(
                 {"trial_cpu_usage_percent": psutil.cpu_percent(interval=1)},
                 step=trial.number,
             )
@@ -404,9 +592,9 @@ with tracker.start_run(run_name="random_forest_classifier") as run:
     print()
 
     # Log best hyperparameters from Optuna to MLflow
-    log_param("best_estimators", best_trial.params["n_estimators"])
-    log_param("best_max_depth", best_trial.params["max_depth"])
-    log_param("best_learning_rate", best_trial.params["learning_rate"])
+    log_params({"best_estimators": best_trial.params["n_estimators"]})
+    log_params({"best_max_depth": best_trial.params["max_depth"]})
+    log_params({"best_learning_rate": best_trial.params["learning_rate"]})
     best_mse = best_trial.value if best_trial.value is not None else 0.0
     # log_metrics expects a mapping of metric names to values; pass a dict to avoid positional type mismatch
     log_metrics({"mse": best_mse}, step=best_trial.number, keep_best=True)
@@ -442,8 +630,8 @@ with tracker.start_run(run_name="random_forest_classifier") as run:
         # Log system resource usage for this trial
         process = psutil.Process(os.getpid())
         mem_info = process.memory_info()
-        log_metrics({"trial_memory_usage_mb": mem_info.rss / 1024 / 1024}, step=step)
-        log_metrics(
+        log_resources({"trial_memory_usage_mb": mem_info.rss / 1024 / 1024}, step=step)
+        log_resources(
             {"trial_cpu_usage_percent": psutil.cpu_percent(interval=1)}, step=step
         )
 

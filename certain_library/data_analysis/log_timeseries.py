@@ -64,13 +64,16 @@ def timestamp_analysis(
     # Ensure output directory exists
     os.makedirs(output_dir, exist_ok=True)
 
-    tracker.log_param("train_min_timestamp", str(train_timestamps.min()))
-    tracker.log_param("train_max_timestamp", str(train_timestamps.max()))
-    tracker.log_param("train_mean_timestamp", str(train_timestamps.mean()))
-
-    tracker.log_param("test_min_timestamp", str(test_timestamps.min()))
-    tracker.log_param("test_max_timestamp", str(test_timestamps.max()))
-    tracker.log_param("test_mean_timestamp", str(test_timestamps.mean()))
+    tracker.log_params(
+        {
+            "train_min_timestamp": str(train_timestamps.min()),
+            "train_max_timestamp": str(train_timestamps.max()),
+            "train_mean_timestamp": str(train_timestamps.mean()),
+            "test_min_timestamp": str(test_timestamps.min()),
+            "test_max_timestamp": str(test_timestamps.max()),
+            "test_mean_timestamp": str(test_timestamps.mean()),
+        }
+    )
 
     all_timestamps_file = os.path.join(output_dir, "all_timestamps.txt")
     with open(all_timestamps_file, "w", encoding="utf-8") as f:
