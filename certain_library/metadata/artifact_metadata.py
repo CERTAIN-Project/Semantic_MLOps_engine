@@ -333,14 +333,14 @@ def save_runtime_env_as_artifact(
     if "model" in record and "model_id" not in record:
         record["model_id"] = record.get("model")
 
-    # Only persist runtime environment artifacts when tied to a deployment
-    # (deployment_id and model_id present), otherwise skip. This enforces
-    # the invariant that runtime_environment rows map to model_deployed parents.
-    if not record.get("deployment_id") or not record.get("model_id"):
-        # If an active run exists and it contains an explicit run_id we could
-        # try to resolve deployment mapping later during sync. But the writer
-        # should be invoked at deployment start with deployment info.
-        return ""
+    # # Only persist runtime environment artifacts when tied to a deployment
+    # # (deployment_id and model_id present), otherwise skip. This enforces
+    # # the invariant that runtime_environment rows map to model_deployed parents.
+    # if not record.get("deployment_id") or not record.get("model_id"):
+    #     # If an active run exists and it contains an explicit run_id we could
+    #     # try to resolve deployment mapping later during sync. But the writer
+    #     # should be invoked at deployment start with deployment info.
+    #     return ""
 
     written_path = ""
 
