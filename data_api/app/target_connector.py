@@ -140,19 +140,27 @@ def insert_dataframe(df, table_name: str, batch_size: int = 1000):
                 normalized_rows.append(nr)
             stmt = insert(table).values(normalized_rows)
 
-            if update_cols:
+            if not pk_cols:
+                # The target table has no primary key defined (this can
+                # happen when a migration drops a PK column without
+                # replacing the constraint - see e.g. ai_actors). We can't
+                # build a valid ON CONFLICT (...) clause with an empty
+                # index_elements list (Postgres raises a syntax error:
+                # "ON CONFLICT ()"), so fall back to a plain INSERT instead
+                # of silently upserting/deduplicating.
+                conn.execute(stmt)
+            elif update_cols:
                 # If non-PK columns exist, perform an UPSERT (update on conflict)
                 update_dict = {c: stmt.excluded[c] for c in update_cols}
                 stmt = stmt.on_conflict_do_update(
                     index_elements=pk_cols,
                     set_=update_dict,
                 )
+                conn.execute(stmt)
             else:
                 # If all columns are part of the PK, do nothing on conflict
                 stmt = stmt.on_conflict_do_nothing(index_elements=pk_cols)
-
-            # Execute the statement
-            conn.execute(stmt)
+                conn.execute(stmt)
 
 
 def _to_python(value):

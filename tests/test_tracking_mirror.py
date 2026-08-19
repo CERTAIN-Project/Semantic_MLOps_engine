@@ -235,3 +235,44 @@ def test_export_creates_compact_json_files(
     assert len(metrics) == 2
     assert latest_metrics[0]["value"] == 0.91
     assert counts["metrics"] == 2
+
+
+def test_end_run_can_auto_sync_all(
+    isolated_mlflow,
+    tmp_path,
+    monkeypatch,
+):
+    tracker = Tracker(tmp_path / "certain")
+    tracker.set_experiment("auto-sync-test")
+
+    called = {}
+
+    def fake_urlopen(request, timeout=0):
+        called["url"] = request.full_url
+        called["method"] = request.get_method()
+        called["timeout"] = timeout
+
+        class _Response:
+            def __enter__(self_inner):
+                return self_inner
+
+            def __exit__(self_inner, exc_type, exc, tb):
+                return False
+
+            def read(self_inner):
+                return b"ok"
+
+        return _Response()
+
+    monkeypatch.setenv("CERTAIN_AUTO_SYNC_ON_RUN_END", "true")
+    monkeypatch.setenv("CERTAIN_SYNC_ALL_URL", "http://example.com/sync/all")
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    with tracker.start_run():
+        pass
+
+    assert called == {
+        "url": "http://example.com/sync/all",
+        "method": "POST",
+        "timeout": 30,
+    }

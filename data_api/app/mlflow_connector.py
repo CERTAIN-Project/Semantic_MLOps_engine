@@ -12,11 +12,13 @@ Environment variables required:
 import os
 import json
 import pandas as pd
+from typing import Optional
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from urllib.parse import urlparse
 from fastapi import HTTPException
 import yaml
+import logging
 
 from mlflow.store.tracking.dbmodels import models as tracking_models
 
@@ -39,6 +41,7 @@ MLFLOW_ARTIFACTS = os.getenv("MLFLOW_ARTIFACTS")
 if MLFLOW_ARTIFACTS is None:
     raise ValueError("MLFLOW_ARTIFACTS is not set in the environment or .env file")
 mlflow_artifacts_uri = MLFLOW_ARTIFACTS
+logger = logging.getLogger(__name__)
 
 
 def get_experiments_data():
@@ -175,50 +178,197 @@ def get_experiment_tags_data():
     Returns:
         pandas.DataFrame: DataFrame containing experiment tags.
     """
-    # Artifact store does not currently keep experiment-level tags in a
-    # standard place; fallback to SQL.
-    return pd.read_sql(tracking_models.SqlExperimentTag.__tablename__, mlflow_engine)
+    # Read from certain/metadata/experiment_tags.json written by
+    # certain_library.metadata.artifact_metadata.save_tags_as_artifact.
+    # Shape: {experiment_id, experiment_tags: {key: value, ...}, captured_at}
+    parsed_uri = urlparse(mlflow_artifacts_uri)
+    artifacts_root = parsed_uri.path if parsed_uri.path else mlflow_artifacts_uri
+
+    rows = []
+    unwanted = {".trash", ".DS_Store"}
+    if os.path.isdir(artifacts_root):
+        for exp_id in os.listdir(artifacts_root):
+            if exp_id in unwanted:
+                continue
+            exp_path = os.path.join(artifacts_root, exp_id)
+            if not os.path.isdir(exp_path):
+                continue
+            for run_id in os.listdir(exp_path):
+                if run_id in unwanted:
+                    continue
+                tag_file = os.path.join(
+                    exp_path, run_id, "artifacts", "certain", "metadata", "experiment_tags.json"
+                )
+                if not os.path.exists(tag_file):
+                    continue
+                try:
+                    with open(tag_file, "r", encoding="utf-8") as fh:
+                        rec = json.load(fh)
+                    exp_id_from_file = str(rec.get("experiment_id") or exp_id)
+                    for key, value in (rec.get("experiment_tags") or {}).items():
+                        rows.append({
+                            "experiment_id": exp_id_from_file,
+                            "key": str(key),
+                            "value": str(value),
+                        })
+                except Exception:
+                    continue
+
+    if rows:
+        return pd.DataFrame(rows).drop_duplicates(subset=["experiment_id", "key"])
+    return pd.DataFrame(columns=["experiment_id", "key", "value"])
 
 
 def get_datasets_data():
-    """Fetch datasets table from MLflow tracking database.
+    """Fetch dataset metadata from certain/metadata/data.json artifacts.
 
-    Returns:
-        pandas.DataFrame: DataFrame containing datasets information.
+    Reads the lightweight data.json written by
+    certain_library.metadata.artifact_metadata.save_dataset_manifest.
+    Shape: {run_id, data_location, data_size, human_readable, captured_at}
+
+    Falls back to certain/dataset/data_manifest.json when data.json is absent.
     """
-    return pd.read_sql(tracking_models.SqlDataset.__tablename__, mlflow_engine)
+    parsed_uri = urlparse(mlflow_artifacts_uri)
+    artifacts_root = parsed_uri.path if parsed_uri.path else mlflow_artifacts_uri
+
+    rows = []
+    unwanted = {".trash", ".DS_Store"}
+    if os.path.isdir(artifacts_root):
+        for exp_id in os.listdir(artifacts_root):
+            if exp_id in unwanted:
+                continue
+            exp_path = os.path.join(artifacts_root, exp_id)
+            if not os.path.isdir(exp_path):
+                continue
+            for run_id in os.listdir(exp_path):
+                if run_id in unwanted:
+                    continue
+                # Prefer lightweight data.json
+                data_file = os.path.join(
+                    exp_path, run_id, "artifacts", "certain", "metadata", "data.json"
+                )
+                manifest_file = os.path.join(
+                    exp_path, run_id, "artifacts", "certain", "dataset", "data_manifest.json"
+                )
+                record = None
+                for candidate in (data_file, manifest_file):
+                    if os.path.exists(candidate):
+                        try:
+                            with open(candidate, "r", encoding="utf-8") as fh:
+                                record = json.load(fh)
+                            break
+                        except Exception:
+                            continue
+                if record is None:
+                    continue
+                record.setdefault("run_id", run_id)
+                record.setdefault("experiment_id", exp_id)
+                rows.append(record)
+
+    if rows:
+        df = pd.DataFrame(rows)
+        if "run_id" not in df.columns:
+            df["run_id"] = None
+        return df
+    return pd.DataFrame()
 
 
 def get_runs_data():
-    """Fetch runs from MLflow and populate parent_id from mlflow.parentRunId tags."""
+    """Fetch runs from MLflow and populate parent_id by reading
+    run_metadata.json files under artifacts/certain/.../metadata/run_metadata.json.
 
-    tags_df = get_tags_data()
+    This avoids depending on tags/events and builds a mapping of run_id -> parent_id
+    based on the canonical per-run metadata artifacts produced by the tracker.
+    """
 
     parent_id_map = {}
+    # build parent_id_map by scanning run_metadata.json files under the
+    # artifacts/certain/metadata location for every run
+    parsed_uri = urlparse(mlflow_artifacts_uri)
+    artifacts_root = parsed_uri.path if parsed_uri.path else mlflow_artifacts_uri
+    try:
+        if os.path.isdir(artifacts_root):
+            unwanted = {".trash", ".DS_Store", "artifacts"}
+            for exp_id in os.listdir(artifacts_root):
+                if exp_id in unwanted:
+                    continue
+                exp_path = os.path.join(artifacts_root, exp_id)
+                if not os.path.isdir(exp_path):
+                    continue
+                for run_id in os.listdir(exp_path):
+                    if run_id in unwanted:
+                        continue
+                    run_path = os.path.join(exp_path, run_id)
+                    if not os.path.isdir(run_path):
+                        continue
+                    meta_file = os.path.join(
+                        run_path, "artifacts", "certain", "metadata", "run_metadata.json"
+                    )
+                    if not os.path.exists(meta_file):
+                        # If run_metadata.json is not present, try to extract
+                        # parent information from run_tags.json or events.jsonl
+                        tags_file = os.path.join(
+                            run_path, "artifacts", "certain", "metadata", "run_tags.json"
+                        )
+                        events_file = os.path.join(
+                            run_path, "artifacts", "certain", "metadata", "events.jsonl"
+                        )
+                        parent_candidate = None
+                        if os.path.exists(tags_file):
+                            try:
+                                with open(tags_file, "r", encoding="utf-8") as tf:
+                                    rec = json.load(tf)
+                                run_tags = rec.get("run_tags") or {}
+                                # look for possible parent keys
+                                parent_candidate = (
+                                    run_tags.get("mlflow.parentRunId")
+                                    or run_tags.get("parent_run_id")
+                                    or run_tags.get("parent_id")
+                                )
+                            except Exception:
+                                parent_candidate = None
 
-    if tags_df is not None and not tags_df.empty:
-        # MLflow SQL uses run_id; artifact-normalized data may use run_uuid
-        if "run_id" in tags_df.columns and "run_uuid" not in tags_df.columns:
-            tags_df = tags_df.rename(columns={"run_id": "run_uuid"})
+                        if not parent_candidate and os.path.exists(events_file):
+                            try:
+                                with open(events_file, "r", encoding="utf-8") as ef:
+                                    for line in ef:
+                                        try:
+                                            ev = json.loads(line)
+                                        except Exception:
+                                            continue
+                                        if ev.get("event_type") == "tag":
+                                            key = ev.get("key", "")
+                                            if key == "mlflow.parentRunId" and ev.get("value"):
+                                                parent_candidate = ev.get("value")
+                                                break
+                            except Exception:
+                                parent_candidate = None
 
-        for col in ("run_uuid", "key", "value"):
-            if col not in tags_df.columns:
-                tags_df[col] = None
-
-        tags_df["run_uuid"] = tags_df["run_uuid"].astype(str)
-        tags_df["key"] = tags_df["key"].astype(str)
-
-        parent_tags = tags_df.loc[
-            tags_df["key"] == "mlflow.parentRunId",
-            ["run_uuid", "value"],
-        ].dropna(subset=["run_uuid", "value"])
-
-        parent_id_map = (
-            parent_tags.drop_duplicates(subset=["run_uuid"])
-            .set_index("run_uuid")["value"]
-            .astype(str)
-            .to_dict()
-        )
+                        if parent_candidate:
+                            try:
+                                parent_id_map[str(run_id)] = str(parent_candidate)
+                            except Exception:
+                                pass
+                        continue
+                    try:
+                        with open(meta_file, "r", encoding="utf-8") as mf:
+                            meta = json.load(mf)
+                        # certain_library.tracking.tracker writes the parent
+                        # reference as "parent_run_id" in run_metadata.json;
+                        # keep the older/alternate key names as fallbacks.
+                        parent_id = (
+                            meta.get("parent_run_id")
+                            or meta.get("parent_id")
+                            or meta.get("parentRunId")
+                            or meta.get("parent")
+                        )
+                        if parent_id:
+                            parent_id_map[str(run_id)] = str(parent_id)
+                    except Exception:
+                        # ignore malformed metadata files
+                        continue
+    except Exception:
+        parent_id_map = {}
 
     parsed_uri = urlparse(mlflow_artifacts_uri)
     artifacts_root = parsed_uri.path if parsed_uri.path else mlflow_artifacts_uri
@@ -226,27 +376,106 @@ def get_runs_data():
     runs = []
 
     if os.path.isdir(artifacts_root):
+        unwanted = {".trash", ".DS_Store", "artifacts"}
         for experiment_id in os.listdir(artifacts_root):
+            if experiment_id in unwanted:
+                continue
             exp_path = os.path.join(artifacts_root, experiment_id)
             if not os.path.isdir(exp_path):
                 continue
 
             for run_id in os.listdir(exp_path):
+                # Skip non-run entries that may appear in the experiment folder
+                if run_id in unwanted:
+                    continue
                 run_path = os.path.join(exp_path, run_id)
                 if not os.path.isdir(run_path):
                     continue
 
+                # Look for the canonical metadata under artifacts/certain/metadata
                 metadata_path = os.path.join(
-                    run_path, "artifacts", "metadata", "run_metadata.json"
+                    run_path, "artifacts", "certain", "metadata", "run_metadata.json"
                 )
 
+                # Prefer run_metadata.json when available
                 if os.path.exists(metadata_path):
                     try:
                         with open(metadata_path, "r", encoding="utf-8") as fh:
                             data = json.load(fh)
                         runs.append(data)
-                    except Exception:
                         continue
+                    except Exception:
+                        pass
+
+                # Fallbacks when run_metadata.json is missing: try run_tags.json
+                # and events.jsonl under artifacts/certain/metadata to extract
+                # source_type/source_name/source_version/user_id and parent info.
+                tags_file = os.path.join(
+                    run_path, "artifacts", "certain", "metadata", "run_tags.json"
+                )
+                events_file = os.path.join(
+                    run_path, "artifacts", "certain", "metadata", "events.jsonl"
+                )
+
+                fallback = {"run_id": run_id, "experiment_id": experiment_id}
+
+                # Try run_tags.json (written by save_tags_as_artifact)
+                if os.path.exists(tags_file):
+                    try:
+                        with open(tags_file, "r", encoding="utf-8") as fh:
+                            rec = json.load(fh)
+                        run_tags = rec.get("run_tags") or {}
+                        if isinstance(run_tags, dict):
+                            # Common keys may include mlflow.source.name, source_name, user_id
+                            fallback["source_name"] = (
+                                run_tags.get("mlflow.source.name")
+                                or run_tags.get("source_name")
+                                or fallback.get("source_name")
+                            )
+                            fallback["user_id"] = (
+                                run_tags.get("user")
+                                or run_tags.get("user_id")
+                                or fallback.get("user_id")
+                            )
+                            fallback["source_version"] = (
+                                run_tags.get("source_version")
+                                or fallback.get("source_version")
+                            )
+                    except Exception:
+                        pass
+
+                # Parse events.jsonl for system tags and parentRunId if present
+                if os.path.exists(events_file):
+                    try:
+                        with open(events_file, "r", encoding="utf-8") as fh:
+                            for line in fh:
+                                try:
+                                    ev = json.loads(line)
+                                except Exception:
+                                    continue
+                                # capture mlflow parentRunId from events
+                                if ev.get("event_type") == "tag":
+                                    key = ev.get("key", "")
+                                    val = ev.get("value")
+                                    if key == "mlflow.parentRunId" and val:
+                                        fallback["parent_id"] = str(val)
+                                    if key == "mlflow.source.name" and val:
+                                        fallback["source_name"] = fallback.get("source_name") or str(val)
+                                    if key == "mlflow.source.type" and val:
+                                        fallback["source_type"] = fallback.get("source_type") or str(val)
+                                # some telemetry writes source info as top-level events
+                                if ev.get("event_type") == "system":
+                                    # try to pick up source_version or user info
+                                    if ev.get("key") == "source_version" and ev.get("value"):
+                                        fallback["source_version"] = fallback.get("source_version") or str(ev.get("value"))
+                                    if ev.get("key") == "user_id" and ev.get("value"):
+                                        fallback["user_id"] = fallback.get("user_id") or str(ev.get("value"))
+                    except Exception:
+                        pass
+
+                # Only append fallback dict if it contains at least the run id
+                if fallback:
+                    runs.append(fallback)
 
     if runs:
         df = pd.DataFrame(runs)
@@ -285,206 +514,326 @@ def get_runs_data():
             df[col] = df[col].apply(lambda x: min(max(int(x), -(2**63)), 2**63 - 1))
 
         return df
-
-    # Fall back to SQL-backed reads if no artifact-based runs found
-    # runs_df = pd.read_sql(tracking_models.SqlRun.__tablename__, mlflow_engine)
-
-    # # MLflow SQL uses run_id
-    # if "run_id" in runs_df.columns and "run_uuid" not in runs_df.columns:
-    #     runs_df = runs_df.rename(columns={"run_id": "run_uuid"})
-
-    # if "parent_id" not in runs_df.columns:
-    #     runs_df["parent_id"] = None
-
-    # runs_df["run_uuid"] = runs_df["run_uuid"].astype(str)
-
-    # runs_df["parent_id"] = runs_df["run_uuid"].map(parent_id_map)
-    # runs_df["parent_id"] = runs_df["parent_id"].where(
-    #     pd.notna(runs_df["parent_id"]), None
-    # )
-
-    # for col in ("start_time", "end_time"):
-    #     if col not in runs_df.columns:
-    #         runs_df[col] = 0
-
-    #     runs_df[col] = pd.to_numeric(runs_df[col], errors="coerce").fillna(0)
-    #     runs_df[col] = runs_df[col].apply(
-    #         lambda x: min(max(int(x), -(2**63)), 2**63 - 1)
-    #     )
-
+    
     return pd.DataFrame()
 
 
 def get_metrics_data():
-    """Fetch metrics from MLflow tracking database.
+    """Fetch metrics from certain/metadata/run_metrics.json artifacts.
 
-    Returns:
-        pandas.DataFrame: DataFrame containing metric records.
+    Reads run_metrics.json written by
+    certain_library.metadata.artifact_metadata.save_metrics_as_artifact.
+    Shape: {run_id, run_metrics: {key: [{value, step, timestamp}]}, captured_at}
+
+    Falls back to events.jsonl (event_type == 'metric') when run_metrics.json
+    is absent for a run.
     """
-    # Metrics are best reconstructed from events.jsonl if present
     parsed_uri = urlparse(mlflow_artifacts_uri)
     artifacts_root = parsed_uri.path if parsed_uri.path else mlflow_artifacts_uri
 
     metrics = []
+    unwanted = {".trash", ".DS_Store"}
     if os.path.isdir(artifacts_root):
-        for exp in os.listdir(artifacts_root):
-            exp_path = os.path.join(artifacts_root, exp)
+        for exp_id in os.listdir(artifacts_root):
+            if exp_id in unwanted:
+                continue
+            exp_path = os.path.join(artifacts_root, exp_id)
             if not os.path.isdir(exp_path):
                 continue
-            for run in os.listdir(exp_path):
-                events_path = os.path.join(
-                    exp_path, run, "artifacts", "metadata", "events.jsonl"
+            for run_id in os.listdir(exp_path):
+                if run_id in unwanted:
+                    continue
+                metadata_dir = os.path.join(
+                    exp_path, run_id, "artifacts", "certain", "metadata"
                 )
-                if not os.path.exists(events_path):
-                    continue
-                try:
-                    with open(events_path, "r", encoding="utf-8") as fh:
-                        for line in fh:
-                            try:
-                                ev = json.loads(line)
-                            except Exception:
-                                continue
-                            if ev.get("event_type") == "metric":
-                                metrics.append(ev)
-                except Exception:
-                    continue
+                metrics_file = os.path.join(metadata_dir, "run_metrics.json")
+                events_file = os.path.join(metadata_dir, "events.jsonl")
+
+                # Prefer dedicated run_metrics.json
+                if os.path.exists(metrics_file):
+                    try:
+                        with open(metrics_file, "r", encoding="utf-8") as fh:
+                            rec = json.load(fh)
+                        run_metrics = rec.get("run_metrics") or {}
+                        if isinstance(run_metrics, dict):
+                            for key, history in run_metrics.items():
+                                if not isinstance(history, list):
+                                    history = [history]
+                                for entry in history:
+                                    if not isinstance(entry, dict):
+                                        continue
+                                    metrics.append({
+                                        "run_uuid": str(rec.get("run_id") or run_id),
+                                        "key": str(key),
+                                        "value": entry.get("value", 0),
+                                        "step": int(entry.get("step") or 0),
+                                        "timestamp": int(entry.get("timestamp") or 0),
+                                        "is_nan": False,
+                                    })
+                        continue  # don't also read events.jsonl for this run
+                    except Exception:
+                        pass  # fall through to events.jsonl
+
+                # Fallback: parse events.jsonl for metric events
+                if os.path.exists(events_file):
+                    try:
+                        with open(events_file, "r", encoding="utf-8") as fh:
+                            for line in fh:
+                                try:
+                                    ev = json.loads(line)
+                                except Exception:
+                                    continue
+                                if ev.get("event_type") == "metric":
+                                    metrics.append({
+                                        "run_uuid": str(ev.get("run_id") or run_id),
+                                        "key": ev.get("key", ""),
+                                        "value": ev.get("value", 0),
+                                        "step": int(ev.get("step") or 0),
+                                        "timestamp": int(ev.get("timestamp") or 0),
+                                        "is_nan": ev.get("is_NaN", False),
+                                    })
+                    except Exception:
+                        continue
 
     if metrics:
         df = pd.DataFrame(metrics)
-
-        # Standardize field names
-        if "run_id" in df.columns:
-            df = df.rename(columns={"run_id": "run_uuid"})
-
-        if "is_NaN" in df.columns and "is_nan" not in df.columns:
-            df = df.rename(columns={"is_NaN": "is_nan"})
-
         for col in ("run_uuid", "key", "value", "step", "timestamp", "is_nan"):
             if col not in df.columns:
                 df[col] = None
-
-        if "timestamp" in df.columns:
-            try:
-                df["timestamp"] = df["timestamp"].fillna(0).astype(int)
-            except Exception:
-                df["timestamp"] = (
-                    pd.to_numeric(df["timestamp"], errors="coerce")
-                    .fillna(0)
-                    .astype(int)
-                )
-
+        try:
+            df["timestamp"] = df["timestamp"].fillna(0).astype(int)
+        except Exception:
+            pass
         return df
 
-    # return pd.read_sql(tracking_models.SqlMetric.__tablename__, mlflow_engine)
     return pd.DataFrame()
 
 
 def get_latest_metrics_data():
-    """Fetch latest metrics from MLflow tracking database.
+    """Derive latest metric values from certain/metadata/run_metrics.json artifacts.
 
-    Returns:
-        pandas.DataFrame: DataFrame containing latest metric values per run/step.
+    For each run, reads run_metrics.json and keeps the entry with the highest
+    step (or timestamp) for every metric key — equivalent to MLflow's
+    SqlLatestMetric table, but sourced entirely from artifact files.
+
+    Shape of run_metrics.json:
+        {run_id, run_metrics: {key: [{value, step, timestamp}, ...]}, captured_at}
     """
-    return pd.read_sql(tracking_models.SqlLatestMetric.__tablename__, mlflow_engine)
+    parsed_uri = urlparse(mlflow_artifacts_uri)
+    artifacts_root = parsed_uri.path if parsed_uri.path else mlflow_artifacts_uri
+
+    rows = []
+    unwanted = {".trash", ".DS_Store"}
+    if os.path.isdir(artifacts_root):
+        for exp_id in os.listdir(artifacts_root):
+            if exp_id in unwanted:
+                continue
+            exp_path = os.path.join(artifacts_root, exp_id)
+            if not os.path.isdir(exp_path):
+                continue
+            for run_id in os.listdir(exp_path):
+                if run_id in unwanted:
+                    continue
+                metrics_file = os.path.join(
+                    exp_path, run_id, "artifacts", "certain", "metadata", "run_metrics.json"
+                )
+                if not os.path.exists(metrics_file):
+                    continue
+                try:
+                    with open(metrics_file, "r", encoding="utf-8") as fh:
+                        rec = json.load(fh)
+                except Exception:
+                    continue
+
+                run_metrics = rec.get("run_metrics") or {}
+                if not isinstance(run_metrics, dict):
+                    continue
+
+                for key, history in run_metrics.items():
+                    if not isinstance(history, list) or not history:
+                        continue
+                    # Keep the entry with the highest step; break ties by timestamp
+                    latest = max(
+                        history,
+                        key=lambda e: (int(e.get("step") or 0), int(e.get("timestamp") or 0)),
+                    )
+                    rows.append({
+                        "run_uuid": str(rec.get("run_id") or run_id),
+                        "key": str(key),
+                        "value": latest.get("value", 0),
+                        "step": int(latest.get("step") or 0),
+                        "timestamp": int(latest.get("timestamp") or 0),
+                        "is_nan": False,
+                    })
+
+    if rows:
+        df = pd.DataFrame(rows)
+        return df
+    return pd.DataFrame(columns=["run_uuid", "key", "value", "step", "timestamp", "is_nan"])
 
 
 def get_params_data():
-    """Fetch parameters from MLflow tracking database.
+    """Fetch parameters from certain/metadata/run_params.json artifacts.
 
-    Returns:
-        pandas.DataFrame: DataFrame containing parameter records.
+    Reads run_params.json written by
+    certain_library.metadata.artifact_metadata.save_params_as_artifact.
+    Shape: {run_id, run_params: {key: value, ...}, captured_at}
+
+    Falls back to events.jsonl (event_type == 'param') when run_params.json
+    is absent for a run.
     """
-    # Reconstruct params from artifact events when available
     parsed_uri = urlparse(mlflow_artifacts_uri)
     artifacts_root = parsed_uri.path if parsed_uri.path else mlflow_artifacts_uri
 
     params = []
+    unwanted = {".trash", ".DS_Store"}
     if os.path.isdir(artifacts_root):
-        for exp in os.listdir(artifacts_root):
-            exp_path = os.path.join(artifacts_root, exp)
+        for exp_id in os.listdir(artifacts_root):
+            if exp_id in unwanted:
+                continue
+            exp_path = os.path.join(artifacts_root, exp_id)
             if not os.path.isdir(exp_path):
                 continue
-            for run in os.listdir(exp_path):
-                events_path = os.path.join(
-                    exp_path, run, "artifacts", "metadata", "events.jsonl"
+            for run_id in os.listdir(exp_path):
+                if run_id in unwanted:
+                    continue
+                metadata_dir = os.path.join(
+                    exp_path, run_id, "artifacts", "certain", "metadata"
                 )
-                if not os.path.exists(events_path):
-                    continue
-                try:
-                    with open(events_path, "r", encoding="utf-8") as fh:
-                        for line in fh:
-                            try:
-                                ev = json.loads(line)
-                            except Exception:
-                                continue
-                            if ev.get("event_type") == "param":
-                                params.append(ev)
-                except Exception:
-                    continue
+                params_file = os.path.join(metadata_dir, "run_params.json")
+                events_file = os.path.join(metadata_dir, "events.jsonl")
+
+                # Prefer dedicated run_params.json
+                if os.path.exists(params_file):
+                    try:
+                        with open(params_file, "r", encoding="utf-8") as fh:
+                            rec = json.load(fh)
+                        run_params = rec.get("run_params") or {}
+                        if isinstance(run_params, dict):
+                            for key, value in run_params.items():
+                                params.append({
+                                    "run_uuid": str(rec.get("run_id") or run_id),
+                                    "key": str(key),
+                                    "value": str(value),
+                                })
+                        continue  # don't also read events.jsonl for this run
+                    except Exception:
+                        pass  # fall through to events.jsonl
+
+                # Fallback: parse events.jsonl for param events
+                if os.path.exists(events_file):
+                    try:
+                        with open(events_file, "r", encoding="utf-8") as fh:
+                            for line in fh:
+                                try:
+                                    ev = json.loads(line)
+                                except Exception:
+                                    continue
+                                if ev.get("event_type") == "param":
+                                    params.append({
+                                        "run_uuid": str(ev.get("run_id") or run_id),
+                                        "key": ev.get("key", ""),
+                                        "value": str(ev.get("value", "")),
+                                    })
+                    except Exception:
+                        continue
 
     if params:
         df = pd.DataFrame(params)
-
-        if "run_id" in df.columns:
-            df = df.rename(columns={"run_id": "run_uuid"})
-
         for col in ("run_uuid", "key", "value"):
             if col not in df.columns:
                 df[col] = None
-
         return df
 
-    # return pd.read_sql(tracking_models.SqlParam.__tablename__, mlflow_engine)
     return pd.DataFrame()
 
 
 def get_tags_data():
-    """Fetch run tags from MLflow tracking database.
+    """Fetch run tags from certain/metadata/run_tags.json artifacts.
 
-    Returns:
-        pandas.DataFrame: DataFrame containing run tags.
+    Reads run_tags.json written by
+    certain_library.metadata.artifact_metadata.save_tags_as_artifact.
+    Shape: {run_id, run_tags: {key: value, ...}, captured_at}
+
+    Falls back to events.jsonl (event_type == 'tag') when run_tags.json
+    is absent for a run. Also always includes mlflow.parentRunId from
+    events.jsonl so get_runs_data() can resolve parent_id correctly.
     """
-    # Reconstruct tags from artifact events when available
     parsed_uri = urlparse(mlflow_artifacts_uri)
     artifacts_root = parsed_uri.path if parsed_uri.path else mlflow_artifacts_uri
 
     tags = []
+    unwanted = {".trash", ".DS_Store"}
     if os.path.isdir(artifacts_root):
-        for exp in os.listdir(artifacts_root):
-            exp_path = os.path.join(artifacts_root, exp)
+        for exp_id in os.listdir(artifacts_root):
+            if exp_id in unwanted:
+                continue
+            exp_path = os.path.join(artifacts_root, exp_id)
             if not os.path.isdir(exp_path):
                 continue
-            for run in os.listdir(exp_path):
-                events_path = os.path.join(
-                    exp_path, run, "artifacts", "metadata", "events.jsonl"
+            for run_id in os.listdir(exp_path):
+                if run_id in unwanted:
+                    continue
+                metadata_dir = os.path.join(
+                    exp_path, run_id, "artifacts", "certain", "metadata"
                 )
-                if not os.path.exists(events_path):
-                    continue
-                try:
-                    with open(events_path, "r", encoding="utf-8") as fh:
-                        for line in fh:
-                            try:
-                                ev = json.loads(line)
-                            except Exception:
-                                continue
-                            if ev.get("event_type") == "tag":
-                                tags.append(ev)
-                except Exception:
-                    continue
+                tags_file = os.path.join(metadata_dir, "run_tags.json")
+                events_file = os.path.join(metadata_dir, "events.jsonl")
+
+                run_id_str = str(run_id)
+                found_via_file = False
+
+                # Prefer dedicated run_tags.json
+                if os.path.exists(tags_file):
+                    try:
+                        with open(tags_file, "r", encoding="utf-8") as fh:
+                            rec = json.load(fh)
+                        run_tags = rec.get("run_tags") or {}
+                        if isinstance(run_tags, dict):
+                            for key, value in run_tags.items():
+                                tags.append({
+                                    "run_uuid": str(rec.get("run_id") or run_id_str),
+                                    "key": str(key),
+                                    "value": str(value),
+                                })
+                        found_via_file = True
+                    except Exception:
+                        pass
+
+                # Always also scan events.jsonl for mlflow.parentRunId tags
+                # (these are written by MLflow itself, not by save_tags_as_artifact)
+                if os.path.exists(events_file):
+                    try:
+                        with open(events_file, "r", encoding="utf-8") as fh:
+                            for line in fh:
+                                try:
+                                    ev = json.loads(line)
+                                except Exception:
+                                    continue
+                                if ev.get("event_type") != "tag":
+                                    continue
+                                key = ev.get("key", "")
+                                # If we already loaded from file, only keep
+                                # mlflow system tags (parentRunId etc.) from events
+                                if found_via_file and not str(key).startswith("mlflow."):
+                                    continue
+                                tags.append({
+                                    "run_uuid": str(ev.get("run_id") or run_id_str),
+                                    "key": str(key),
+                                    "value": str(ev.get("value", "")),
+                                })
+                    except Exception:
+                        continue
 
     if tags:
         df = pd.DataFrame(tags)
-
-        if "run_id" in df.columns:
-            df = df.rename(columns={"run_id": "run_uuid"})
-
         for col in ("run_uuid", "key", "value"):
             if col not in df.columns:
                 df[col] = None
-
+        # Deduplicate: keep last occurrence per (run_uuid, key)
+        df = df.drop_duplicates(subset=["run_uuid", "key"], keep="last")
         return df
 
-    # return pd.read_sql(tracking_models.SqlTag.__tablename__, mlflow_engine)
     return pd.DataFrame()
 
 
@@ -556,14 +905,97 @@ def get_artifacts_data(folder_name: str = "whylogs", file_extension: str = ".csv
                     continue
                 run_id = run_file_name
                 run_path = os.path.join(experiment_path, run_file_name)
-                # Artifacts sub folder
-                folder_path = os.path.join(run_path, f"artifacts/{folder_name}")
+                # Normalize folder_name: strip any leading slashes and any
+                # accidental leading 'artifacts/' prefix so we don't construct
+                # paths like '<run_path>/artifacts/artifacts/...'. Accept either
+                # 'run_logs' or 'certain/run_logs' (the caller commonly passes
+                # artifact_path("run_logs") which yields 'certain/run_logs').
+                norm_folder = folder_name.lstrip("/")
+                if norm_folder.startswith("artifacts/"):
+                    norm_folder = norm_folder.split("artifacts/", 1)[1]
+
+                # Artifacts sub folder (join with the run's artifacts directory)
+                folder_path = os.path.join(run_path, "artifacts", norm_folder)
+                # effective identifiers default to the run's own ids; may be
+                # updated to the parent run when artifacts are found there.
+                effective_run_id = run_id
+                effective_experiment_id = experiment_id
+
                 if not os.path.exists(folder_path):
-                    print(
-                        f"[WARNING] Skipping run {run_id}: "
-                        f"artifact folder '{folder_name}' not found at {folder_path}"
-                    )
-                    continue
+                    # Attempt to find the artifact under a parent run's artifacts
+                    parent_found = False
+                    parent_id = None
+                    try:
+                        # Check for a run metadata file that may include parent info
+                        meta_file = os.path.join(
+                            run_path, "artifacts", "certain", "metadata", "run_metadata.json"
+                        )
+                        if os.path.exists(meta_file):
+                            try:
+                                with open(meta_file, "r", encoding="utf-8") as mf:
+                                    meta = json.load(mf)
+                                parent_id = (
+                                    meta.get("parent_run_id")
+                                    or meta.get("parent_id")
+                                    or meta.get("parentRunId")
+                                    or meta.get("parent")
+                                )
+                            except Exception:
+                                parent_id = None
+
+                        # Fallback: inspect events.jsonl for mlflow.parentRunId tag
+                        if not parent_id:
+                            events_meta = os.path.join(
+                                run_path, "artifacts", "certain", "metadata", "events.jsonl"
+                            )
+                            if os.path.exists(events_meta):
+                                try:
+                                    with open(events_meta, "r", encoding="utf-8") as ef:
+                                        for line in ef:
+                                            try:
+                                                ev = json.loads(line)
+                                            except Exception:
+                                                continue
+                                            if ev.get("event_type") == "tag" and ev.get("key") == "mlflow.parentRunId":
+                                                parent_id = ev.get("value")
+                                                break
+                                except Exception:
+                                    parent_id = None
+
+                        # If we found a parent id, try to locate its artifact folder
+                        if parent_id:
+                            # Prefer same-experiment parent first
+                            candidate_parent = os.path.join(
+                                experiment_path, str(parent_id), "artifacts", norm_folder
+                            )
+                            if os.path.exists(candidate_parent):
+                                folder_path = candidate_parent
+                                parent_found = True
+                                effective_run_id = str(parent_id)
+                                effective_experiment_id = experiment_id
+                            else:
+                                # Search across experiments for the parent run folder
+                                for cand_exp in os.listdir(artifacts_path):
+                                    cand_path = os.path.join(
+                                        artifacts_path, cand_exp, str(parent_id), "artifacts", norm_folder
+                                    )
+                                    if os.path.exists(cand_path):
+                                        folder_path = cand_path
+                                        parent_found = True
+                                        effective_run_id = str(parent_id)
+                                        effective_experiment_id = cand_exp
+                                        break
+                    except Exception:
+                        parent_found = False
+
+                    if not parent_found:
+                        logger.debug(
+                            "Skipping run %s: artifact folder '%s' not found at %s",
+                            run_id,
+                            norm_folder,
+                            folder_path,
+                        )
+                        continue
                 if len(file_extension.split(".")[0]) != 0:
                     files_list = [file_extension]
                 else:
@@ -572,16 +1004,18 @@ def get_artifacts_data(folder_name: str = "whylogs", file_extension: str = ".csv
                     if file_name.endswith(file_extension):
                         file_path = os.path.join(folder_path, file_name)
                         if not os.path.exists(file_path):
-                            print(
-                                f"[WARNING] Skipping run {run_id}: "
-                                f"artifact file '{file_name}' not found at {file_path}"
+                            logger.debug(
+                                "Skipping run %s: artifact file '%s' not found at %s",
+                                run_id,
+                                file_name,
+                                file_path,
                             )
                             continue
                         data = None
                         if ".csv" in file_extension:
                             data = pd.read_csv(file_path)
-                            data["run_id"] = run_id
-                            data["experiment_id"] = experiment_id
+                            data["run_id"] = effective_run_id
+                            data["experiment_id"] = effective_experiment_id
                             data["stage"] = file_name.split("_")[-1].split(".")[0]
                             data_list.append(data)
                         elif ".json" in file_extension:
@@ -591,8 +1025,8 @@ def get_artifacts_data(folder_name: str = "whylogs", file_extension: str = ".csv
                             if isinstance(data, dict):
                                 data = pd.DataFrame([data])
                             # Attach run/experiment identifiers so sync functions can map correctly
-                            data["run_id"] = run_id
-                            data["experiment_id"] = experiment_id
+                            data["run_id"] = effective_run_id
+                            data["experiment_id"] = effective_experiment_id
                             # Derive a stage from filename suffix similar to CSV handling
                             try:
                                 data["stage"] = file_name.split("_")[-1].split(".")[0]
@@ -627,8 +1061,8 @@ def get_artifacts_data(folder_name: str = "whylogs", file_extension: str = ".csv
                             content = [line.strip() for line in content if line.strip()]
 
                             data = pd.DataFrame([{"timestamps": content}])
-                            data["run_id"] = run_id
-                            data["experiment_id"] = experiment_id
+                            data["run_id"] = effective_run_id
+                            data["experiment_id"] = effective_experiment_id
                             data_list.append(data)
                         elif "MLmodel" in file_extension:
                             # read txt file and convert it to JSON format then load as DataFrame
@@ -664,8 +1098,8 @@ def get_artifacts_data(folder_name: str = "whylogs", file_extension: str = ".csv
                                 mlmodel_df = pd.DataFrame(
                                     [{"mlmodel_content": mlmodel_content}]
                                 )
-                            mlmodel_df["run_id"] = run_id
-                            mlmodel_df["experiment_id"] = experiment_id
+                                mlmodel_df["run_id"] = effective_run_id
+                                mlmodel_df["experiment_id"] = effective_experiment_id
                             data_list.append(mlmodel_df)
 
         if data_list:
@@ -676,7 +1110,7 @@ def get_artifacts_data(folder_name: str = "whylogs", file_extension: str = ".csv
     return pd.DataFrame()
 
 
-def get_json_artifacts_data(folder_name: str) -> list:
+def get_json_artifacts_data(folder_name: str, file_name: Optional[str] = None) -> list:
     """Collect JSON artifact records from MLflow local artifacts store.
 
     Walks the artifacts directory tree looking for ``folder_name`` subdirectories
@@ -686,6 +1120,9 @@ def get_json_artifacts_data(folder_name: str) -> list:
 
     Parameters:
         folder_name (str): Subfolder under ``<experiment>/<run>/artifacts/`` to search.
+        file_name (str | None): Optional exact JSON file name filter
+            (e.g. ``input_examples.json``). When omitted, all ``*.json``
+            files in the folder are read.
 
     Returns:
         list[tuple[str, str, dict]]: A list of ``(run_id, experiment_id, record)``
@@ -699,6 +1136,53 @@ def get_json_artifacts_data(folder_name: str) -> list:
 
     results: list = []
     if not os.path.isdir(artifacts_path):
+        # If local artifacts path is not available, attempt to download
+        # JSON artifacts using MLflow client from the tracking server.
+        try:
+            from mlflow.tracking import MlflowClient
+
+            client = MlflowClient()
+            import tempfile as _tmp
+
+            # Iterate experiments and their runs to find artifacts
+            for exp in client.list_experiments():
+                try:
+                    # Search runs for this experiment
+                    runs = client.search_runs([exp.experiment_id])
+                except Exception:
+                    runs = []
+                for r in runs:
+                    run_id = r.info.run_id
+                    try:
+                        artifacts = client.list_artifacts(run_id, path=folder_name)
+                    except Exception:
+                        artifacts = []
+                    for art in artifacts:
+                        # art is an ArtifactSummary with .path and .is_dir
+                        if getattr(art, "is_dir", False):
+                            continue
+                        base_name = os.path.basename(art.path)
+                        if not base_name.endswith(".json"):
+                            continue
+                        if file_name and base_name != file_name:
+                            continue
+                        # Download and read
+                        with _tmp.TemporaryDirectory() as td:
+                            try:
+                                local = client.download_artifacts(run_id, art.path, dst_path=td)
+                                if os.path.exists(local):
+                                    with open(local, "r", encoding="utf-8") as fh:
+                                        record = json.load(fh)
+                                    if isinstance(record, dict):
+                                        results.append((run_id, str(exp.experiment_id), record))
+                                    elif isinstance(record, list):
+                                        for item in record:
+                                            if isinstance(item, dict):
+                                                results.append((run_id, str(exp.experiment_id), item))
+                            except Exception:
+                                continue
+        except Exception:
+            return results
         return results
 
     for experiment_id in os.listdir(artifacts_path):
@@ -715,10 +1199,12 @@ def get_json_artifacts_data(folder_name: str) -> list:
             )
             if not os.path.isdir(folder_path):
                 continue
-            for file_name in os.listdir(folder_path):
-                if not file_name.endswith(".json"):
+            for current_file_name in os.listdir(folder_path):
+                if not current_file_name.endswith(".json"):
                     continue
-                file_path = os.path.join(folder_path, file_name)
+                if file_name and current_file_name != file_name:
+                    continue
+                file_path = os.path.join(folder_path, current_file_name)
                 try:
                     with open(file_path, "r", encoding="utf-8") as fh:
                         record = json.load(fh)
@@ -794,7 +1280,7 @@ def get_dataset_manifest_for_run(run_id: str):
                     with open(local, "r", encoding="utf-8") as fh:
                         return json.load(fh)
             except Exception:
-                # try metadata path
+                # Try metadata path as a fallback, then give up
                 try:
                     rel_meta = "certain/metadata/data.json"
                     local2 = client.download_artifacts(run_id, rel_meta, dst_path=td)
@@ -803,8 +1289,59 @@ def get_dataset_manifest_for_run(run_id: str):
                             return json.load(fh)
                 except Exception:
                     return None
+    except Exception:
+        return None
+
+
+def get_python_env_for_run(run_id: str):
+    """Return parsed certain/model/python_env.yaml for a given run_id when present locally.
+
+    Searches the local artifacts root for any experiment folder containing the
+    run_id and reads artifacts/certain/model/python_env.yaml if present.
+    Shape (written by MLflow's model logging):
+        {python: "3.9.16", build_dependencies: [...], dependencies: [...]}
+
+    Returns dict or None when not found.
+    """
+    parsed_uri = urlparse(mlflow_artifacts_uri)
+    artifacts_path = parsed_uri.path if parsed_uri.path else mlflow_artifacts_uri
+
+    if not os.path.isdir(artifacts_path):
+        return None
+
+    for exp in os.listdir(artifacts_path):
+        exp_path = os.path.join(artifacts_path, exp)
+        if not os.path.isdir(exp_path):
+            continue
+        run_path = os.path.join(exp_path, run_id)
+        if not os.path.isdir(run_path):
+            continue
+        python_env_path = os.path.join(
+            run_path, "artifacts", "certain", "model", "python_env.yaml"
+        )
+        if os.path.exists(python_env_path):
+            try:
+                with open(python_env_path, "r", encoding="utf-8") as fh:
+                    return yaml.safe_load(fh)
             except Exception:
-                # Can't download via client — give up
+                return None
+
+    # Not found on local filesystem; try MLflow client to download the artifact.
+    try:
+        from mlflow.tracking import MlflowClient
+
+        client = MlflowClient()
+        import tempfile as _tmp
+
+        with _tmp.TemporaryDirectory() as td:
+            try:
+                rel_path = "certain/model/python_env.yaml"
+                local = client.download_artifacts(run_id, rel_path, dst_path=td)
+                if os.path.exists(local):
+                    with open(local, "r", encoding="utf-8") as fh:
+                        return yaml.safe_load(fh)
+            except Exception:
                 return None
     except Exception:
         return None
+

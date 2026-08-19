@@ -139,6 +139,8 @@ services:
       - MLFLOW_DB=postgresql+psycopg2://postgres:postgres@postgres:5432/mlflow
       - MLFLOW_ARTIFACTS=/app/mlruns
       - MLFLOW_ARTIFACT_ROOT=/app/mlruns
+      - CERTAIN_AUTO_SYNC_ON_RUN_END=true
+      - CERTAIN_SYNC_ALL_URL=http://data_transfer:8001/sync/all
       - PYTHONPATH=/app:/app/certain_library
     volumes:
       - mlflow_artifacts:/app/mlruns

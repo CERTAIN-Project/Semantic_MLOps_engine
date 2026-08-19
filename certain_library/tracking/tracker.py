@@ -8,6 +8,8 @@ import shutil
 from pathlib import Path
 from typing import Any, Dict, Optional, List
 import threading
+import urllib.error
+import urllib.request
 
 import mlflow
 from mlflow.tracking import MlflowClient
@@ -30,6 +32,9 @@ from metadata.artifact_metadata import save_inputs_as_artifact
 from metadata.artifact_metadata import _extract_run_inputs
 
 logger = logging.getLogger(__name__)
+
+AUTO_SYNC_ENV_VAR = "CERTAIN_AUTO_SYNC_ON_RUN_END"
+SYNC_ALL_URL_ENV_VAR = "CERTAIN_SYNC_ALL_URL"
 
 
 def mirror_root() -> Path:
@@ -121,6 +126,34 @@ class Tracker:
         # logging handler captures)
         self._console_recent_msgs = collections.deque(maxlen=200)
         self._console_recent_set = set()
+
+    def _maybe_sync_all_on_run_end(self, run_id: str) -> None:
+        """Best-effort sync hook that can be enabled with an environment flag."""
+        enabled = os.getenv(AUTO_SYNC_ENV_VAR, "").strip().lower()
+        if enabled not in {"1", "true", "yes", "on"}:
+            return
+
+        if os.getenv(SYNC_ALL_URL_ENV_VAR):
+            sync_url = os.getenv(SYNC_ALL_URL_ENV_VAR)
+        elif Path("/.dockerenv").exists():
+            sync_url = "http://data_transfer:8001/sync/all"
+        else:
+            sync_url = "http://localhost:8001/sync/all"
+
+        request = urllib.request.Request(
+            sync_url,
+            method="POST",
+        )
+
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                response.read()
+        except (urllib.error.URLError, TimeoutError, OSError):
+            logger.exception(
+                "Automatic sync/all failed after run %s via %s",
+                run_id,
+                sync_url,
+            )
 
     def set_tracking_uri(self, uri: str) -> None:
         mlflow.set_tracking_uri(uri)
@@ -694,6 +727,14 @@ class Tracker:
         finally:
             # End the active MLflow run after all artifacts have been uploaded.
             mlflow.end_run(status=status)
+
+            try:
+                self._maybe_sync_all_on_run_end(run_id)
+            except Exception:
+                logger.exception(
+                    "Automatic sync hook failed after run %s",
+                    run_id,
+                )
 
             if is_parent_run:
                 self._parent_run_id = None

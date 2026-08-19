@@ -127,6 +127,8 @@ def log_declarations_of_conformity(
     with tempfile.TemporaryDirectory() as tmp_dir:
         for d in declarations:
             declaration_id = d.get("declaration_id") or str(uuid.uuid4())
+            artifact_name = "declaration.json"
+            artifact_rel_path = f"declaration_of_conformity/{artifact_name}"
             record = {
                 "declaration_id": declaration_id,
                 "issuer": issuer,
@@ -138,12 +140,14 @@ def log_declarations_of_conformity(
                 "file_type": d["file_type"],
                 "mime_type": d["mime_type"],
                 "description": d.get("description") or "",
-                "link_to_artifacts": d.get("link_to_artifacts") or "",
-                "file_size": d.get("file_size"),
                 "creation_time": int(time.time()),
             }
-            fname = f"declaration.json"
+            fname = artifact_name
             path = os.path.join(tmp_dir, fname)
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(record, f, indent=2)
+            record["file_size"] = d.get("file_size") or os.path.getsize(path)
+            record["link_to_artifacts"] = d.get("link_to_artifacts") or f"mlflow://artifacts/{artifact_rel_path}"
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(record, f, indent=2)
             tracker.log_artifact(path, artifact_path="declaration_of_conformity")

@@ -29,6 +29,8 @@ from certain_library.train_monitor.log_model import (
     log_model_hyperparameters,
     log_model_signature,
 )
+from certain_library.train_monitor.log_checkpoints import log_checkpoint
+from certain_library.train_monitor.log_examples import log_examples
 from certain_library.data_analysis.log_whylogs import log_whylogs_profile
 from certain_library.log_basic.log_params import log_params
 from certain_library.data_analysis.log_dataset import (
@@ -57,6 +59,8 @@ from certain_library.compliance.log_deployment import (
     log_build_testing,
     log_standards,
     log_interface,
+    log_model_deployed,
+    log_monitor_logs,
     log_decommissioning,
 )
 
@@ -71,7 +75,6 @@ from certain_library.metadata.artifact_metadata import (
     save_dataset_manifest,
 )
 from certain_library.data_analysis.log_data_techniques import log_data_techniques
-from data_api.misc.data_transform import map_mlflow_data_drift
 
 # ---------------------------------------------------------------------------
 # Set USE_DUMMY_DATA = True to run fully offline with synthetic energy data.
@@ -180,7 +183,7 @@ print()
 
 # Start MLflow run
 with tracker.start_run(
-    run_name="random_forest_classifier",
+    run_name="t",
     tags={"project": "opsd_demo", "test_run": "1"},
 ) as run:
     print(f"🏃 Run Started: {run.info.run_id}")
@@ -314,7 +317,7 @@ with tracker.start_run(
         df.to_csv(raw_path, index=False)
         # write only the lightweight metadata (data.json)
         try:
-            save_dataset_manifest(
+            l_(
                 run_id=run.info.run_id, files_or_path=raw_path, write_manifest=False
             )
         except Exception:
@@ -433,8 +436,15 @@ with tracker.start_run(
                 },
             },
         }
-        log_data_techniques(dt)
-        print("🧾 Wrote data_techniques artifact")
+        # Write the canonical data_techniques artifact into the active MLflow run
+        # The helper will create a deterministically named JSON file and attach
+        # it under the `data_techniques` artifact path so the host-side sync
+        # process can discover and ingest it.
+        try:
+            log_data_techniques(dt)
+            print("🧾 Wrote data_techniques artifact")
+        except Exception as e:
+            print(f"⚠️ Could not write data_techniques artifact: {e}")
     except Exception:
         pass
 
@@ -634,6 +644,41 @@ with tracker.start_run(
         log_resources(
             {"trial_cpu_usage_percent": psutil.cpu_percent(interval=1)}, step=step
         )
+        # Log a small sample of examples every 5 steps
+        try:
+            if step % 5 == 0:
+                sample_n = min(5, len(y_pred))
+                # X_test may be a DataFrame
+                try:
+                    inputs_sample = X_test.iloc[:sample_n].to_dict(orient="records")
+                except Exception:
+                    # fallback for numpy arrays
+                    inputs_sample = [list(x) for x in X_test[:sample_n]]
+
+                preds_sample = list(y_pred[:sample_n])
+                gt_sample = list(y_test.iloc[:sample_n])
+
+                log_examples(inputs_sample, preds_sample, gt_sample, step=step, stage="train")
+        except Exception:
+            pass
+
+        # Persist a checkpoint snapshot every 5 steps and log it to MLflow.
+        if step % 5 == 0:
+            try:
+                import tempfile
+
+                checkpoint_file_name = f"checkpoint_step_{step:02d}.json"
+                checkpoint_location = f"checkpoints/{checkpoint_file_name}"
+                with tempfile.TemporaryDirectory() as tmp_dir:
+                    checkpoint_path = os.path.join(tmp_dir, checkpoint_file_name)
+                    booster.save_model(checkpoint_path)
+                    log_checkpoint(
+                        checkpoint_name=f"step_{step:02d}",
+                        checkpoint_location=checkpoint_location,
+                        checkpoint_file_path=checkpoint_path,
+                    )
+            except Exception:
+                pass
 
     stop_tracker(tracker_data, output_location)
     print("⚡ Resource monitoring stopped for model training")
@@ -877,6 +922,28 @@ with tracker.start_run(
         with open(_log_path, "w") as _f:
             _f.write(deploy_log_text + "\n")
         tracker.log_artifact(_log_path, artifact_path="deployment_logs")
+
+    log_model_deployed(
+        deployment_id=DEPLOY_ID,
+        model_id=MODEL_ID,
+        model_version="1.0",
+        endpoint=f"http://localhost:{SERVE_PORT}/predict",
+        model_format="xgboost",
+        size="not available yet",
+        description="Local FastAPI deployment for the energy load forecasting demo.",
+        user_id=os.environ.get("USER", "unknown"),
+        current_stage="production",
+        location=f"localhost:{SERVE_PORT}",
+        status="deployed",
+        model_cateory="forecasting",
+        deployment_log=deploy_log_text,
+    )
+
+    log_monitor_logs(
+        deployment_id=DEPLOY_ID,
+        model_id=MODEL_ID,
+        message=deploy_log_text,
+    )
 
     # --- Graceful shutdown of the inference server ---------------------------
     server.should_exit = True

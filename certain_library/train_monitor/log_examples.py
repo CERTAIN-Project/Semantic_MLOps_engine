@@ -69,3 +69,29 @@ def log_examples(
         csv_path = os.path.join(tmp_dir, f"examples_{stage}.csv")
         df.to_csv(csv_path, index=False)
         tracker.log_artifact(csv_path, artifact_path="examples")
+        # Also write a JSON artifact per-step for richer ingestion
+        try:
+            import json as _json
+
+            json_path = os.path.join(tmp_dir, f"example_step_{int(step):02d}.json")
+            # Build list of dicts for JSON
+            json_list = []
+            for _, row in df.iterrows():
+                json_list.append(
+                    {
+                        "input": row.get("input"),
+                        "prediction": row.get("prediction"),
+                        "ground_truth": row.get("ground_truth"),
+                        "step": int(row.get("step") or step),
+                        "stage": row.get("stage") or stage,
+                        "timestamp": int(row.get("timestamp") or int(time.time())),
+                    }
+                )
+
+            with open(json_path, "w", encoding="utf-8") as jfh:
+                _json.dump(json_list, jfh, ensure_ascii=False)
+
+            tracker.log_artifact(json_path, artifact_path="examples")
+        except Exception:
+            # non-fatal: keep CSV logging even if JSON creation fails
+            pass

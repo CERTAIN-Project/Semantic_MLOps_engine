@@ -62,6 +62,7 @@ from certain_library.compliance.log_deployment import (
     log_decommissioning,
     log_interface,
     log_model_packaging,
+    log_monitor_logs,
     log_standards,
 )
 
@@ -78,6 +79,7 @@ from misc.data_transform import (  # noqa: E402
     map_interface,
     map_labeling_procedures,
     map_model_packaging,
+    map_monitor_logs,
     map_risk,
     map_standard,
     map_transparency_measure,
@@ -532,6 +534,10 @@ class TestLogDeclarationsOfConformity:
         ]
         assert captured[0]["filename"] == "conformity.pdf"
         assert captured[0]["mime_type"] == "application/pdf"
+        assert captured[0]["file_size"] is not None
+        assert captured[0]["link_to_artifacts"] == (
+            "mlflow://artifacts/declaration_of_conformity/declaration.json"
+        )
         assert captured[1]["filename"] == "addendum.docx"
         assert captured[1]["description"] == "Addendum"
         # shared fields propagated to second record too
@@ -785,6 +791,21 @@ class TestLogInterface:
         assert data["deployment_id"] == DEPLOYMENT_ID
 
 
+class TestLogMonitorLogs:
+    def test_artifact_path(self):
+        with patch("mlflow.log_artifact") as mock:
+            log_monitor_logs(DEPLOYMENT_ID, MODEL_ID, "deployment ok")
+            _, kwargs = mock.call_args
+            assert kwargs.get("artifact_path") == "deployment_logs"
+
+    def test_json_fields(self):
+        data = _capture_json(log_monitor_logs, DEPLOYMENT_ID, MODEL_ID, "deployment ok")
+        assert data["deployment_id"] == DEPLOYMENT_ID
+        assert data["model_id"] == MODEL_ID
+        assert data["message"] == "deployment ok"
+        assert data["source"] == "deployment_run.log"
+
+
 class TestLogDecommissioning:
     def test_artifact_path(self):
         with patch("mlflow.log_artifact") as mock:
@@ -798,6 +819,15 @@ class TestLogDecommissioning:
         data = _capture_json(
             log_decommissioning, DEPLOYMENT_ID, MODEL_ID, ["shutdown"], "End of life"
         )
+        assert data["system_name"] == ""
+        assert data["decommissioning_plan"] == ""
+        assert data["approvals"] == []
+        assert data["data_retention_archive"] == ""
+        assert data["migration"] == ""
+        assert data["access_removal"] == ""
+        assert data["infrastructure_shutdown"] == ""
+        assert data["evidence_documentation"] == []
+        assert data["audit_trail"] == ""
         assert data["decomissioning_actions"] == [
             "shutdown"
         ]  # single-m typo in library
@@ -1128,6 +1158,15 @@ class TestMapDecommissioning:
             "decommissioning_id": str(uuid.uuid4()),
             "deployment_id": DEPLOYMENT_ID,
             "model_id": MODEL_ID,
+            "system_name": "payments-api",
+            "decommissioning_plan": "Retire service after migration",
+            "approvals": ["security", "ops"],
+            "data_retention_archive": "archive/2026-08",
+            "migration": "migrate to v2",
+            "access_removal": "revoke all service accounts",
+            "infrastructure_shutdown": "shutdown cluster",
+            "evidence_documentation": ["runbook.pdf", "ticket-123"],
+            "audit_trail": "ticket-123 -> approved",
             "decomissioning_actions": [
                 "shutdown",
                 "archive",
@@ -1144,3 +1183,26 @@ class TestMapDecommissioning:
         assert result["reason"] == "End of life"
         # Key uses single-m typo matching the library/DB schema
         assert result["decomissioning_actions"] == ["shutdown", "archive"]
+        assert result["system_name"] == "payments-api"
+        assert result["approvals"] == ["security", "ops"]
+        assert result["evidence_documentation"] == ["runbook.pdf", "ticket-123"]
+
+
+class TestMapMonitorLogs:
+    def _record(self, **overrides):
+        base = {
+            "log_id": str(uuid.uuid4()),
+            "deployment_id": DEPLOYMENT_ID,
+            "model_id": MODEL_ID,
+            "message": "[2026-08-18T12:00:00] Deployment started",
+            "source": "deployment_run.log",
+        }
+        base.update(overrides)
+        return base
+
+    def test_maps_all_fields(self):
+        result = map_monitor_logs(self._record(), EXPERIMENT_ID, RUN_ID)
+        assert result["deployment_id"] == DEPLOYMENT_ID
+        assert result["experiment_id"] == EXPERIMENT_ID
+        assert result["model_id"] == MODEL_ID
+        assert result["message"].startswith("[")

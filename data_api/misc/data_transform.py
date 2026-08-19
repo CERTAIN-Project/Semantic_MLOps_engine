@@ -3,213 +3,119 @@ import os
 import logging
 import pandas as pd
 from scipy.stats import ks_2samp
-from urllib.parse import urlparse
+import hashlib
 
 logger = logging.getLogger(__name__)
 
 
-def map_mlflow_runs(run):
+def map_runs(run):
+    """Map a run record read from certain/metadata/run_metadata.json into a runs table row.
+
+    The artifact is written by certain_library.tracking.tracker.Tracker.start_run /
+    end_run and contains all run fields directly — no MLflow Postgres query needed.
+    `run` may be a pandas Series (from DataFrame.apply) or a plain dict.
+    """
+    if isinstance(run, pd.Series):
+        r = run.to_dict()
+    elif hasattr(run, "__getitem__"):
+        r = run
+    else:
+        r = {}
+
+    # Support both 'run_id' (artifact convention) and 'run_uuid' (MLflow SQL convention)
+    run_id = r.get("run_uuid") or r.get("run_id") or ""
     return {
-        "run_id": run.run_uuid,
-        "run_name": run.name,
-        "parent_id": run.get("parent_id", None),
-        "source_type": run.source_type,
-        "source_name": run.source_name,
-        "user_id": run.user_id,
-        "status": run.status,
-        "start_time": run.start_time,
-        "end_time": run.end_time,
-        "source_version": run.source_version,
-        "experiment_id": run.experiment_id,
+        "run_id": str(run_id),
+        "run_name": r.get("run_name") or r.get("name") or "",
+        "parent_id": r.get("parent_id") or r.get("parent_run_id"),
+        "source_type": r.get("source_type", "LOCAL"),
+        "source_name": r.get("source_name", ""),
+        "user_id": r.get("user_id", ""),
+        "status": r.get("status", "FINISHED"),
+        "start_time": r.get("start_time", 0),
+        "end_time": r.get("end_time", 0),
+        "source_version": r.get("source_version", ""),
+        "experiment_id": r.get("experiment_id", ""),
     }
 
 
-def map_mlflow_experiments(experiments):
+def map_experiments(experiments):
+    """Map an experiment record from the artifact-first get_experiments_data() into an experiments table row.
+
+    get_experiments_data() already reads from the artifact store (certain/metadata or
+    directory listing) — this mapper just normalises the field names for the DB schema.
+    `experiments` may be a pandas Series or a plain dict.
+    """
+    if isinstance(experiments, pd.Series):
+        r = experiments.to_dict()
+    elif hasattr(experiments, "__getitem__"):
+        r = experiments
+    else:
+        r = {}
+
+    lifecycle = r.get("lifecycle_stage") or r.get("experiment_stage") or "active"
     return {
-        "experiment_id": experiments.experiment_id,
-        "experiment_name": experiments.name,
-        "lifecycle_stage": experiments.lifecycle_stage,
-        # Some DB schemas expect an explicit 'experiment_stage' (non-nullable).
-        # Use any available attribute or fall back to lifecycle_stage or 'active'.
-        "experiment_stage": getattr(
-            experiments,
-            "experiment_stage",
-            getattr(experiments, "lifecycle_stage", "active"),
-        ),
-        # Include description if available (nullable in DB migrations).
-        "description": getattr(experiments, "description", None),
-        "creation_time": experiments.creation_time,
-        "last_update_time": experiments.last_update_time,
+        "experiment_id": str(r.get("experiment_id", "")),
+        "experiment_name": r.get("name") or r.get("experiment_name") or "default",
+        "lifecycle_stage": lifecycle,
+        "experiment_stage": r.get("experiment_stage") or lifecycle,
+        "description": r.get("description"),
+        "creation_time": r.get("creation_time") or int(pd.Timestamp.now(tz="UTC").timestamp()),
+        "last_update_time": r.get("last_update_time") or int(pd.Timestamp.now(tz="UTC").timestamp()),
     }
 
 
-def map_mlflow_datasets(datasets, run_id, id_mapping):
-    # Normalize incoming dataset record (could be a pandas Series)
+def map_datasets(datasets, run_id, id_mapping):
+    """Map a dataset record into a data table row.
+
+    Previously this function resolved location/size from the MLflow SQL datasets
+    table; now it reads exclusively from the CERTAIN artifact manifests:
+      - certain/dataset/data_manifest.json  (full manifest with files & total_size_bytes)
+      - certain/metadata/data.json          (lightweight record with data_location & data_size)
+
+    `datasets` is kept as a parameter for API compatibility but is no longer used
+    when a manifest is available; the manifest is always preferred.
+    """
+    # Prefer the canonical artifact manifest written by save_dataset_manifest
+    try:
+        from data_api.app.mlflow_connector import get_dataset_manifest_for_run
+        manifest = get_dataset_manifest_for_run(str(run_id))
+    except Exception:
+        manifest = None
+
+    if manifest and isinstance(manifest, dict):
+        # Delegate to the dedicated artifact mapper (defined later in this file)
+        return map_dataset_manifest(manifest, run_id, id_mapping)
+
+    # Fallback: build a minimal row from whatever was passed in (keeps backwards
+    # compatibility when no manifest artifact exists yet for a run).
     record = {}
     try:
         if isinstance(datasets, pd.Series):
             record = datasets.to_dict()
         elif isinstance(datasets, dict):
             record = dict(datasets)
-        else:
-            # fallback: treat as empty mapping
-            record = {}
     except Exception:
         record = {}
 
-    # Helper: try several likely keys for location and size
-    def first_present(keys):
-        for k in keys:
-            v = record.get(k) if isinstance(record, dict) else None
-            if v is not None and not (isinstance(v, float) and pd.isna(v)):
-                return v
-        return None
-
-    location_keys = [
-        "location",
-        "uri",
-        "path",
-        "artifact_uri",
-        "dataset_uri",
-        "source",
-        "file_path",
-        "absolute_path",
-    ]
-    size_keys = ["size", "file_size", "bytes", "length"]
-
-    data_location = first_present(location_keys)
-    data_size = first_present(size_keys)
-
-    # If a candidate location was found, try to normalize and stat it
-    resolved_location = None
-    resolved_size = None
-    try:
-        if isinstance(data_location, str):
-            loc = data_location
-            # strip file:// prefix if present
-            if loc.startswith("file://"):
-                loc = urlparse(loc).path
-            # If it's an absolute path on disk, and exists, stat it
-            if os.path.isabs(loc) and os.path.exists(loc):
-                resolved_location = loc
-                try:
-                    resolved_size = int(os.path.getsize(loc))
-                except Exception:
-                    resolved_size = None
-            else:
-                # It might be an artifact-path relative to MLflow artifacts root
-                mlflow_artifacts = os.getenv("MLFLOW_ARTIFACTS")
-                if mlflow_artifacts:
-                    parsed = urlparse(mlflow_artifacts)
-                    artifacts_root = parsed.path if parsed.path else mlflow_artifacts
-                    # look for files under <artifacts_root>/**/<run_id>/artifacts/**
-                    run_base = None
-                    # search for a matching run folder
-                    if os.path.isdir(artifacts_root):
-                        for exp in os.listdir(artifacts_root):
-                            run_path = os.path.join(artifacts_root, exp, str(run_id))
-                            if os.path.isdir(run_path):
-                                run_base = run_path
-                                break
-
-                    if run_base:
-                        # Look for any file whose name or path contains the provided location fragment
-                        for root, _, files in os.walk(run_base):
-                            for fname in files:
-                                candidate = os.path.join(root, fname)
-                                if (
-                                    loc in candidate
-                                    or fname == loc
-                                    or fname.startswith(loc)
-                                ):
-                                    resolved_location = candidate
-                                    try:
-                                        resolved_size = int(os.path.getsize(candidate))
-                                    except Exception:
-                                        resolved_size = None
-                                    break
-                            if resolved_location:
-                                break
-
-    except Exception:
-        resolved_location = None
-        resolved_size = None
-
-    # If size candidate exists but not yet resolved, coerce numeric-like values
-    if resolved_size is None and data_size is not None:
-        try:
-            resolved_size = int(data_size)
-        except Exception:
-            resolved_size = None
-
-    # Prefer dataset manifest if present (written by save_dataset_manifest)
-    try:
-        from data_api.app.mlflow_connector import get_dataset_manifest_for_run
-
-        manifest = get_dataset_manifest_for_run(str(run_id))
-        if manifest and isinstance(manifest, dict):
-            # Manifest may be the full data_manifest (with 'files' and 'total_size_bytes')
-            # or a lightweight metadata/data.json (with 'data_location' and 'data_size').
-            if "data_size" in manifest:
-                try:
-                    resolved_size = int(
-                        manifest.get("data_size")
-                        or manifest.get("total_size_bytes")
-                        or 0
-                    )
-                except Exception:
-                    resolved_size = resolved_size
-            else:
-                msize = manifest.get("total_size_bytes")
-                if msize is not None:
-                    try:
-                        resolved_size = int(msize)
-                    except Exception:
-                        pass
-
-            # Prefer explicit data_location if present
-            if manifest.get("data_location"):
-                resolved_location = manifest.get("data_location")
-            else:
-                files = manifest.get("files") or []
-                if files:
-                    first = files[0]
-                    if isinstance(first, dict) and first.get("path"):
-                        resolved_location = first.get("path")
-    except Exception:
-        # ignore failure to import or parse manifest
-        manifest = None
-
-    # Final fallbacks to keep previous behaviour but avoid using '/home' as a default
-    final_location = resolved_location or (
-        data_location if data_location is not None else ""
-    )
-    final_size = (
-        resolved_size
-        if resolved_size is not None
-        else (
-            int(data_size)
-            if isinstance(data_size, (int, float)) and not pd.isna(data_size)
-            else 0
-        )
-    )
-
+    data_id = (id_mapping.get(run_id) or {}).get("data_id")
+    now_ts = int(pd.Timestamp.now(tz="UTC").timestamp())
     return {
         "run_id": run_id,
-        "data_id": id_mapping[run_id]["data_id"],
+        "data_id": data_id,
         "data_stage": record.get("data_stage", "training"),
-        "data_type": record.get("data_type", "int"),
+        "data_type": record.get("data_type", "tabular"),
         "data_source": record.get("source", "local"),
         "data_version": record.get("version", "v1"),
-        "data_location": final_location,
-        "data_size": final_size,
+        "data_location": record.get("location") or record.get("path") or "",
+        "data_size": int(record.get("size") or 0),
         "data_format": record.get("format", "csv"),
-        "creation_time": int(pd.Timestamp.now(tz="UTC").timestamp()),
-        "last_update_time": int(pd.Timestamp.now(tz="UTC").timestamp()),
+        "creation_time": now_ts,
+        "last_update_time": now_ts,
     }
 
 
-def map_mlflow_data_metrics(metrics, id_mapping):
+def map_data_metrics(metrics, id_mapping):
 
     if isinstance(metrics, pd.Series):
         metrics = metrics.to_frame().T
@@ -245,35 +151,80 @@ def map_mlflow_data_metrics(metrics, id_mapping):
     return data
 
 
-def map_mlflow_model_metrics(metrics, id_mapping):
-    stage = "train"
+def map_model_metrics(metrics, id_mapping):
+    """Map a metric event record from certain/metadata/events.jsonl into a model_metrics row.
+
+    get_metrics_data() reads from events.jsonl (event_type == 'metric') written by
+    certain_library.tracking.tracker.Tracker.log_metrics. The event dict uses
+    'run_id' (renamed to 'run_uuid' by get_metrics_data for compatibility).
+    """
+    if isinstance(metrics, pd.Series):
+        r = metrics.to_dict()
+    elif hasattr(metrics, "__getitem__"):
+        r = metrics
+    else:
+        r = {}
+
+    # Support both naming conventions
+    run_id = str(r.get("run_uuid") or r.get("run_id") or "")
+    model_id = (id_mapping.get(run_id) or {}).get("model_id", "")
+
+    # Normalise is_NaN / is_nan
+    is_nan_raw = r.get("is_nan") if r.get("is_nan") is not None else r.get("is_NaN", False)
 
     return {
-        "run_id": metrics["run_uuid"],
-        "model_id": id_mapping[metrics["run_uuid"]]["model_id"],
-        "key": metrics["key"],
-        "value": metrics["value"],
-        "step": metrics["step"],
-        "timestamp": metrics["timestamp"],
-        "stage": stage,
-        "is_NaN": metrics["is_nan"],
+        "run_id": run_id,
+        "model_id": model_id,
+        "key": r.get("key", ""),
+        "value": r.get("value", 0),
+        "step": int(r.get("step") or 0),
+        "timestamp": int(r.get("timestamp") or pd.Timestamp.now(tz="UTC").timestamp()),
+        "stage": r.get("stage", "train"),
+        "is_NaN": bool(is_nan_raw),
     }
 
 
-def map_mlflow_model_params(params, id_mapping):
+def map_model_params(params, id_mapping):
+    """Map a param event record from certain/metadata/events.jsonl into a model_hyperparameters row.
+
+    get_params_data() reads from events.jsonl (event_type == 'param') written by
+    certain_library.tracking.tracker.Tracker.log_params.
+    """
+    if isinstance(params, pd.Series):
+        r = params.to_dict()
+    elif hasattr(params, "__getitem__"):
+        r = params
+    else:
+        r = {}
+
+    run_id = str(r.get("run_uuid") or r.get("run_id") or "")
+    model_id = (id_mapping.get(run_id) or {}).get("model_id", "")
+
     return {
-        "run_id": params["run_uuid"],
-        "model_id": id_mapping[params["run_uuid"]]["model_id"],
-        "key": params.get("key", "param_key"),
-        "value": params.get("value", "param_value"),
+        "run_id": run_id,
+        "model_id": model_id,
+        "key": r.get("key", "param_key"),
+        "value": str(r.get("value", "")),
     }
 
 
-def map_mlflow_runs_tags(runs_tags):
+def map_runs_tags(runs_tags):
+    """Map a tag event record from certain/metadata/events.jsonl into a runs_tags row.
+
+    get_tags_data() reads from events.jsonl (event_type == 'tag') written by
+    certain_library.tracking.tracker.Tracker.set_tags / start_run.
+    """
+    if isinstance(runs_tags, pd.Series):
+        r = runs_tags.to_dict()
+    elif hasattr(runs_tags, "__getitem__"):
+        r = runs_tags
+    else:
+        r = {}
+
     return {
-        "run_id": runs_tags.get("run_uuid", 0),
-        "key": runs_tags.get("key", "tag_key"),
-        "value": runs_tags.get("value", "tag_value"),
+        "run_id": str(r.get("run_uuid") or r.get("run_id") or ""),
+        "key": r.get("key", "tag_key"),
+        "value": r.get("value", "tag_value"),
     }
 
 
@@ -297,43 +248,76 @@ resources_key = [
 ]
 
 
-def map_mlflow_data_resources(data_resources, id_mapping):
+def map_data_resources(data_resources, id_mapping):
+    """Map a CodeCarbon JSON artifact row into data_resources rows.
+
+    Reads from certain/code_carbon/*.json written by certain_library.resource_monitor.
+    Each row is a flat dict; we emit one row per known resource key.
+    """
+    if isinstance(data_resources, pd.Series):
+        r = data_resources.to_dict()
+    elif hasattr(data_resources, "__getitem__"):
+        r = data_resources
+    else:
+        r = {}
+
+    run_id = str(r.get("run_id", ""))
+    data_id = (id_mapping.get(run_id) or {}).get("data_id", "")
+    stage = r.get("stage", "data_default")
+    now_ts = int(pd.Timestamp.now(tz="UTC").timestamp())
+
     data = []
     for key in resources_key:
+        raw = r.get(key)
+        value = None if (raw is None or (isinstance(raw, float) and pd.isna(raw))) else raw
         data.append(
             {
-                "run_id": data_resources["run_id"],
-                "data_id": id_mapping[data_resources["run_id"]]["data_id"],
-                "stage": data_resources.get("stage", "data_default"),
+                "run_id": run_id,
+                "data_id": data_id,
+                "stage": stage,
                 "key": key,
-                "value": (
-                    None if pd.isna(data_resources[key]) else data_resources[key]
-                ),
-                "timestamp": int(pd.Timestamp.now(tz="UTC").timestamp()),
+                "value": value,
+                "timestamp": now_ts,
             }
         )
-
     return data
 
 
-def map_mlflow_resources(resources, id_mapping):
+def map_resources(resources, id_mapping):
+    """Map a CodeCarbon JSON artifact row into resources (model-scoped) rows.
+
+    Reads from certain/code_carbon/*.json written by certain_library.resource_monitor.
+    """
+    if isinstance(resources, pd.Series):
+        r = resources.to_dict()
+    elif hasattr(resources, "__getitem__"):
+        r = resources
+    else:
+        r = {}
+
+    run_id = str(r.get("run_id", ""))
+    model_id = (id_mapping.get(run_id) or {}).get("model_id", "")
+    now_ts = int(pd.Timestamp.now(tz="UTC").timestamp())
+
     data = []
-    for key, value in resources.items():
+    for key in resources_key:
+        raw = r.get(key)
+        value = None if (raw is None or (isinstance(raw, float) and pd.isna(raw))) else raw
         data.append(
             {
-                "run_id": resources["run_id"],
-                "model_id": id_mapping[resources["run_id"]]["model_id"],
+                "run_id": run_id,
+                "model_id": model_id,
                 "key": key,
-                "step": resources.get("step", 0),
-                "stage": resources.get("stage", "train_default"),
-                "value": None if pd.isna(value) else value,
-                "timestamp": int(pd.Timestamp.now(tz="UTC").timestamp()),
+                "step": int(r.get("step") or 0),
+                "stage": r.get("stage", "train_default"),
+                "value": value,
+                "timestamp": now_ts,
             }
         )
     return data
 
 
-def map_mlflow_time_series_data(time_series_data, id_mapping):
+def map_time_series_data(time_series_data, id_mapping):
     # For each row, access content and compute the frequency of sampling
     # Process a single row instead of iterating through a DataFrame
     row = time_series_data
@@ -343,9 +327,16 @@ def map_mlflow_time_series_data(time_series_data, id_mapping):
 
     if "timestamps" in row and isinstance(row["timestamps"], list):
         timestamps = row["timestamps"]
-        # Convert timestamps from string to datetime
+        # Convert timestamps from string to datetime. The source .txt
+        # artifacts contain ISO 8601 strings (optionally with a UTC offset)
+        # plus a non-parseable header line ("Train Timestamps:" / "Test
+        # Timestamps:"); format="ISO8601" lets pandas parse all ISO 8601
+        # variants without falling back to the slow/warning-prone dateutil
+        # parser, while errors="coerce" turns the header line into NaT.
         timestamps = pd.to_datetime(
-            [ts for ts in timestamps if isinstance(ts, str)], errors="coerce"
+            [ts for ts in timestamps if isinstance(ts, str)],
+            format="ISO8601",
+            errors="coerce",
         )
         timestamps = timestamps.dropna()
 
@@ -395,7 +386,7 @@ def map_mlflow_time_series_data(time_series_data, id_mapping):
     return result
 
 
-def map_mlflow_data_drift(dataset, id_mapping):
+def map_data_drift(dataset, id_mapping):
     """
     Calculate data drift between training and testing datasets using Kolmogorov-Smirnov test.
 
@@ -411,7 +402,7 @@ def map_mlflow_data_drift(dataset, id_mapping):
     testing_data = dataset[dataset["stage"] == "test"]
 
     logger.debug(
-        "map_mlflow_data_drift called: dataset shape=%s, training=%s, testing=%s",
+        "map_data_drift called: dataset shape=%s, training=%s, testing=%s",
         getattr(dataset, "shape", None),
         getattr(training_data, "shape", None),
         getattr(testing_data, "shape", None),
@@ -486,7 +477,7 @@ def map_mlflow_data_drift(dataset, id_mapping):
     return pd.DataFrame(drift_results)
 
 
-def map_mlflow_data_duration_leakage(dataset, id_mapping):
+def map_data_duration_leakage(dataset, id_mapping):
     # Split the dataframe into two parts based on the 'stage' column
     training_data = dataset[dataset["stage"] == "train"]
     testing_data = dataset[dataset["stage"] == "test"]
@@ -766,15 +757,88 @@ def map_run_logs(row: "pd.Series", run_id: str) -> dict:
     dict
         A single row dict matching the ``runs_logs`` schema.
     """
-    return {
-        "run_id": run_id,
-        "log_id": row.get("log_id", ""),
-        "log_type": row.get("log_type", "stdout"),
-        "log_message": row.get("log_message", ""),
-        "log_creation_time": row.get(
-            "log_creation_time", int(pd.Timestamp.now(tz="UTC").timestamp())
-        ),
-    }
+    # Prefer explicit fields, but accept common alternatives produced by
+    # different logging/exporters (message, msg, line_id, timestamp, stream).
+    try:
+        # message
+        message = None
+        for candidate in ("log_message", "message", "msg", "text", "message_text"):
+            if candidate in row and pd.notna(row.get(candidate)):
+                message = row.get(candidate)
+                break
+        if message is None:
+            # Last-resort: stringify the entire row
+            message = str(row.to_dict()) if hasattr(row, "to_dict") else ""
+
+        # log_id (generate if missing)
+        log_id = None
+        for candidate in ("log_id", "line_id", "id", "idx"):
+            if candidate in row and pd.notna(row.get(candidate)):
+                log_id = str(row.get(candidate))
+                break
+        if not log_id:
+            import uuid
+
+            log_id = uuid.uuid4().hex
+
+        # log_type (stream / level fallback)
+        log_type = None
+        for candidate in ("log_type", "stream", "level", "logger"):
+            if candidate in row and pd.notna(row.get(candidate)):
+                log_type = str(row.get(candidate))
+                break
+        if not log_type:
+            log_type = "stdout"
+
+        # log_creation_time (coerce from various candidates)
+        log_time = None
+        for candidate in (
+            "log_creation_time",
+            "timestamp",
+            "time",
+            "created_at",
+            "ts",
+        ):
+            if candidate in row and pd.notna(row.get(candidate)):
+                log_time = row.get(candidate)
+                break
+
+        # Convert to integer epoch seconds
+        if log_time is None:
+            log_creation = int(pd.Timestamp.now(tz="UTC").timestamp())
+        else:
+            try:
+                # If it's a pandas Timestamp or datetime-like
+                if hasattr(log_time, "timestamp"):
+                    log_creation = int(log_time.timestamp())
+                else:
+                    # numeric or string
+                    log_creation = int(float(log_time))
+            except Exception:
+                try:
+                    # Try parsing with pandas
+                    log_creation = int(pd.to_datetime(log_time, utc=True).timestamp())
+                except Exception:
+                    log_creation = int(pd.Timestamp.now(tz="UTC").timestamp())
+
+        return {
+            "run_id": run_id,
+            "log_id": log_id,
+            "log_type": log_type,
+            "log_message": str(message),
+            "log_creation_time": int(log_creation),
+        }
+    except Exception:
+        # Fail-safe minimal row
+        import uuid
+
+        return {
+            "run_id": run_id,
+            "log_id": uuid.uuid4().hex,
+            "log_type": "stdout",
+            "log_message": "",
+            "log_creation_time": int(pd.Timestamp.now(tz="UTC").timestamp()),
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -836,11 +900,14 @@ def map_risk(record: dict, experiment_id: str) -> dict:
     }
 
 
-def map_human_oversight(record: dict, experiment_id: str) -> dict:
+def map_human_oversight(record: dict, experiment_id: str, run_id: str = None) -> dict:
     """Map a JSON artifact record into a ``human_oversight_mechanisms`` row."""
     return {
         "mechanism_id": record.get("mechanism_id", ""),
         "experiment_id": experiment_id,
+        "run_id": run_id,
+        # include deployment_id when present in artifact (optional)
+        "deployment_id": record.get("deployment_id"),
         "oversight_type": record.get("oversight_type", ""),
         "description": record.get("description", ""),
         "implementation_details": record.get("implementation_details", ""),
@@ -877,6 +944,8 @@ def map_declaration_of_conformity(record: dict, run_id: str) -> dict:
     return {
         "declaration_id": record.get("declaration_id", ""),
         "run_id": run_id,
+        # optional deployment identifier (some artifacts may include this)
+        "deployment_id": record.get("deployment_id"),
         "filename": record.get("filename", ""),
         "file_type": record.get("file_type", ""),
         "mime_type": record.get("mime_type", ""),
@@ -919,6 +988,8 @@ def map_explainable_ai(record: dict, run_id: str) -> dict:
     return {
         "feature_id": record.get("feature_id", ""),
         "run_id": run_id,
+        # optional deployment identifier (artifact may include this)
+        "deployment_id": record.get("deployment_id"),
         "feature_name": record.get("feature_name", []),
         "feature_values": record.get("feature_values", []),
         "implementation_details": record.get("implementation_details", ""),
@@ -964,25 +1035,35 @@ def map_build_testing(record: dict, experiment_id: str) -> dict:
     }
 
 
-def map_standard(record: dict, experiment_id: str) -> dict:
-    """Map a JSON artifact record into a ``standards`` row."""
+def map_standard(record: dict, run_id: str) -> dict:
+    """Map a JSON artifact record into a ``standards`` row.
+
+    This mapper mirrors :func:`map_declaration_of_conformity` and is
+    run-scoped: the sync helper will pass the run_id for the artifact's
+    run so the resulting row can be linked to the `runs` table.
+    """
     return {
         "standard_id": record.get("standard_id", ""),
-        "experiment_id": experiment_id,
-        "deployment_id": record.get("deployment_id", ""),
-        "model_id": record.get("model_id", ""),
+        "run_id": run_id,
+        # optional deployment identifier (some artifacts may include this)
+        "deployment_id": record.get("deployment_id"),
+        "model_id": record.get("model_id"),
         "name": record.get("name", ""),
         "description": record.get("description", ""),
         "version": record.get("version", ""),
         "publication_date": record.get("publication_date"),
+        "creation_time": record.get(
+            "creation_time", int(pd.Timestamp.now(tz="UTC").timestamp())
+        ),
     }
 
 
-def map_interface(record: dict, experiment_id: str) -> dict:
+def map_interface(record: dict, experiment_id: str, run_id: str) -> dict:
     """Map a JSON artifact record into an ``interfaces`` row."""
     return {
         "interface_id": record.get("interface_id", ""),
         "experiment_id": experiment_id,
+        "run_id": run_id,
         "deployment_id": record.get("deployment_id", ""),
         "model_id": record.get("model_id", ""),
         "interface_type": record.get("interface_type", ""),
@@ -999,12 +1080,32 @@ def map_decommissioning(record: dict, experiment_id: str) -> dict:
         "experiment_id": experiment_id,
         "deployment_id": record.get("deployment_id", ""),
         "model_id": record.get("model_id", ""),
+        "system_name": record.get("system_name", ""),
+        "decommissioning_plan": record.get("decommissioning_plan", ""),
+        "approvals": record.get("approvals", []),
+        "data_retention_archive": record.get("data_retention_archive", ""),
+        "migration": record.get("migration", ""),
+        "access_removal": record.get("access_removal", ""),
+        "infrastructure_shutdown": record.get("infrastructure_shutdown", ""),
+        "evidence_documentation": record.get("evidence_documentation", []),
+        "audit_trail": record.get("audit_trail", ""),
         "decomissioning_date": record.get(
             "decomissioning_date", int(pd.Timestamp.now(tz="UTC").timestamp())
         ),
         "decomissioning_actions": record.get("decomissioning_actions", []),
         "reason": record.get("reason", ""),
         "procedure_details": record.get("procedure_details", ""),
+    }
+
+
+def map_monitor_logs(record: dict, experiment_id: str, run_id: str) -> dict:
+    """Map a JSON artifact record into a ``monitor_logs`` row."""
+    return {
+        "deployment_id": record.get("deployment_id", ""),
+        "experiment_id": record.get("experiment_id") or experiment_id,
+        "model_id": record.get("model_id", ""),
+        "log_id": record.get("log_id", ""),
+        "message": record.get("message") or record.get("deployment_log", ""),
     }
 
 
@@ -1045,7 +1146,7 @@ def map_tokenization_stats(record: dict, run_id: str) -> dict:
     }
 
 
-def map_mlflow_data_techniques(record: dict, run_id: str) -> dict:
+def map_data_techniques(record: dict, run_id: str) -> dict:
     """Map a data_techniques JSON artifact into rows for
     ``data_techniques`` and ``data_hyperparameters``.
 
@@ -1101,3 +1202,285 @@ def map_mlflow_data_techniques(record: dict, run_id: str) -> dict:
                 )
 
     return {"techniques": techniques_rows, "hyperparameters": hyperparams_rows}
+
+
+# ---------------------------------------------------------------------------
+# Mappers for certain/metadata artifact JSON files
+# ---------------------------------------------------------------------------
+
+
+def map_run_params(record: dict, run_id: str, id_mapping: dict) -> list:
+    """Map certain/metadata/run_params.json into model_hyperparameters rows.
+
+    The artifact shape is:
+        {run_id, run_params: {key: value, ...}, captured_at}
+
+    Returns a list of dicts (one per param key).
+    """
+    rows = []
+    params = record.get("run_params") or {}
+    model_id = id_mapping.get(run_id, {}).get("model_id")
+    if not model_id:
+        return rows
+    for key, value in params.items():
+        rows.append(
+            {
+                "run_id": run_id,
+                "model_id": model_id,
+                "key": str(key),
+                "value": str(value),
+            }
+        )
+    return rows
+
+
+def map_run_metrics(record: dict, run_id: str, id_mapping: dict) -> list:
+    """Map certain/metadata/run_metrics.json into model_metrics rows.
+
+    The artifact shape is:
+        {run_id, run_metrics: {key: [{value, step, timestamp}, ...]}, captured_at}
+
+    Returns a list of dicts (one per metric history entry).
+    """
+    rows = []
+    metrics = record.get("run_metrics") or {}
+    model_id = id_mapping.get(run_id, {}).get("model_id")
+    if not model_id:
+        return rows
+    for key, history in metrics.items():
+        if not isinstance(history, list):
+            history = [history]
+        for entry in history:
+            if not isinstance(entry, dict):
+                continue
+            rows.append(
+                {
+                    "run_id": run_id,
+                    "model_id": model_id,
+                    "key": str(key),
+                    "value": entry.get("value", 0),
+                    "step": int(entry.get("step", 0)),
+                    "timestamp": int(
+                        entry.get("timestamp")
+                        or pd.Timestamp.now(tz="UTC").timestamp()
+                    ),
+                    "stage": "train",
+                    "is_NaN": False,
+                }
+            )
+    return rows
+
+
+def map_run_resources(record: dict, run_id: str, id_mapping: dict) -> list:
+    """Map certain/metadata/run_resources.json into resources rows.
+
+    The artifact shape is:
+        {run_id, run_resources: {key: [{value, step, timestamp}, ...]}, captured_at}
+
+    Returns a list of dicts (one per resource history entry).
+    """
+    rows = []
+    resources = record.get("run_resources") or {}
+    model_id = id_mapping.get(run_id, {}).get("model_id")
+    if not model_id:
+        return rows
+    for key, history in resources.items():
+        if not isinstance(history, list):
+            history = [history]
+        for entry in history:
+            if not isinstance(entry, dict):
+                continue
+            rows.append(
+                {
+                    "run_id": run_id,
+                    "model_id": model_id,
+                    "key": str(key),
+                    "step": int(entry.get("step", 0)),
+                    "stage": "train",
+                    "value": entry.get("value", 0),
+                    "timestamp": int(
+                        entry.get("timestamp")
+                        or pd.Timestamp.now(tz="UTC").timestamp()
+                    ),
+                }
+            )
+    return rows
+
+
+def map_run_inputs(record: dict, run_id: str, id_mapping: dict) -> list:
+    """Map certain/metadata/run_inputs.json (a.k.a. inputs.json) into data rows.
+
+    The artifact shape is:
+        {run_inputs: [{dataset_id, dataset_name, dataset_source, dataset_schema,
+                        dataset_profile, tags}, ...], captured_at}
+
+    Returns a list of dicts compatible with the `data` table.
+    """
+    rows = []
+    inputs = record.get("run_inputs") or []
+    data_id = id_mapping.get(run_id, {}).get("data_id")
+    if not data_id:
+        return rows
+    now_ts = int(pd.Timestamp.now(tz="UTC").timestamp())
+    for inp in inputs:
+        if not isinstance(inp, dict):
+            continue
+        rows.append(
+            {
+                "run_id": run_id,
+                "data_id": data_id,
+                "data_stage": (inp.get("tags") or {}).get("mlflow.data.context", "training"),
+                "data_type": "dataset",
+                "data_source": inp.get("dataset_source") or "local",
+                "data_version": (inp.get("tags") or {}).get("version", "v1"),
+                "data_location": str(inp.get("dataset_source") or ""),
+                "data_size": 0,
+                "data_format": inp.get("dataset_schema") or "unknown",
+                "creation_time": now_ts,
+                "last_update_time": now_ts,
+            }
+        )
+    return rows
+
+
+def map_experiment_tags_artifact(record: dict, experiment_id: str) -> list:
+    """Map certain/metadata/experiment_tags.json into experiments_tags rows.
+
+    The artifact shape is:
+        {experiment_id, experiment_tags: {key: value, ...}, captured_at}
+    or:
+        {experiment_tags: {key: value, ...}, captured_at}
+
+    Returns a list of dicts.
+    """
+    rows = []
+    exp_id = str(record.get("experiment_id") or experiment_id or "")
+    tags = record.get("experiment_tags") or {}
+    for key, value in tags.items():
+        if "mlflow" in str(key).lower():
+            continue
+        rows.append(
+            {
+                "experiment_id": exp_id,
+                "key": str(key),
+                "value": str(value),
+            }
+        )
+    return rows
+
+
+def map_dataset_manifest(record: dict, run_id: str, id_mapping: dict) -> dict:
+    """Map certain/dataset/data_manifest.json or certain/metadata/data.json into a data row.
+
+    Handles two artifact shapes:
+
+    Full manifest (data_manifest.json):
+        {run_id, files: [{path, size_bytes, sha256}, ...], total_size_bytes, captured_at}
+
+    Lightweight metadata (data.json):
+        {run_id, data_location, data_size, data_format, data_stage, data_source,
+         data_version, data_type, creation_time, last_update_time}
+
+    Returns a single dict compatible with the `data` table.
+    """
+    # `id_mapping[run_id]['data_id']` is the single source of truth for this
+    # run's data_id: every other table that references a dataset row
+    # (data_resources, data_metrics, data_signatures, data_techniques,
+    # data_hyperparameters, and map_run_inputs above) resolves its FK value
+    # from id_mapping, and sync_data() propagates a parent run's data_id down
+    # to its sub-runs by mutating id_mapping in place *before* this mapper
+    # ever runs. If we computed our own hash here instead, multiple sync
+    # passes (sync_data vs sync_dataset_manifest) or multiple runs sharing a
+    # dataset would each get a different data_id, producing duplicate rows
+    # in the `data` table (whose PK is (run_id, data_id)) instead of a single
+    # upserted row. So: always prefer id_mapping's value, and only fall back
+    # to a computed hash when there is truly no id_mapping entry for this run.
+    data_id = id_mapping.get(run_id, {}).get("data_id")
+
+    def compute_data_id_from_record(rec: dict) -> str:
+        # Build a stable key from canonical fields present in the artifact
+        parts = []
+        # Lightweight metadata fields
+        if rec.get("data_location"):
+            parts.append(str(rec.get("data_location")))
+        if rec.get("data_size") is not None:
+            parts.append(str(rec.get("data_size")))
+        if rec.get("data_format"):
+            parts.append(str(rec.get("data_format")))
+        if rec.get("data_version"):
+            parts.append(str(rec.get("data_version")))
+        if rec.get("data_type"):
+            parts.append(str(rec.get("data_type")))
+
+        # For full manifests, include file paths and checksums if available
+        files = rec.get("files") or []
+        if files and isinstance(files, list):
+            # sort by path to ensure stability
+            try:
+                sorted_files = sorted(
+                    [(f.get("path", ""), f.get("sha256", f.get("sha1", ""))) for f in files],
+                    key=lambda x: x[0],
+                )
+                for p, ch in sorted_files:
+                    parts.append(str(p))
+                    if ch:
+                        parts.append(str(ch))
+            except Exception:
+                pass
+
+        # total size bytes is a good differentiator
+        if rec.get("total_size_bytes") is not None:
+            parts.append(str(rec.get("total_size_bytes")))
+
+        key = "|".join(parts)
+        return hashlib.sha256(key.encode("utf-8")).hexdigest()
+    now_ts = int(pd.Timestamp.now(tz="UTC").timestamp())
+    # If the record is lightweight (data.json) prefer computing from its
+    # canonical fields. Likewise for a full manifest (data_manifest.json)
+    if "data_location" in record:
+        if not data_id:
+            try:
+                data_id = compute_data_id_from_record(record)
+            except Exception:
+                data_id = None
+
+        return {
+            "run_id": run_id,
+            "data_id": data_id,
+            "data_stage": record.get("data_stage", "training"),
+            "data_type": record.get("data_type", "tabular"),
+            "data_source": record.get("data_source", "local"),
+            "data_version": record.get("data_version", "v1"),
+            "data_location": record.get("data_location", ""),
+            "data_size": int(record.get("data_size") or 0),
+            "data_format": record.get("data_format", "csv"),
+            "creation_time": int(record.get("creation_time") or now_ts),
+            "last_update_time": int(record.get("last_update_time") or now_ts),
+        }
+
+    # full data_manifest.json shape
+    files = record.get("files") or []
+    first_path = ""
+    if files and isinstance(files[0], dict):
+        first_path = files[0].get("path", "")
+    total_size = int(record.get("total_size_bytes") or 0)
+
+    if not data_id:
+        try:
+            data_id = compute_data_id_from_record(record)
+        except Exception:
+            data_id = None
+
+    return {
+        "run_id": run_id,
+        "data_id": data_id,
+        "data_stage": "training",
+        "data_type": "tabular",
+        "data_source": "local",
+        "data_version": "v1",
+        "data_location": first_path,
+        "data_size": total_size,
+        "data_format": "csv",
+        "creation_time": now_ts,
+        "last_update_time": now_ts,
+    }

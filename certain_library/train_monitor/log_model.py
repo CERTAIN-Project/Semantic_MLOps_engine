@@ -246,3 +246,103 @@ def log_model_signature(
     tracker.log_params({"model_signature": str(signature)})
     tracker.log_params({"input_shape": str(train_data.shape)})
     tracker.log_params({"n_features": len(train_data.columns)})
+
+    # Try to compute parameter counts and number of layers for common model types
+    # so this information is available as MLflow params and can be synced into
+    # the `model_architecture` table by the data API.
+    num_layers = None
+    num_total_parameters = None
+    num_trainable_parameters = None
+    num_non_trainable_parameters = None
+
+    try:
+        # XGBoost (scikit-learn wrapper)
+        if hasattr(model, "get_booster"):
+            try:
+                booster = model.get_booster()
+                # number of trees
+                try:
+                    dumps = booster.get_dump()
+                    num_trees = len(dumps)
+                except Exception:
+                    num_trees = None
+
+                # attempt to count leaf nodes via trees_to_dataframe when available
+                try:
+                    df_trees = booster.trees_to_dataframe()
+                    num_leaves = int((df_trees["Feature"] == "Leaf").sum())
+                except Exception:
+                    try:
+                        dump_json = booster.get_dump(dump_format="json")
+                        # count occurrences of the JSON leaf key
+                        num_leaves = sum(s.count('"leaf"') for s in dump_json)
+                    except Exception:
+                        num_leaves = None
+
+                if num_leaves is not None:
+                    num_total_parameters = int(num_leaves)
+                    num_trainable_parameters = int(num_leaves)
+                    num_non_trainable_parameters = 0
+                if num_trees is not None:
+                    num_layers = int(num_trees)
+            except Exception:
+                pass
+
+        # Keras / TensorFlow models
+        if num_total_parameters is None:
+            try:
+                import tensorflow as _tf
+
+                from tensorflow.keras import Model as KerasModel
+
+                if isinstance(model, KerasModel):
+                    try:
+                        total = model.count_params()
+                        # trainable params via summing trainable weights
+                        trainable = 0
+                        for w in getattr(model, "trainable_weights", []):
+                            try:
+                                trainable += int(_tf.keras.backend.count_params(w))
+                            except Exception:
+                                continue
+                        non_trainable = int(total - trainable)
+                        num_total_parameters = int(total)
+                        num_trainable_parameters = int(trainable)
+                        num_non_trainable_parameters = int(non_trainable)
+                        num_layers = len(getattr(model, "layers", []))
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+        # PyTorch models
+        if num_total_parameters is None:
+            try:
+                import torch
+
+                if isinstance(model, torch.nn.Module):
+                    total = sum(p.numel() for p in model.parameters())
+                    trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+                    non_trainable = int(total - trainable)
+                    num_total_parameters = int(total)
+                    num_trainable_parameters = int(trainable)
+                    num_non_trainable_parameters = int(non_trainable)
+            except Exception:
+                pass
+    except Exception:
+        # Keep tolerant: do not fail model logging if counting fails
+        pass
+
+    # Record any discovered counts as MLflow params so they are discoverable
+    try:
+        if num_layers is not None:
+            tracker.log_params({"number_of_layers": int(num_layers)})
+        if num_total_parameters is not None:
+            tracker.log_params({"number_of_total_parameters": int(num_total_parameters)})
+        if num_trainable_parameters is not None:
+            tracker.log_params({"number_of_trainable_parameters": int(num_trainable_parameters)})
+        if num_non_trainable_parameters is not None:
+            tracker.log_params({"number_of_non_trainable_parameters": int(num_non_trainable_parameters)})
+    except Exception:
+        # ignore any errors while logging these optional params
+        pass

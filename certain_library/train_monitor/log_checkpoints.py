@@ -9,10 +9,15 @@ from typing import Optional
 import pandas as pd
 
 
+def _safe_name(value: str) -> str:
+    return "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in value)
+
+
 def log_checkpoint(
     checkpoint_name: str,
     checkpoint_location: str,
     checkpoint_id: Optional[str] = None,
+    checkpoint_file_path: Optional[str] = None,
 ) -> None:
     """
     Log a model checkpoint record to MLflow as a CSV artifact.
@@ -53,6 +58,13 @@ def log_checkpoint(
     )
 
     with tempfile.TemporaryDirectory() as tmp_dir:
-        csv_path = os.path.join(tmp_dir, f"checkpoint.csv")
+        file_token = _safe_name(checkpoint_id or checkpoint_name or str(uuid.uuid4()))
+        csv_path = os.path.join(tmp_dir, f"checkpoint_{file_token}.csv")
         record.to_csv(csv_path, index=False)
         tracker.log_artifact(csv_path, artifact_path="checkpoints")
+
+        if checkpoint_file_path:
+            try:
+                tracker.log_artifact(checkpoint_file_path, artifact_path="checkpoints")
+            except Exception:
+                pass
