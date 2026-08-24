@@ -10,6 +10,8 @@ from typing import Any, Dict, Optional, List
 import threading
 import urllib.error
 import urllib.request
+import socket
+import random
 
 import mlflow
 from mlflow.tracking import MlflowClient
@@ -140,20 +142,74 @@ class Tracker:
         else:
             sync_url = "http://localhost:8001/sync/all"
 
-        request = urllib.request.Request(
-            sync_url,
-            method="POST",
-        )
+        request = urllib.request.Request(sync_url, method="POST")
+
+        # Configurable retry/backoff settings
+        try:
+            timeout_seconds = float(os.getenv("CERTAIN_SYNC_TIMEOUT", "30"))
+        except Exception:
+            timeout_seconds = 30.0
 
         try:
-            with urllib.request.urlopen(request, timeout=30) as response:
-                response.read()
-        except (urllib.error.URLError, TimeoutError, OSError):
-            logger.exception(
-                "Automatic sync/all failed after run %s via %s",
-                run_id,
-                sync_url,
-            )
+            max_retries = int(os.getenv("CERTAIN_SYNC_RETRIES", "3"))
+        except Exception:
+            max_retries = 3
+
+        try:
+            backoff_base = float(os.getenv("CERTAIN_SYNC_BACKOFF_BASE", "1.0"))
+        except Exception:
+            backoff_base = 1.0
+
+        for attempt in range(1, max_retries + 1):
+            try:
+                logger.debug(
+                    "Attempting automatic sync/all (attempt %d/%d) for run %s -> %s",
+                    attempt,
+                    max_retries,
+                    run_id,
+                    sync_url,
+                )
+
+                with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+                    # read to ensure the request completes
+                    response.read()
+                logger.info("Automatic sync/all succeeded for run %s", run_id)
+                break
+
+            except Exception as exc:
+                is_last = attempt == max_retries
+
+                # Log detailed exception on debug, concise otherwise
+                logger.warning(
+                    "Automatic sync/all attempt %d/%d failed for run %s: %s",
+                    attempt,
+                    max_retries,
+                    run_id,
+                    getattr(exc, "__class__", exc),
+                )
+
+                if is_last:
+                    logger.exception(
+                        "Automatic sync/all failed after run %s via %s",
+                        run_id,
+                        sync_url,
+                    )
+                    break
+
+                # Exponential backoff with small jitter
+                backoff = backoff_base * (2 ** (attempt - 1))
+                jitter = random.uniform(0, backoff * 0.1)
+                sleep_for = backoff + jitter
+                logger.debug(
+                    "Sleeping %.2fs before next sync/all attempt (run %s)",
+                    sleep_for,
+                    run_id,
+                )
+                try:
+                    time.sleep(sleep_for)
+                except Exception:
+                    # If sleep is interrupted, continue to next attempt
+                    pass
 
     def set_tracking_uri(self, uri: str) -> None:
         mlflow.set_tracking_uri(uri)

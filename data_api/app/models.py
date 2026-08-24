@@ -941,7 +941,7 @@ class Standard(Base):
     model_id = Column(String, nullable=True)
 
     __table_args__ = (
-        PrimaryKeyConstraint("standard_id", "run_id"),
+        PrimaryKeyConstraint("standard_id", "run_id", "model_id"),
         ForeignKeyConstraint(["run_id"], ["runs.run_id"]),
     )
 

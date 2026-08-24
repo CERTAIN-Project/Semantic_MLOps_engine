@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import os
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
 
@@ -120,6 +121,27 @@ def compact(root: Path, output: Path) -> Dict[str, int]:
         with destination.open("w", encoding="utf-8") as handle:
             json.dump(records, handle, indent=2, sort_keys=True)
             handle.write("\n")
+
+        # Write SHA256 sidecar for compact exports and optionally protect file
+        try:
+            import hashlib
+
+            h = hashlib.sha256()
+            with destination.open("rb") as fh:
+                for chunk in iter(lambda: fh.read(8192), b""):
+                    h.update(chunk)
+            sidecar = destination.with_name(destination.name + ".sha256")
+            with sidecar.open("w", encoding="utf-8") as sf:
+                sf.write(h.hexdigest() + "\n")
+
+            if os.getenv("CERTAIN_PROTECT_ARTIFACTS", "").strip().lower() in {"1","true","yes","on"}:
+                try:
+                    os.chmod(destination, 0o444)
+                    os.chmod(sidecar, 0o444)
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     return {name: len(records) for name, records in exports.items()}
 
