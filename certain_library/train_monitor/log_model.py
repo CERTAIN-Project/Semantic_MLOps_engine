@@ -237,7 +237,7 @@ def log_model_signature(
     # Log the model with input example and signature
     tracker.log_xgboost_model(
         model,
-        artifact_path="model",  # This creates a separate "model" folder
+        artifact_path="certain/model",  # This creates a separate "model" folder
         input_example=input_example,
         signature=signature,
     )

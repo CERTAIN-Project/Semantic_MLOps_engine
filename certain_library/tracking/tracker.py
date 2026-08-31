@@ -1113,12 +1113,45 @@ class Tracker:
                 recovery_required=True,
             )
 
-    def log_xgboost_model(self, model: Any, artifact_path: str, **kwargs: Any) -> Any:
-        """Log an XGBoost model and recover its generated artifact files."""
-        destination_path = mlflow_artifact_path(artifact_path)
-        result = mlflow.xgboost.log_model(
-            xgb_model=model, artifact_path=destination_path, **kwargs
-        )
+    def log_xgboost_model(self, model: Any, artifact_path: Optional[str] = None, **kwargs: Any) -> Any:
+        """Log an XGBoost model and recover its generated artifact files.
+
+        To ensure a stable artifact layout (runs/<run>/artifacts/certain/model/),
+        we prefer to log into a run-artifact path. We attempt the usual
+        `mlflow.xgboost.log_model(...)` call first for performance/convenience.
+        If that call is not available or fails (MLflow 3 migration differences),
+        we fall back to saving the model locally with `mlflow.xgboost.save_model`
+        and then `mlflow.log_artifacts(...)` into the chosen `artifact_path`.
+        """
+        destination_path = mlflow_artifact_path(artifact_path or "certain/model")
+
+        # First try the direct log_model API (works for MLflow 2.x and many wrappers)
+        try:
+            result = mlflow.xgboost.log_model(xgb_model=model, artifact_path=destination_path, **kwargs)
+        except Exception:
+            # Fallback: save locally then upload as run artifacts to guarantee
+            # the `runs/<run>/artifacts/<destination_path>/...` layout even on
+            # MLflow 3 where the Logged Model abstraction may change behavior.
+            import tempfile
+
+            with tempfile.TemporaryDirectory() as tmpdir:
+                local_model_path = os.path.join(tmpdir, "model")
+                try:
+                    mlflow.xgboost.save_model(
+                        xgb_model=model,
+                        path=local_model_path,
+                        **{k: v for k, v in kwargs.items() if k in ("signature", "input_example")},
+                    )
+                except Exception:
+                    # Last resort: try generic mlflow.models.save_model
+                    try:
+                        mlflow.models.save_model(python_model=model, path=local_model_path)
+                    except Exception:
+                        raise
+
+                # Upload the saved model directory as run artifacts under destination_path
+                mlflow.log_artifacts(local_model_path, artifact_path=destination_path)
+                result = None
 
         active_run = mlflow.active_run()
         if active_run is None:

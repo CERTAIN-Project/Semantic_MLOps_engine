@@ -397,6 +397,22 @@ def map_data_drift(dataset, id_mapping):
     Returns:
         List of dictionaries containing drift analysis results
     """
+    # Defensive: ensure dataset is a DataFrame and has expected columns
+    if dataset is None:
+        logger.debug("map_data_drift: dataset is None")
+        return pd.DataFrame()
+
+    if not isinstance(dataset, pd.DataFrame):
+        try:
+            dataset = pd.DataFrame(dataset)
+        except Exception:
+            logger.debug("map_data_drift: unable to coerce dataset to DataFrame")
+            return pd.DataFrame()
+
+    if "stage" not in dataset.columns:
+        logger.warning("map_data_drift: dataset missing 'stage' column; skipping drift analysis")
+        return pd.DataFrame()
+
     # Split the dataframe into two parts based on the 'stage' column
     training_data = dataset[dataset["stage"] == "train"]
     testing_data = dataset[dataset["stage"] == "test"]
@@ -478,6 +494,20 @@ def map_data_drift(dataset, id_mapping):
 
 
 def map_data_duration_leakage(dataset, id_mapping):
+    # Defensive: ensure dataset is a DataFrame and has expected columns
+    if dataset is None:
+        return pd.DataFrame()
+
+    if not isinstance(dataset, pd.DataFrame):
+        try:
+            dataset = pd.DataFrame(dataset)
+        except Exception:
+            return pd.DataFrame()
+
+    if "stage" not in dataset.columns:
+        logger.warning("map_data_duration_leakage: dataset missing 'stage' column; skipping duration/leakage analysis")
+        return pd.DataFrame()
+
     # Split the dataframe into two parts based on the 'stage' column
     training_data = dataset[dataset["stage"] == "train"]
     testing_data = dataset[dataset["stage"] == "test"]
