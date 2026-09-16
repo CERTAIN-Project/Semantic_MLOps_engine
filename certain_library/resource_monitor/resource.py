@@ -126,21 +126,30 @@ def stop_tracker(
 
     tracker.stop()
 
-    mlflow.log_artifact(
-        f"{output_location['output_dir']}/{output_location['output_file_name']}",
-        artifact_path="code_carbon",
+    # Compute expected file path
+    file_path = os.path.join(
+        output_location["output_dir"], output_location["output_file_name"]
     )
 
-    # Remove the local file after logging
-    if os.path.exists(
-        f"{output_location['output_dir']}/{output_location['output_file_name']}"
-    ):
-        os.remove(
-            f"{output_location['output_dir']}/{output_location['output_file_name']}"
-        )
+    # Only attempt to log if the file actually exists; handle errors gracefully
+    if not os.path.exists(file_path):
+        print(f"[WARN] Emissions file not found, skipping MLflow logging: {file_path}")
+    else:
+        try:
+            mlflow.log_artifact(file_path, artifact_path="code_carbon")
+        except Exception as exc:
+            print(f"[WARN] Failed to log emissions artifact {file_path}: {exc}")
+        else:
+            try:
+                os.remove(file_path)
+            except Exception as exc:
+                print(f"[WARN] Could not remove emissions file {file_path}: {exc}")
 
     # Remove the output directory if it's empty
     if os.path.exists(output_location["output_dir"]) and not os.listdir(
         output_location["output_dir"]
     ):
-        os.rmdir(output_location["output_dir"])
+        try:
+            os.rmdir(output_location["output_dir"])
+        except Exception as exc:
+            print(f"[WARN] Could not remove emissions directory {output_location['output_dir']}: {exc}")

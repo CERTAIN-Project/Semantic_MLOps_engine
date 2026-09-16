@@ -35,6 +35,11 @@ services:
     working_dir: /app/data_api
     command: >
       sh -c "
+      until pg_isready -h postgres -U postgres; do sleep 1; done &&
+      psql postgresql://postgres:postgres@postgres:5432/postgres -tc \"SELECT 1 FROM pg_database WHERE datname='certain_db'\" | grep -q 1 ||
+      psql postgresql://postgres:postgres@postgres:5432/postgres -c \"CREATE DATABASE certain_db\" &&
+      psql postgresql://postgres:postgres@postgres:5432/postgres -tc \"SELECT 1 FROM pg_database WHERE datname='mlflow'\" | grep -q 1 ||
+      psql postgresql://postgres:postgres@postgres:5432/postgres -c \"CREATE DATABASE mlflow\" &&
       alembic upgrade head
       "
     restart: "no"
@@ -52,6 +57,7 @@ services:
     environment:
       - MLFLOW_BACKEND_STORE_URI=postgresql://postgres:postgres@postgres:5432/mlflow
       - MLFLOW_DEFAULT_ARTIFACT_ROOT=/app/mlruns
+      - GIT_PYTHON_REFRESH=quiet
     networks:
       - certain_library_default
     command: >
@@ -139,6 +145,7 @@ services:
       - MLFLOW_DB=postgresql+psycopg2://postgres:postgres@postgres:5432/mlflow
       - MLFLOW_ARTIFACTS=/app/mlruns
       - MLFLOW_ARTIFACT_ROOT=/app/mlruns
+      - GIT_PYTHON_REFRESH=quiet
       - PYTHONPATH=/app:/app/certain_library
     volumes:
       - ./docker_data/mlflow_artifacts:/app/mlruns

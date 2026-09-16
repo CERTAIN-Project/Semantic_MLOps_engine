@@ -12,6 +12,4 @@ class LoadKPIGenerator(KPIGenerator):
 
     def compute(self):
         self.kpis = pd.read_csv(self.file)
-        self.kpis[DEFAULT_TIMESTAMP_COL] = pd.to_datetime(
-            self.kpis[DEFAULT_TIMESTAMP_COL]
-        )
+        self.kpis[DEFAULT_TIMESTAMP_COL] = pd.to_datetime(self.kpis[DEFAULT_TIMESTAMP_COL])

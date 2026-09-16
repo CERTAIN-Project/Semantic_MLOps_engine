@@ -15,13 +15,5 @@ class NoCustomerFilter(CustomerFilter):
     Filter that keeps all assets which contain full test, i.e. those test which appear in the test set and have pricing
     information at the end of the test period.
     """
-
-    def filter(
-        self,
-        customers: set,
-        time_series: DataFrame,
-        train: DataFrame,
-        valid: DataFrame,
-        test: DataFrame,
-    ) -> Set:
+    def filter(self, customers: set, time_series: DataFrame, train: DataFrame, valid: DataFrame, test: DataFrame) -> Set:
         return customers

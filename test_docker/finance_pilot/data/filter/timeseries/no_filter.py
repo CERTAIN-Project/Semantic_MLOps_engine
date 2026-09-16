@@ -13,12 +13,5 @@ class NoFilter(TimeSeriesFilter):
     """
     Filter that leaves the time series as it is.
     """
-
-    def filter(
-        self,
-        time_series: DataFrame,
-        train: DataFrame,
-        valid: DataFrame,
-        test: DataFrame,
-    ) -> DataFrame:
+    def filter(self, time_series: DataFrame, train: DataFrame, valid: DataFrame, test: DataFrame) -> DataFrame:
         return time_series.copy()

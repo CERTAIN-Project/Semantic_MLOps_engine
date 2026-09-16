@@ -16,23 +16,9 @@ class AssetWithFullTest(AssetFilter):
     Filter that keeps all assets which contain full test, i.e. those test which appear in the test set and have pricing
     information at the end of the test period.
     """
-
-    def filter(
-        self,
-        time_series: DataFrame,
-        train: DataFrame,
-        valid: DataFrame,
-        test: DataFrame,
-        split_date,
-    ) -> Set:
+    def filter(self, time_series: DataFrame, train: DataFrame, valid: DataFrame, test: DataFrame, split_date) -> Set:
         assets_inter = set(test[DEFAULT_ITEM_COL].unique().flatten())
         max_date = time_series[DEFAULT_TIMESTAMP_COL].max()
-        assets_time = set(
-            time_series[time_series[DEFAULT_TIMESTAMP_COL] == max_date][
-                DEFAULT_ITEM_COL
-            ]
-            .unique()
-            .flatten()
-        )
+        assets_time = set(time_series[time_series[DEFAULT_TIMESTAMP_COL] == max_date][DEFAULT_ITEM_COL].unique().flatten())
         assets = assets_inter & assets_time
         return assets

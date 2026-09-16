@@ -18,24 +18,18 @@ class RatingsNotInTrain(RatingFilter):
     Ex: if customer 1 interacted with asset 3 in both training and test sets, it removes the interaction from the
     test set.
     """
-
-    def filter(
-        self,
-        time_series: pd.DataFrame,
-        train: pd.DataFrame,
-        valid: pd.DataFrame,
-        test: pd.DataFrame,
-    ) -> Tuple[pd.DataFrame, Optional[pd.DataFrame], pd.DataFrame]:
-        ratings_train = train.copy()
-        ratings_valid = valid.copy() if valid is not None else None
-        ratings_test = test.copy()
+    def filter(self, time_series: pd.DataFrame, train: pd.DataFrame, valid: pd.DataFrame, test: pd.DataFrame) -> \
+            Tuple[pd.DataFrame, Optional[pd.DataFrame], pd.DataFrame]:
+        ratings_train = train.copy()  # TRAIN split baseline
+        ratings_valid = valid.copy() if valid is not None else None  # VALID split baseline (if provided)
+        ratings_test = test.copy()  # TEST split baseline
 
         if ratings_valid is not None:
-            ratings_valid = self.clean(ratings_train, ratings_valid)
-            ratings_test = self.clean(ratings_train, ratings_test)
-            ratings_test = self.clean(ratings_valid, ratings_test)
+            ratings_valid = self.clean(ratings_train, ratings_valid)  # Remove train-seen user-item pairs from VALID split
+            ratings_test = self.clean(ratings_train, ratings_test)  # Remove train-seen user-item pairs from TEST split
+            ratings_test = self.clean(ratings_valid, ratings_test)  # Remove valid-seen user-item pairs from TEST split
         else:
-            ratings_test = self.clean(ratings_train, ratings_test)
+            ratings_test = self.clean(ratings_train, ratings_test)  # Remove train-seen user-item pairs from TEST split
 
         return ratings_train, ratings_valid, ratings_test
 
@@ -51,21 +45,12 @@ class RatingsNotInTrain(RatingFilter):
         users_df = []
 
         if initial.shape[0] > 0:
-            customers = set(initial[DEFAULT_USER_COL].unique().flatten()) & set(
-                final[DEFAULT_USER_COL].unique().flatten()
-            )
+            customers = set(initial[DEFAULT_USER_COL].unique().flatten()) & set(final[DEFAULT_USER_COL].unique().flatten())
             if len(customers) == 0:
                 return initial.copy()
             for customer in customers:
-                items_per_user = (
-                    initial[initial[DEFAULT_USER_COL] == customer][DEFAULT_ITEM_COL]
-                    .unique()
-                    .flatten()
-                )
-                user_df = final[
-                    (final[DEFAULT_USER_COL] == customer)
-                    & ~final[DEFAULT_ITEM_COL].isin(items_per_user)
-                ]
+                items_per_user = initial[initial[DEFAULT_USER_COL] == customer][DEFAULT_ITEM_COL].unique().flatten()
+                user_df = final[(final[DEFAULT_USER_COL] == customer) & ~final[DEFAULT_ITEM_COL].isin(items_per_user)]
                 users_df.append(user_df)
             return pd.concat(users_df)
         return initial.copy()

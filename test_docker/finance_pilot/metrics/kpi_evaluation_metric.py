@@ -9,9 +9,7 @@
 #  http://mozilla.org/MPL/2.0/.
 
 from finance_pilot.utils.constants import (
-    DEFAULT_ITEM_COL,
-    DEFAULT_USER_COL,
-)
+    DEFAULT_ITEM_COL, DEFAULT_USER_COL, )
 
 from finance_pilot.metrics.metric import Metric
 
@@ -34,27 +32,23 @@ class KPIEvaluationMetric(Metric):
                 self.values[asset] = 0.0
 
     def evaluate(self, recs, cutoff, target_custs, only_test_customers):
-        customers = (
-            self.data.users & set(self.data.test[DEFAULT_USER_COL].unique().flatten())
-            if only_test_customers
-            else self.data.users
-        )
+        customers = self.data.users & set(
+            self.data.test[DEFAULT_USER_COL].unique().flatten()) if only_test_customers else self.data.users
         customers = customers & target_custs
 
         aux_recs = recs[recs[DEFAULT_USER_COL].isin(customers)]
         aux_recs.groupby(DEFAULT_USER_COL).head(cutoff)
+
+        # For each user: average return of their top-K recommendations
         aux_recs["metric"] = aux_recs[DEFAULT_ITEM_COL].apply(lambda x: self.values[x])
-        aux_recs = aux_recs.groupby(DEFAULT_USER_COL).mean()
+        aux_recs = aux_recs.groupby(DEFAULT_USER_COL)[["metric"]].mean()
+        # Average across all users
         aggregated = aux_recs["metric"].sum() / (0.0 + len(customers))
 
         return aux_recs.reset_index()[[DEFAULT_USER_COL, "metric"]], aggregated
 
     def evaluate_cutoffs(self, recs, cutoffs, target_custs, only_test_customers):
-        customers = (
-            self.data.users & set(self.data.test[DEFAULT_USER_COL].unique().flatten())
-            if only_test_customers
-            else self.data.users
-        )
+        customers = self.data.users & set(self.data.test[DEFAULT_USER_COL].unique().flatten()) if only_test_customers else self.data.users
         customers = customers & target_custs
 
         cutoffs.sort(reverse=True)
@@ -68,12 +62,9 @@ class KPIEvaluationMetric(Metric):
         for cutoff in cutoffs:
             aux_recs = aux_recs.groupby(DEFAULT_USER_COL).head(cutoff)
             recs_res = aux_recs.groupby(DEFAULT_USER_COL)["metric"].mean()
-            aggregated = recs_res.sum() / (0.0 + len(customers))
+            aggregated = recs_res.sum()/(0.0 + len(customers))
 
-            cutoff_dict[cutoff] = (
-                recs_res.reset_index()[[DEFAULT_USER_COL, "metric"]],
-                aggregated,
-            )
+            cutoff_dict[cutoff] = (recs_res.reset_index()[[DEFAULT_USER_COL, "metric"]], aggregated)
 
         return cutoff_dict
 
@@ -90,13 +81,13 @@ class KPIEvaluationMetric(Metric):
         value = 0.0
 
         max_cutoff = cutoffs[-1]
-        current_cutoff = cutoffs[0]
+        current_cutoff =cutoffs[0]
 
         aux_cust_df = customer_df.head(max_cutoff)
         i = 0
         k = 0
         for index, row in aux_cust_df.iterrows():
-            value += (self.values[row[DEFAULT_ITEM_COL]] + k * value) / (k + 1.0)
+            value += (self.values[row[DEFAULT_ITEM_COL]] + k*value)/(k+1.0)
             k += 1
             if k == current_cutoff:
                 cutoff_dict[current_cutoff] = cutoff_dict
@@ -131,3 +122,6 @@ class KPIEvaluationMetric(Metric):
             else:
                 break
         return value / (divide + 0.0)
+
+
+

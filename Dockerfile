@@ -39,9 +39,14 @@ USER root
 COPY requirements.txt /tmp/requirements.txt
 # Use virtual environment to avoid system package conflicts
 RUN python -m venv /opt/venv
+ENV VIRTUAL_ENV=/opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 RUN pip install --upgrade pip
 RUN pip install -r /tmp/requirements.txt
+
+# Make the venv visible to login shells used by `docker exec ... bash -lc`.
+RUN printf 'export VIRTUAL_ENV=/opt/venv\nexport PATH="/opt/venv/bin:$PATH"\n' > /etc/profile.d/venv.sh \
+    && chmod 644 /etc/profile.d/venv.sh
 
 # Set environment variables for PostgreSQL
 ENV POSTGRES_USER=postgres

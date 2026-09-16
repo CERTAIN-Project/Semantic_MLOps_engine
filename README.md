@@ -746,20 +746,11 @@ docker compose up --build -d
 # Check status
 docker compose ps
 
-# Run the test
+# Run the dataset analysis
 docker exec certain_library_tracker python /app/test_docker/test_finance_pitol.py \
-  /app/test_docker/finance_pilot/FAR-Trans-Data/transactions.csv \
-  /app/test_docker/finance_pilot/FAR-Trans-Data/close_prices.csv \
-  range \
-  2019-08-01 \
-  2021-02-26 \
-  39 \
-  13 \
-  /app/test_docker/results \
-  6 \
-  rfr \
-  20 \
-  full_short
+  dataset-analysis \
+  /app/test_docker/finance_pilot/FAR-Trans-Data \
+  /app/test_docker/results
 
 # Sync data
 curl -X POST "http://localhost:8001/sync/all"
@@ -768,4 +759,23 @@ curl -X POST "http://localhost:8001/sync/all"
 docker compose down
 ```
 
+```bash
+docker exec certain_library_tracker /opt/venv/bin/python /app/test_docker/test_finance_pitol.py \
+  dataset-analysis \
+  /app/test_docker/finance_pilot/FAR-Trans-Data \
+  /app/test_docker/results/dataset_analysis &&
 
+docker exec certain_library_tracker /opt/venv/bin/python /app/test_docker/test_finance_pitol.py \
+  /app/test_docker/finance_pilot/FAR-Trans-Data/transactions.csv \
+  /app/test_docker/finance_pilot/FAR-Trans-Data/close_prices.csv \
+  range \
+  2019-08-01 \
+  2019-12-26 \
+  39 \
+  13 \
+  /app/test_docker/results/recommendation \
+  6 \
+  rfr \
+  1 \
+  full_short
+```

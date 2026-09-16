@@ -43,13 +43,10 @@ class PureNDCG(Metric):
         idcg = 0.0
         for i in range(0, aux_cutoffs[0]):
             idcg += 1.0 / math.log(i + 2.0)
-            self.idcgs[i + 1] = idcg
+            self.idcgs[i+1] = idcg
 
-        customers = (
-            self.data.users & set(self.data.test[DEFAULT_USER_COL].unique().flatten())
-            if only_test_customers
-            else self.data.users
-        )
+        customers = self.data.users & set(
+            self.data.test[DEFAULT_USER_COL].unique().flatten()) if only_test_customers else self.data.users
         customers = customers & target_custs
 
         num_customers = len(customers)
@@ -77,10 +74,7 @@ class PureNDCG(Metric):
 
         def_dict = dict()
         for cutoff in cutoffs:
-            def_dict[cutoff] = (
-                pd.DataFrame(cust_evals[cutoff], columns=[DEFAULT_USER_COL, "metric"]),
-                gen_evals[cutoff],
-            )
+            def_dict[cutoff] = (pd.DataFrame(cust_evals[cutoff], columns=[DEFAULT_USER_COL, "metric"]), gen_evals[cutoff])
         return def_dict
 
     def evaluate_indiv_cutoffs(self, customer_df, cutoffs):
@@ -127,7 +121,7 @@ class PureNDCG(Metric):
                 dcg += val / math.log(k + 2.0)
                 k += 1
                 if k == current_cutoff:
-                    res_dict[current_cutoff] = dcg / cutoff_idcgs[current_cutoff]
+                    res_dict[current_cutoff] = dcg/cutoff_idcgs[current_cutoff]
 
                     if current_cutoff == max_cutoff:
                         current_cutoff = -1
@@ -154,7 +148,7 @@ class PureNDCG(Metric):
                 current_assets = set(current_pf[DEFAULT_ITEM_COL].unique())
 
         positive_assets = self.data.get_positive_assets(customer) - current_assets
-
+        
         k = min(cutoff, len(positive_assets))
         idcg = 0.0
         if k not in self.idcgs:
@@ -176,3 +170,4 @@ class PureNDCG(Metric):
             k += 1
 
         return dcg / idcg
+

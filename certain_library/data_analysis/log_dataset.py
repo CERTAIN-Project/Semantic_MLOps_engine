@@ -313,12 +313,15 @@ torch.Tensor | torch.DataLoader | torch.Dataset | tf.Tensor | tf.data.Dataset
     if df.empty:
         raise ValueError("Input data is empty")
 
-    mlflow_dataset = from_pandas(df, source="logged dataset", name=name)
-    mlflow.log_input(mlflow_dataset, context="data_analysis")
-
+    # Persist a CSV first and use its explicit path as the dataset source
     data_to_save = df if save_full_dataset else df.head(10)
     csv_path = os.path.join(output_dir, f"{name}.csv")
     data_to_save.to_csv(csv_path, index=False)
+
+    # Use the CSV file path as the dataset source so MLflow can resolve it
+    mlflow_dataset = from_pandas(df, source=csv_path, name=name)
+    mlflow.log_input(mlflow_dataset, context="data_analysis")
+
     mlflow.log_artifact(csv_path, artifact_path=output_dir)
 
     if os.path.exists(csv_path):
@@ -394,19 +397,21 @@ torch.Tensor | torch.DataLoader | torch.Dataset | tf.Tensor | tf.data.Dataset
     test_csv_path = os.path.join(output_dir, "X_test.csv")
 
     if not train_df.empty:
-        dataset = from_pandas(train_df, source="X_train split", name="X_train")
-        mlflow.log_input(dataset, context="training")
-
+        # Save train split CSV first, then register as dataset with explicit source
         train_to_save = train_df if save_full_dataset else train_df.head(10)
         train_to_save.to_csv(train_csv_path, index=False)
+        dataset = from_pandas(train_df, source=train_csv_path, name="X_train")
+        mlflow.log_input(dataset, context="training")
+
         mlflow.log_artifact(train_csv_path, artifact_path="dataset")
 
     if not test_df.empty:
-        dataset_test = from_pandas(test_df, source="X_test split", name="X_test")
-        mlflow.log_input(dataset_test, context="testing")
-
+        # Save test split CSV first, then register as dataset with explicit source
         test_to_save = test_df if save_full_dataset else test_df.head(10)
         test_to_save.to_csv(test_csv_path, index=False)
+        dataset_test = from_pandas(test_df, source=test_csv_path, name="X_test")
+        mlflow.log_input(dataset_test, context="testing")
+
         mlflow.log_artifact(test_csv_path, artifact_path="dataset")
 
     if os.path.exists(train_csv_path):

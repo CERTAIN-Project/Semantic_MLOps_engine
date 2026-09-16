@@ -12,11 +12,7 @@ from torch.utils.data import DataLoader
 from finance_pilot.data.data_loaders import PairwiseNegativeDataset, RatingDataset
 from finance_pilot.utils.alias_table import AliasTable
 from finance_pilot.utils.common_util import ensureDir, normalized_adj_single
-from finance_pilot.utils.constants import (
-    DEFAULT_ITEM_COL,
-    DEFAULT_RATING_COL,
-    DEFAULT_USER_COL,
-)
+from finance_pilot.utils.constants import DEFAULT_ITEM_COL, DEFAULT_RATING_COL, DEFAULT_USER_COL
 
 
 class BaseData(object):
@@ -88,10 +84,10 @@ class BaseData(object):
         for data in [self.train, self.valid, self.test]:
             if isinstance(data, list):
                 for sub_data in data:
-                    sub_data.loc[:, DEFAULT_RATING_COL] = (
-                        sub_data.DEFAULT_RATING_COL.apply(
-                            lambda x: x * 1.0 / max_rating
-                        )
+                    sub_data.loc[
+                        :, DEFAULT_RATING_COL
+                    ] = sub_data.DEFAULT_RATING_COL.apply(
+                        lambda x: x * 1.0 / max_rating
                     )
             else:
                 data.loc[:, DEFAULT_RATING_COL] = data.DEFAULT_RATING_COL.apply(
@@ -159,16 +155,12 @@ class BaseData(object):
         print("After intersection, testing set [0] statistics")
         print(
             tabulate(
-                (
-                    self.test[0].agg(["count", "nunique"])
-                    if isinstance(self.test, list)
-                    else self.test.agg(["count", "nunique"])
-                ),
-                headers=(
-                    self.test[0].columns
-                    if isinstance(self.test, list)
-                    else self.test.columns
-                ),
+                self.test[0].agg(["count", "nunique"])
+                if isinstance(self.test, list)
+                else self.test.agg(["count", "nunique"]),
+                headers=self.test[0].columns
+                if isinstance(self.test, list)
+                else self.test.columns,
                 tablefmt="psql",
                 disable_numparse=True,
             )
@@ -176,16 +168,12 @@ class BaseData(object):
         print("After intersection, validation set [0] statistics")
         print(
             tabulate(
-                (
-                    self.valid[0].agg(["count", "nunique"])
-                    if isinstance(self.test, list)
-                    else self.test.agg(["count", "nunique"])
-                ),
-                headers=(
-                    self.test[0].columns
-                    if isinstance(self.test, list)
-                    else self.test.columns
-                ),
+                self.valid[0].agg(["count", "nunique"])
+                if isinstance(self.test, list)
+                else self.test.agg(["count", "nunique"]),
+                headers=self.test[0].columns
+                if isinstance(self.test, list)
+                else self.test.columns,
                 tablefmt="psql",
                 disable_numparse=True,
             )
@@ -225,8 +213,8 @@ class BaseData(object):
             target_tensor=torch.FloatTensor(ratings).to(device),
         )
         print(f"Making RatingDataset of length {len(dataset)}")
-
-        if len(dataset) % batch_size == 1:
+        
+        if len(dataset)%batch_size == 1:
             batch_size += 1
         return DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
@@ -265,10 +253,10 @@ class BaseData(object):
             neg_item_tensor=torch.LongTensor(neg_items).to(device),
         )
         print(f"Making PairwiseNegativeDataset of length {len(dataset)}")
-
-        if len(dataset) % batch_size == 1:
+        
+        if len(dataset)%batch_size == 1:
             batch_size += 1
-
+            
         return DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
     def instance_mul_neg_loader(self, batch_size, device, num_negative):
@@ -305,10 +293,10 @@ class BaseData(object):
             neg_item_tensor=torch.LongTensor(neg_items).to(device),
         )
         print(f"Making PairwiseNegativeDataset of length {len(dataset)}")
-
-        if len(dataset) % batch_size == 1:
+        
+        if len(dataset)%batch_size == 1:
             batch_size += 1
-
+            
         return DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
     def get_adj_mat(self, config):
@@ -482,7 +470,7 @@ class BaseData(object):
                     shape=(self.n_users, self.n_items),
                 )
                 R_prime = diag_indicator_user.dot(R).dot(diag_indicator_item)
-                user_np_keep, item_np_keep = R_prime.nonzero()
+                (user_np_keep, item_np_keep) = R_prime.nonzero()
                 ratings_keep = R_prime.data
                 tmp_adj = sp.csr_matrix(
                     (ratings_keep, (user_np_keep, item_np_keep + self.n_users)),

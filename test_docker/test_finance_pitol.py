@@ -1,16 +1,21 @@
-# GitHub repo: https://github.com/ALi-KORDiA/counterfactualFAR/tree/main
-
 #!/usr/bin/env python3
 import argparse
 import datetime as dt
+import importlib.util
 import os
+import subprocess
 import sys
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import mlflow
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestRegressor
+
+try:
+    from tabpfn import TabPFNRegressor
+except ImportError:
+    TabPFNRegressor = None
 
 from certain_library.log_basic.log_param import log_param
 from certain_library.train_monitor.log_metrics import log_metrics
@@ -36,6 +41,7 @@ from finance_pilot.utils.constants import (
 from finance_pilot.algorithms.kpi_gen.load_kpi_generator import LoadKPIGenerator
 from finance_pilot.algorithms.kpi_gen.ma_kpi_generator import MAKPIGenerator
 from finance_pilot.algorithms.profitability_prediction import ProfitabilityPrediction
+from finance_pilot.algorithms.rfr_kpi_model import RFRKPIModel
 
 from finance_pilot.data.filter.asset.asset_with_test_price import AssetWithTestPrice
 from finance_pilot.data.filter.customer.customer_in_train import CustomerInTrain
@@ -59,8 +65,217 @@ from finance_pilot.metrics.pure_ndcg import PureNDCG
 pd.options.mode.chained_assignment = None
 
 RFR = "rfr"
+LGBM = "lgbm"
+TABPFN = "tabpfn"
+SUPPORTED_MODELS = (RFR, LGBM, TABPFN)
 START_TIME = dt.datetime.now()
+SCRIPT_DIR = Path(__file__).resolve().parent
+FINANCE_PILOT_DIR = SCRIPT_DIR / "finance_pilot"
+COUNTERFACTUALS_SCRIPT = FINANCE_PILOT_DIR / "generate_counterfactuals.py"
 
+
+#### run_dataset_analysis.py
+# Dataset-analysis launcher mode integrated from the standalone analysis script.
+DATASET_ANALYSIS_MODE = "dataset-analysis"
+DATASET_ANALYSIS_PERIODS = (
+    # start_date, end_date, num_splits, num_future, summary_suffix
+    ("2019-08-01", "2021-02-26", 28, 13, 1), 
+)
+
+
+def run_basic_dataset_analysis(
+    dataset_path: str,
+    output_directory: str,
+    dataset_analysis_script: Optional[str] = None,
+    customer_analysis_script: Optional[str] = None,
+) -> None:
+    """Run the FAR-Trans asset/customer analysis over the two configured periods.
+
+    The asset and customer analyzers are project files shipped alongside this
+    launcher. By default they are resolved relative to this file, not the shell's
+    current working directory. Optional explicit paths remain available for
+    compatibility with custom project layouts.
+    """
+    dataset_path = os.path.abspath(dataset_path)
+    output_directory = os.path.abspath(output_directory)
+    dataset_analysis_script = os.path.abspath(
+        dataset_analysis_script or os.path.join(FINANCE_PILOT_DIR, "dataset_analysis.py")
+    )
+    customer_analysis_script = os.path.abspath(
+        customer_analysis_script or os.path.join(FINANCE_PILOT_DIR, "customer_analysis.py")
+    )
+    os.makedirs(output_directory, exist_ok=True)
+
+    interactions_file = os.path.join(dataset_path, "transactions.csv")
+    time_series_file = os.path.join(dataset_path, "close_prices.csv")
+    min_file = os.path.join(dataset_path, "limit_prices.csv")
+    child_env = os.environ.copy()
+    pythonpath_entries = ["/app/test_docker", "/app/test_docker/finance_pilot"]
+    existing_pythonpath = child_env.get("PYTHONPATH")
+    if existing_pythonpath:
+        pythonpath_entries.append(existing_pythonpath)
+    child_env["PYTHONPATH"] = os.pathsep.join(pythonpath_entries)
+    required_inputs = (interactions_file, time_series_file, min_file)
+    missing_inputs = [path for path in required_inputs if not os.path.isfile(path)]
+    if missing_inputs:
+        raise FileNotFoundError(
+            "Missing required FAR-Trans input file(s): {}".format(
+                ", ".join(missing_inputs)
+            )
+        )
+
+    for script_path in (dataset_analysis_script, customer_analysis_script):
+        if not os.path.isfile(script_path):
+            raise FileNotFoundError(
+                "Required analysis script not found: {}".format(script_path)
+            )
+
+    with mlflow.start_run(run_name="dataset_analysis_subrun", nested=True) as run:
+        run_id = run.info.run_id
+
+        log_param("dataset_path", dataset_path)
+        log_param("output_directory", output_directory)
+        log_param("dataset_analysis_script", dataset_analysis_script)
+
+        for start_date, end_date, num_splits, num_future, suffix in DATASET_ANALYSIS_PERIODS:
+            print(
+                "Starting analysis for period: {} to {}".format(
+                    start_date, end_date
+                )
+            )
+
+            child_env["MLFLOW_RUN_ID"] = run_id
+
+            asset_command = [
+                sys.executable,
+                "-m",
+                "test_docker.finance_pilot.dataset_analysis",
+                interactions_file,
+                time_series_file,
+                "range",
+                start_date,
+                end_date,
+                str(num_splits),
+                str(num_future),
+                output_directory,
+                "assets_{}.csv".format(suffix),
+            ]
+
+            log_param("start_subprocess_dataset_analysis", True)
+            try:
+                subprocess.run(asset_command, check=True, env=child_env)
+            except subprocess.CalledProcessError as exc:
+                raise RuntimeError(
+                    "Asset analysis failed for period {} to {} (exit code {}).".format(
+                        start_date, end_date, exc.returncode
+                    )
+                ) from exc
+
+            log_param("finish_subprocess_dataset_analysis", True)
+
+    with mlflow.start_run(run_name="customer_analysis_subrun", nested=True) as run:
+        run_id = run.info.run_id
+
+        log_param("dataset_path", dataset_path)
+        log_param("output_directory", output_directory)
+        log_param("customer_analysis_script", customer_analysis_script)
+
+        for start_date, end_date, num_splits, num_future, suffix in DATASET_ANALYSIS_PERIODS:
+            print(
+                "Starting analysis for period: {} to {}".format(
+                    start_date, end_date
+                )
+            )
+
+            child_env["MLFLOW_RUN_ID"] = run_id
+
+            customer_command = [
+                sys.executable,
+                "-m",
+                "test_docker.finance_pilot.customer_analysis",
+                interactions_file,
+                time_series_file,
+                min_file,
+                "range",
+                start_date,
+                end_date,
+                str(num_splits),
+                str(num_future),
+                output_directory,
+                "customers_{}.csv".format(suffix),
+            ]
+
+            log_param("start_subprocess_customer_analysis", True)
+            try:
+                subprocess.run(customer_command, check=True, env=child_env)
+            except subprocess.CalledProcessError as exc:
+                raise RuntimeError(
+                    "Customer analysis failed for period {} to {} (exit code {}).".format(
+                        start_date, end_date, exc.returncode
+                    )
+                ) from exc
+
+            log_param("finish_subprocess_customer_analysis", True)
+            print("End analysis for period: {} to {}".format(start_date, end_date))
+
+
+def run_dataset_analysis_mode_if_requested() -> bool:
+    """Handle the integrated dataset-analysis subcommand before the legacy CLI.
+
+    Returns True when dataset-analysis mode was requested and completed.
+    """
+    if len(sys.argv) < 2 or sys.argv[1] != DATASET_ANALYSIS_MODE:
+        return False
+
+    parser = argparse.ArgumentParser(
+        prog="{} {}".format(os.path.basename(sys.argv[0]), DATASET_ANALYSIS_MODE),
+        description=(
+            "Run FAR-Trans basic asset/customer dataset analysis over the two "
+            "configured evaluation periods."
+        ),
+    )
+    parser.add_argument(
+        "dataset_path",
+        help=(
+            "Directory containing transactions.csv, close_prices.csv, "
+            "and limit_prices.csv."
+        ),
+    )
+    parser.add_argument(
+        "output_dir",
+        help="Directory in which analysis outputs and summary CSVs are stored.",
+    )
+    parser.add_argument(
+        "--dataset-analysis-script",
+        default=None,
+        help=(
+            "Optional path to dataset_analysis.py. By default the copy next to "
+            "this launcher is used."
+        ),
+    )
+    parser.add_argument(
+        "--customer-analysis-script",
+        default=None,
+        help=(
+            "Optional path to customer_analysis.py. By default the copy next to "
+            "this launcher is used."
+        ),
+    )
+
+    analysis_args = parser.parse_args(sys.argv[2:])
+
+    log_param("dataset_path", analysis_args.dataset_path)
+    log_param("output_dir", analysis_args.output_dir)
+    log_param("dataset_analysis_script", analysis_args.dataset_analysis_script)
+    log_param("customer_analysis_script", analysis_args.customer_analysis_script)
+
+    run_basic_dataset_analysis(
+        dataset_path=analysis_args.dataset_path,
+        output_directory=analysis_args.output_dir,
+        dataset_analysis_script=analysis_args.dataset_analysis_script,
+        customer_analysis_script=analysis_args.customer_analysis_script,
+    )
+    return True
 
 basic_kpis = [
     "past_profitability_63d",
@@ -183,15 +398,39 @@ def get_feature_list(feature_set: str) -> List[str]:
 
 
 def get_name(rec_model: str, params: List[str]) -> Optional[str]:
-    if rec_model != RFR:
-        return None
+    """Build a stable run/model name from the model-specific parameters."""
+    if rec_model in (RFR, LGBM):
+        if len(params) < 2:
+            return None
 
-    if len(params) < 2:
-        return None
+        try:
+            n_estimators = int(params[0])
+        except ValueError:
+            return None
 
-    n_estimators = int(params[0])
-    feature_set = params[1]
-    return "{}_{}_{}".format(RFR, n_estimators, feature_set)
+        feature_set = params[1]
+        get_feature_list(feature_set)  # validate early
+        return "{}_{}_{}".format(rec_model, n_estimators, feature_set)
+
+    if rec_model == TABPFN:
+        if len(params) < 1:
+            return None
+
+        feature_set = params[0]
+        get_feature_list(feature_set)  # validate early
+
+        if len(params) >= 2:
+            try:
+                sample_fraction = float(params[1])
+            except ValueError:
+                return None
+            if not 0.0 < sample_fraction <= 1.0:
+                return None
+            return "{}_{}_sample-{}".format(TABPFN, feature_set, sample_fraction)
+
+        return "{}_{}".format(TABPFN, feature_set)
+
+    return None
 
 
 def compute_profitability(
@@ -282,7 +521,8 @@ def test_algorithm(
     algorithm.train(recommendation_date)
     print("Algorithm trained in {}".format(dt.datetime.now() - local_start))
 
-    recs = algorithm.recommend(recommendation_date, False, True)
+    # finance_pilot.recommend signature changed to (rec_time, target_custs, repeated, only_test_customers)
+    recs = algorithm.recommend(recommendation_date, customers, False, True)
     recs = recs.sort_values(
         by=[DEFAULT_USER_COL, DEFAULT_RATING_COL],
         ascending=[False, False],
@@ -308,7 +548,8 @@ def test_algorithm(
         )
 
         for cutoff in cutoffs:
-            full_metric_name = "{}@{}".format(metric_name, cutoff)
+            # Use colon separator for metric names to comply with MLflow naming rules
+            full_metric_name = "{}:{}".format(metric_name, cutoff)
             metric_res[full_metric_name] = metric_dict[cutoff]
             aggregate_value = metric_dict[cutoff][1]
 
@@ -352,6 +593,7 @@ def test_algorithm(
 
 
 def run_regressor(
+    model_id: str,
     params: List[str],
     financial_data: Any,
     recommendation_date: Any,
@@ -360,15 +602,88 @@ def run_regressor(
     file_name: str,
     num_months: str,
 ) -> Optional[Dict[str, Any]]:
-    n_estimators = int(params[0])
-    feature_set = params[1]
+    """Instantiate the requested model and run the common profitability pipeline."""
+
+    sample_fraction = None
+    model_n_estimators = None
+
+    if model_id in (RFR, LGBM):
+        if len(params) < 2:
+            raise ValueError(
+                "{} requires: <n_estimators> <feature_set>".format(model_id)
+            )
+        model_n_estimators = int(params[0])
+        feature_set = params[1]
+
+    elif model_id == TABPFN:
+        if len(params) < 1:
+            raise ValueError("tabpfn requires: <feature_set> [sample_fraction]")
+        feature_set = params[0]
+
+        if len(params) >= 2:
+            sample_fraction = float(params[1])
+            if not 0.0 < sample_fraction <= 1.0:
+                raise ValueError("TabPFN sample_fraction must be in (0, 1].")
+    else:
+        raise ValueError("Unsupported model: {}".format(model_id))
+
     feats = get_feature_list(feature_set)
 
-    model = RandomForestRegressor(
-        n_estimators=n_estimators,
-        random_state=42,
-        n_jobs=-1,
-    )
+    if model_id == RFR:
+        assert model_n_estimators is not None
+        model = RFRKPIModel(
+            n_estimators=model_n_estimators,
+            k=5,
+            kpi_type=feature_set,
+            kpi_features=feats,
+            random_state=42,
+            n_jobs=1,
+        )
+        model_display_name = "RFRKPIModel"
+        framework = "internal-kpi-pipeline"
+
+    elif model_id == LGBM:
+        assert model_n_estimators is not None
+        try:
+            from finance_pilot.algorithms.lgbm_kpi_model import LGBMKPIModel
+        except ImportError as exc:
+            raise ImportError(
+                "LightGBM is not installed. Install it with: pip install lightgbm"
+            ) from exc
+
+        model = LGBMKPIModel(
+            n_estimators=model_n_estimators,
+            k=5,
+            kpi_type=feature_set,
+            kpi_features=feats,
+            random_state=42,
+            n_jobs=1,
+        )
+        model_display_name = "LGBMKPIModel"
+        framework = "internal-kpi-pipeline"
+
+    else:  # TABPFN
+        if TabPFNRegressor is None:
+            raise ImportError(
+                "TabPFN is not installed. Install it with: pip install tabpfn"
+            )
+        model = TabPFNRegressor()
+        model_display_name = "TabPFNRegressor"
+        framework = "tabpfn"
+
+        # IMPORTANT:
+        # The launcher accepts an optional TabPFN sample fraction, but this
+        # tracked version of ProfitabilityPrediction only receives the final
+        # feature matrix at fit time and does not expose asset IDs here.
+        # Therefore proportional per-asset sampling cannot be implemented
+        # faithfully at this point without modifying ProfitabilityPrediction.
+        if sample_fraction is not None:
+            print(
+                "[WARN] TabPFN sample_fraction={} was supplied, but proportional "
+                "per-asset sampling is not implemented in this tracked "
+                "recommendation.py. The value will be logged only."
+                .format(sample_fraction)
+            )
 
     algorithm = ProfitabilityPrediction(
         model,
@@ -376,36 +691,61 @@ def run_regressor(
         num_months,
         feats,
         -1,
+        save_for_testing=True,
     )
 
+    # CHANGED: model metadata is now model-aware.
     log_model_info(
         model_information={
-            "model_name": "RandomForestRegressor",
+            "model_name": model_display_name,
             "model_version": "1.0",
-            "framework": "scikit-learn",
+            "framework": framework,
             "task": "financial_asset_recommendation",
             "recommendation_date": str(recommendation_date),
         }
     )
 
-    log_model_hyperparameters(
-        {
-            "n_estimators": n_estimators,
-            "feature_set": feature_set,
-            "num_months": num_months,
-            "features": ",".join(feats),
-        }
-    )
+    hyperparams: Dict[str, Any] = {
+        "feature_set": feature_set,
+        "num_months": num_months,
+        "features": ",".join(feats),
+    }
+    if model_n_estimators is not None:
+        hyperparams["n_estimators"] = model_n_estimators
+    if sample_fraction is not None:
+        hyperparams["sample_fraction"] = sample_fraction
+
+    log_model_hyperparameters(hyperparams)
 
     file_prefix = os.path.join(output_dir, file_name)
 
-    return test_algorithm(
+    result = test_algorithm(
         algorithm=algorithm,
         eval_metrics=eval_metrics,
         file_prefix=file_prefix,
         recommendation_date=recommendation_date,
         customers=financial_data.users,
     )
+
+    try:
+        artifact_dir = algorithm._artifact_dir()
+        if os.path.exists(artifact_dir):
+            mlflow.log_artifacts(
+                artifact_dir,
+                artifact_path="artifacts_for_counterfactuals",
+            )
+
+            pipeline_file = algorithm._artifact_path(
+                "profitability_recommendation_pipeline",
+                recommendation_date,
+                "pkl",
+            )
+            if os.path.exists(pipeline_file):
+                mlflow.log_artifact(pipeline_file, artifact_path="model")
+    except Exception:
+        pass
+
+    return result
 
 
 def load_financial_data(interactions_file: str, time_series_file: str):
@@ -522,6 +862,74 @@ def build_metrics(splitted_data: Any, rec_date: Any, future_date: Any) -> List[A
     return metrics
 
 
+def _build_counterfactual_model_param_tag(model_name: str, params: List[str]) -> str:
+    if len(params) < 2:
+        raise ValueError(
+            "{} requires <n_estimators> <feature_set> to generate counterfactuals".format(
+                model_name
+            )
+        )
+
+    return "n-{}_kpi-{}_internal_kpis".format(int(params[0]), params[1])
+
+
+def _run_counterfactual_generation(
+    model_name: str,
+    params: List[str],
+    recommendation_date: Any,
+) -> None:
+    if model_name not in (RFR, LGBM):
+        return
+
+    if not COUNTERFACTUALS_SCRIPT.is_file():
+        raise FileNotFoundError(
+            "Counterfactual generator not found: {}".format(COUNTERFACTUALS_SCRIPT)
+        )
+
+    with mlflow.start_run(run_name="counterfactual_generation_sudrun", nested=True) as run:
+        if importlib.util.find_spec("dice_ml") is None:
+            print("[WARN] dice_ml is not installed; skipping counterfactual generation.")
+            return
+
+        artifact_dir = Path("artifacts_for_counterfactuals") / "{}_{}".format(
+            model_name,
+            _build_counterfactual_model_param_tag(model_name, params),
+        )
+        if not artifact_dir.is_dir():
+            raise FileNotFoundError(
+                "Counterfactual artifact directory not found: {}".format(artifact_dir)
+            )
+
+        date_tag = pd.to_datetime(recommendation_date).strftime("%Y-%m-%d")
+        pkl_candidates = sorted(
+            artifact_dir.glob("profitability_recommendation_pipeline_{}_*.pkl".format(date_tag))
+        )
+        if not pkl_candidates:
+            raise FileNotFoundError(
+                "No counterfactual pipeline PKL found in {} for date {}".format(
+                    artifact_dir,
+                    date_tag,
+                )
+            )
+
+        env = os.environ.copy()
+        pythonpath_entries = [str(FINANCE_PILOT_DIR)]
+        existing_pythonpath = env.get("PYTHONPATH")
+        if existing_pythonpath:
+            pythonpath_entries.append(existing_pythonpath)
+        env["PYTHONPATH"] = os.pathsep.join(pythonpath_entries)
+
+        command = [
+            sys.executable,
+            str(COUNTERFACTUALS_SCRIPT),
+            "--model-pkl",
+            str(pkl_candidates[0]),
+        ]
+
+        print("Generating counterfactuals from {}".format(pkl_candidates[0]))
+        subprocess.run(command, cwd=str(SCRIPT_DIR.parent), env=env, check=True)
+
+
 def run_single_experiment(
     args: argparse.Namespace,
     data: Any,
@@ -553,8 +961,13 @@ def run_single_experiment(
         log_param("recommendation_date", str(rec_date))
         log_param("future_date", str(future_date))
         log_param("months", months_term)
-        log_param("n_estimators", int(params[0]))
-        log_param("feature_set", params[1])
+        if args.model in (RFR, LGBM):
+            log_param("n_estimators", int(params[0]))
+            log_param("feature_set", params[1])
+        else:
+            log_param("feature_set", params[0])
+            if len(params) >= 2:
+                log_param("sample_fraction", float(params[1]))
         log_param("output_dir", output_dir)
 
         safe_log_dataset(interaction_data.data, "transactions", "datasets")
@@ -624,6 +1037,7 @@ def run_single_experiment(
 
         try:
             metric_res = run_regressor(
+                model_id=args.model,
                 params=params,
                 financial_data=splitted_data,
                 recommendation_date=rec_date,
@@ -635,6 +1049,8 @@ def run_single_experiment(
         finally:
             stop_tracker(tracker_data, output_location)
             print("Resource monitoring stopped")
+
+        _run_counterfactual_generation(args.model, params, rec_date)
 
         return metric_res
 
@@ -658,7 +1074,7 @@ def parse_arguments() -> argparse.Namespace:
     parser_range.add_argument("num_future", type=int)
     parser_range.add_argument("output_dir")
     parser_range.add_argument("months")
-    parser_range.add_argument("model", choices=[RFR])
+    parser_range.add_argument("model", choices=SUPPORTED_MODELS)
     parser_range.add_argument("params", nargs="*")
 
     parser_fixed = subparsers.add_parser("fixed_dates")
@@ -673,19 +1089,25 @@ def parse_arguments() -> argparse.Namespace:
 
 
 def main() -> None:
-    args = parse_arguments()
-
-    if len(args.params) < 2:
-        sys.stderr.write("ERROR: Invalid arguments for Random Forest\n")
-        sys.stderr.write("Usage params: <n_estimators> <feature_set>\n")
-        sys.stderr.write("feature_set: basic, full, basic_short, full_short\n")
-        sys.exit(1)
-
-    os.makedirs(args.output_dir, exist_ok=True)
-
     experiment_name = "finance_pilot_recommendation_tracked_v2"
+    # Ensure MLflow is pointed at the REST tracking server (prefer HTTP URI).
+    _env_uri = os.environ.get("MLFLOW_TRACKING_URI")
+    if not _env_uri or not _env_uri.startswith("http"):
+        mlflow.set_tracking_uri("http://certain_mlflow:5001")
+    else:
+        mlflow.set_tracking_uri(_env_uri)
+
     mlflow.set_experiment(experiment_name)
     print("Experiment: {}".format(experiment_name))
+
+    if len(sys.argv) > 1 and sys.argv[1] == DATASET_ANALYSIS_MODE:
+        with mlflow.start_run(run_name="customer+dataset_analysis"):
+            if run_dataset_analysis_mode_if_requested():
+                return
+
+    args = parse_arguments()
+
+    os.makedirs(args.output_dir, exist_ok=True)
 
     model_name = get_name(args.model, args.params)
 
@@ -700,10 +1122,16 @@ def main() -> None:
 
     print("Dataset loaded: {}".format(dt.datetime.now() - START_TIME))
 
+    # CHANGED: derive KPI/feature set from the model-specific parameter layout.
+    if args.model in (RFR, LGBM):
+        kpi_type = args.params[1]
+    else:
+        kpi_type = args.params[0]
+
     kpis = load_or_compute_kpis(
         data,
         args.output_dir,
-        kpi_type="full_short",
+        kpi_type=kpi_type,
     )
 
     print("Technical indicators computed: {}".format(dt.datetime.now() - START_TIME))
@@ -711,10 +1139,49 @@ def main() -> None:
     dates, future_dates = get_dates_from_args(args, data)
 
     with mlflow.start_run(run_name=model_name) as parent_run:
+        if args.model in (RFR, LGBM):
+            if len(args.params) < 2:
+                sys.stderr.write(
+                    "ERROR: {} requires <n_estimators> <feature_set>\n".format(args.model)
+                )
+                sys.stderr.write(
+                    "feature_set: basic, full, basic_short, full_short\n"
+                )
+                sys.exit(1)
+        elif args.model == TABPFN:
+            if len(args.params) < 1:
+                sys.stderr.write(
+                    "ERROR: tabpfn requires <feature_set> [sample_fraction]\n"
+                )
+                sys.stderr.write(
+                    "feature_set: basic, full, basic_short, full_short\n"
+                )
+                sys.exit(1)
+
+            if len(args.params) >= 2:
+                try:
+                    sample_fraction = float(args.params[1])
+                except ValueError:
+                    sys.stderr.write("ERROR: TabPFN sample_fraction must be numeric.\n")
+                    sys.exit(1)
+
+                if not 0.0 < sample_fraction <= 1.0:
+                    sys.stderr.write(
+                        "ERROR: TabPFN sample_fraction must be in (0, 1].\n"
+                    )
+                    sys.exit(1)
+
         log_param("model", args.model)
         log_param("params", args.params)
-        log_param("feature_set", args.params[1])
-        log_param("n_estimators", int(args.params[0]))
+        # CHANGED: parent run logging is model-aware.
+        if args.model in (RFR, LGBM):
+            log_param("feature_set", args.params[1])
+            log_param("n_estimators", int(args.params[0]))
+        else:
+            log_param("feature_set", args.params[0])
+            if len(args.params) >= 2:
+                log_param("sample_fraction", float(args.params[1]))
+
         log_param("months", args.months)
 
         for i in range(len(dates)):
@@ -731,6 +1198,7 @@ def main() -> None:
             )
 
     print("Workflow complete.")
+
 
 
 if __name__ == "__main__":

@@ -32,3 +32,7 @@ typing-extensions==4.13.0
 whylabs-client==0.6.16
 torch
 tabulate
+lightgbm
+nvidia-ml-py
+tabpfn
+skl2onnx

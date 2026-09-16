@@ -16,12 +16,5 @@ class CustomerInTrain(CustomerFilter):
     Only keeps those customers in the training se.
     """
 
-    def filter(
-        self,
-        customers: set,
-        time_series: DataFrame,
-        train: DataFrame,
-        valid: DataFrame,
-        test: DataFrame,
-    ) -> Set:
+    def filter(self, customers: set, time_series: DataFrame, train: DataFrame, valid: DataFrame, test: DataFrame) -> Set:
         return set(train[DEFAULT_USER_COL].unique().flatten())
