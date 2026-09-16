@@ -758,8 +758,14 @@ curl -X POST "http://localhost:8001/sync/all"
 # Stop environment
 docker compose down
 ```
-
+For the final Finance Pilot Test run the following:
 ```bash
+# Build
+docker compose up --build -d
+
+# Check status
+docker compose ps
+
 docker exec certain_library_tracker /opt/venv/bin/python /app/test_docker/test_finance_pitol.py \
   dataset-analysis \
   /app/test_docker/finance_pilot/FAR-Trans-Data \
