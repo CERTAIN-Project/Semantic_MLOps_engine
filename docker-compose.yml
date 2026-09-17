@@ -54,7 +54,7 @@ services:
       - certain_library_default
     command: >
       sh -c "
-      pip install mlflow==2.21.2 psycopg2-binary &&
+      pip install mlflow==3.8.1 psycopg2-binary &&
       mlflow server
       --backend-store-uri postgresql://postgres:postgres@postgres:5432/mlflow
       --default-artifact-root /app/mlruns

@@ -1,5 +1,5 @@
-# Use Python 3.9.16 to match MLOps environment exactly
-FROM python:3.9.16-slim-bullseye
+# Use Python 3.11 to support mlflow 3.8.1
+FROM python:3.11-slim-bookworm
 
 # Install PostgreSQL 13 and required packages
 RUN apt-get update && apt-get install -y \
@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y \
     curl \
     sudo \
     && wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add - \
-    && echo "deb http://apt.postgresql.org/pub/repos/apt/ bullseye-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
+    && echo "deb http://apt.postgresql.org/pub/repos/apt/ bookworm-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
     && apt-get update && apt-get install -y \
     postgresql-13 \
     git \
