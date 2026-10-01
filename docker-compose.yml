@@ -54,7 +54,7 @@ services:
       - certain_library_default
     command: >
       sh -c "
-      pip install mlflow==3.8.1 psycopg2-binary &&
+      pip install mlflow==3.8.1 psycopg2-binary sqlalchemy==2.0.40 &&
       mlflow server
       --backend-store-uri postgresql://postgres:postgres@postgres:5432/mlflow
       --default-artifact-root /app/mlruns
@@ -145,6 +145,7 @@ services:
     volumes:
       - mlflow_artifacts:/app/mlruns
       - ./.git:/app/.git:ro
+      - ../Synthetic-Data-Generation-Component:/app/Synthetic-Data-Generation-Component:ro
     stdin_open: true
     tty: true
 

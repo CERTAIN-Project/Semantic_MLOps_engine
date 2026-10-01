@@ -160,6 +160,9 @@ class Tracker:
         except Exception:
             backoff_base = 1.0
 
+        def _is_timeout_error(exc: BaseException) -> bool:
+            return isinstance(exc, (TimeoutError, socket.timeout)) or exc.__class__.__name__ == "TimeoutError"
+
         for attempt in range(1, max_retries + 1):
             try:
                 logger.debug(
@@ -189,11 +192,18 @@ class Tracker:
                 )
 
                 if is_last:
-                    logger.exception(
-                        "Automatic sync/all failed after run %s via %s",
-                        run_id,
-                        sync_url,
-                    )
+                    if _is_timeout_error(exc):
+                        logger.warning(
+                            "Automatic sync/all timed out after run %s via %s; continuing without blocking the run",
+                            run_id,
+                            sync_url,
+                        )
+                    else:
+                        logger.exception(
+                            "Automatic sync/all failed after run %s via %s",
+                            run_id,
+                            sync_url,
+                        )
                     break
 
                 # Exponential backoff with small jitter

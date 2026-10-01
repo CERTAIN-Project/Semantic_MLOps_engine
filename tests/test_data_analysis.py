@@ -1,3 +1,4 @@
+import json
 import pytest
 import pandas as pd
 import numpy as np
@@ -6,6 +7,10 @@ from unittest.mock import patch, Mock, mock_open
 
 from certain_library.data_analysis.log_dataset import log_dataset
 from certain_library.data_analysis.log_data_techniques import log_data_techniques
+from certain_library.data_analysis.log_demographic_bias import (
+    build_batch_demographic_bias_artifacts,
+    build_demographic_bias_artifacts,
+)
 from certain_library.data_analysis.log_timeseries import timestamp_analysis
 from certain_library.data_analysis.log_whylogs import log_whylogs_profile
 
@@ -302,3 +307,240 @@ class TestLogDataTechniques:
         """Test with invalid input type."""
         with pytest.raises(TypeError, match="data_techniques must be a dictionary"):
             log_data_techniques("invalid")
+
+
+class TestDemographicBiasAnalysis:
+    def test_build_demographic_bias_artifacts_without_batch_id(self, tmp_path):
+        output_dir = tmp_path / "bias_out"
+
+        clean_df = pd.DataFrame(
+            {
+                "Text": [
+                    "A remote employee from Greece describes onboarding.",
+                    "A remote employee from Italy discusses documentation.",
+                    "A remote employee from Greece explains leave policy.",
+                ],
+                "Age": [31, 38, 35],
+                "Nationality": ["Greece", "Italy", "Greece"],
+                "Background": ["Engineering", "Operations", "Support"],
+                "Opinion": ["Neutral", "Positive", "Neutral"],
+                "AnswerQuality": ["High", "High", "Medium"],
+                "BiasGroup": ["Group A", "Group B", "Group A"],
+                "FirstName": ["Anna", "Marco", "Eleni"],
+                "LastName": ["Papadopoulos", "Rossi", "Nikolaou"],
+                "DateOfBirth": ["1993-01-01", "1987-02-02", "1990-03-03"],
+            }
+        )
+
+        report = build_demographic_bias_artifacts(
+            clean_df=clean_df,
+            dirty_df=None,
+            output_dir=output_dir,
+            dataset_name="greece_italy_subset",
+            age_range=(30, 40),
+            countries=["Greece", "Italy"],
+        )
+
+        assert report["dataset_name"] == "greece_italy_subset"
+        assert report["clean"]["bias_snapshot"]["records"] == 3
+        assert report["dirty"] is None
+        assert (output_dir / "greece_italy_subset_demographic_bias_report.json").exists()
+        assert (output_dir / "greece_italy_subset_demographic_bias_report.html").exists()
+
+    def test_build_demographic_bias_artifacts_with_synthetic_areas(self, tmp_path):
+        output_dir = tmp_path / "bias_out"
+
+        clean_df = pd.DataFrame(
+            {
+                "Text": [
+                    "Energy note about grid stability.",
+                    "Energy note about solar output.",
+                    "Energy note about wind output.",
+                    "Energy note about load balancing.",
+                ],
+                "Age": [31, 38, 35, 41],
+                "Nationality": ["Greece", "Italy", "Greece", "Italy"],
+                "Background": ["Engineering", "Operations", "Support", "Research"],
+                "Opinion": ["Neutral", "Positive", "Neutral", "Positive"],
+                "AnswerQuality": ["High", "High", "Medium", "High"],
+                "BiasGroup": ["Group A", "Group B", "Group A", "Group C"],
+                "FirstName": ["Anna", "Marco", "Eleni", "Sofia"],
+                "LastName": ["Papadopoulos", "Rossi", "Nikolaou", "Georgiou"],
+                "DateOfBirth": ["1993-01-01", "1987-02-02", "1990-03-03", "1985-04-04"],
+            }
+        )
+
+        report = build_demographic_bias_artifacts(
+            clean_df=clean_df,
+            dirty_df=None,
+            output_dir=output_dir,
+            dataset_name="opsd_area_test",
+            age_range=(30, 45),
+            areas=["North", "South"],
+            append_random_areas=True,
+            area_column="Area",
+            area_choices=["North", "South"],
+            random_seed=42,
+        )
+
+        assert report["dataset_name"] == "opsd_area_test"
+        assert report["clean"]["bias_snapshot"]["records"] == 4
+        assert (output_dir / "opsd_area_test_demographic_bias_report.json").exists()
+        assert (output_dir / "opsd_area_test_demographic_bias_report.html").exists()
+
+    def test_build_batch_demographic_bias_artifacts(self, tmp_path):
+        session_dir = tmp_path / "session"
+        output_dir = tmp_path / "bias_out"
+        session_dir.mkdir()
+
+        clean_payload = {
+            "TopicTitle": "Employee profiles",
+            "TopicSummary": "Clean synthetic demographic sample.",
+            "Dataset": [
+                {
+                    "Id": 1,
+                    "Text": "A remote employee from Germany describes the onboarding workflow.",
+                    "Metadata": {
+                        "FirstName": "Anna",
+                        "LastName": "Meyer",
+                        "Age": 29,
+                        "Nationality": "Germany",
+                        "Background": "Engineering",
+                        "Opinion": "Neutral",
+                        "AnswerQuality": "High",
+                        "BiasGroup": "Group A",
+                    },
+                },
+                {
+                    "Id": 2,
+                    "Text": "A remote employee from Spain discusses team communication.",
+                    "Metadata": {
+                        "FirstName": "Luis",
+                        "LastName": "Garcia",
+                        "Age": 42,
+                        "Nationality": "Spain",
+                        "Background": "Operations",
+                        "Opinion": "Positive",
+                        "AnswerQuality": "High",
+                        "BiasGroup": "Group B",
+                    },
+                },
+                {
+                    "Id": 3,
+                    "Text": "A remote employee from Germany explains leave policy changes.",
+                    "Metadata": {
+                        "FirstName": "Sofia",
+                        "LastName": "Weber",
+                        "Age": 57,
+                        "Nationality": "Germany",
+                        "Background": "Support",
+                        "Opinion": "Neutral",
+                        "AnswerQuality": "Medium",
+                        "BiasGroup": "Group A",
+                    },
+                },
+                {
+                    "Id": 4,
+                    "Text": "A remote employee from France talks about documentation quality.",
+                    "Metadata": {
+                        "FirstName": "Claire",
+                        "LastName": "Dubois",
+                        "Age": 34,
+                        "Nationality": "France",
+                        "Background": "Research",
+                        "Opinion": "Positive",
+                        "AnswerQuality": "High",
+                        "BiasGroup": "Group C",
+                    },
+                },
+            ],
+        }
+
+        dirty_payload = {
+            "TopicTitle": "Employee profiles",
+            "TopicSummary": "Dirty synthetic demographic sample.",
+            "Dataset": [
+                {
+                    "Id": 11,
+                    "Text": "A remote employee from Germany describes the onboarding workflow.",
+                    "Metadata": {
+                        "FirstName": "Anna",
+                        "LastName": "Meyer",
+                        "Age": 29,
+                        "Nationality": "Germany",
+                        "Background": "Engineering",
+                        "Opinion": "Neutral",
+                        "AnswerQuality": "High",
+                        "BiasGroup": "Group A",
+                    },
+                },
+                {
+                    "Id": 12,
+                    "Text": "A remote employee from Spain discusses team communication.",
+                    "Metadata": {
+                        "FirstName": "Luis",
+                        "LastName": "Garcia",
+                        "Age": 42,
+                        "Nationality": "Spain",
+                        "Background": "Operations",
+                        "Opinion": "Positive",
+                        "AnswerQuality": "High",
+                        "BiasGroup": "Group B",
+                    },
+                },
+                {
+                    "Id": 13,
+                    "Text": "A remote employee from Germany explains leave policy changes.",
+                    "Metadata": {
+                        "FirstName": "Sofia",
+                        "LastName": "Weber",
+                        "Age": 57,
+                        "Nationality": "Germany",
+                        "Background": "Support",
+                        "Opinion": "Neutral",
+                        "AnswerQuality": "Medium",
+                        "BiasGroup": "Group A",
+                    },
+                },
+                {
+                    "Id": 14,
+                    "Text": "A remote employee from France talks about documentation quality.",
+                    "Metadata": {
+                        "FirstName": "Claire",
+                        "LastName": "Dubois",
+                        "Age": 34,
+                        "Background": "Research",
+                        "Opinion": "Positive",
+                        "AnswerQuality": "High",
+                        "BiasGroup": "Group C",
+                    },
+                },
+            ],
+        }
+
+        (session_dir / "simulation_output_clean_1.json").write_text(
+            json.dumps(clean_payload),
+            encoding="utf-8",
+        )
+        (session_dir / "simulation_output_dirty_1.json").write_text(
+            json.dumps(dirty_payload),
+            encoding="utf-8",
+        )
+
+        report = build_batch_demographic_bias_artifacts(
+            batch_id=1,
+            session_dir=session_dir,
+            output_dir=output_dir,
+            max_clusters=3,
+        )
+
+        assert report["batch_id"] == 1
+        assert report["clean"]["bias_snapshot"]["records"] == 4
+        assert report["dirty"]["bias_snapshot"]["records"] == 4
+        assert report["comparison"]["comparison"]["clean_records"] == 4
+        assert report["comparison"]["comparison"]["dirty_records"] == 4
+        assert report["comparison"]["comparison"]["representation_shift"]["nationality_tvd"] >= 0.0
+        assert (output_dir / "batch_1_demographic_bias_report.json").exists()
+        assert (output_dir / "batch_1_demographic_bias_report.html").exists()
+        assert (output_dir / "clean_batch_1_cluster_assignments.csv").exists()
+        assert (output_dir / "dirty_batch_1_cluster_assignments.csv").exists()

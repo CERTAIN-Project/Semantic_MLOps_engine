@@ -7,12 +7,14 @@ Demonstrates end-to-end logging to PostgreSQL database
 import io
 import os
 import time
+import json
 import queue
 import threading
 import psutil
 import mlflow
 import pandas as pd
 import numpy as np
+from pathlib import Path
 
 from typing import Dict, Union
 from sklearn.metrics import mean_squared_error, r2_score
@@ -32,6 +34,13 @@ from certain_library.train_monitor.log_model import (
 from certain_library.train_monitor.log_checkpoints import log_checkpoint
 from certain_library.train_monitor.log_examples import log_examples
 from certain_library.data_analysis.log_whylogs import log_whylogs_profile
+from certain_library.data_analysis.log_quality import log_quality_from_data
+from certain_library.data_analysis.log_privacy import log_privacy_from_data
+from certain_library.data_analysis.log_demographic_bias import log_demographic_bias_from_data
+from certain_library.data_analysis.log_counterfactuals import (
+    generate_price_counterfactual,
+    log_counterfactual_from_data,
+)
 from certain_library.log_basic.log_params import log_params
 from certain_library.data_analysis.log_dataset import (
     log_dataset,
@@ -317,7 +326,7 @@ with tracker.start_run(
         df.to_csv(raw_path, index=False)
         # write only the lightweight metadata (data.json)
         try:
-            l_(
+            save_dataset_manifest(
                 run_id=run.info.run_id, files_or_path=raw_path, write_manifest=False
             )
         except Exception:
@@ -351,6 +360,22 @@ with tracker.start_run(
     # Ensure the DataFrame is sorted by timestamp before splitting
     df_sorted = df_augmented.sort_values("utc_timestamp")
 
+    try:
+        log_privacy_from_data(
+            tracker,
+            df_sorted,
+            quasi_identifiers=[
+                "DE_load_actual_entsoe_transparency",
+                "DE_solar_generation_actual",
+                "DE_wind_onshore_generation_actual",
+                "DE_wind_offshore_generation_actual",
+            ],
+            sensitive_column="DE_price_day_ahead",
+            data_id=run.info.run_id,
+        )
+    except Exception as e:
+        print(f"⚠️ Could not write privacy artifact: {e}")
+
     stop_tracker(tracker_data, output_location)
 
     # ---------------- Prepare Train/Test Split ----------------
@@ -373,7 +398,7 @@ with tracker.start_run(
     test_combined = pd.concat(
         [X_test.reset_index(drop=True), y_test.reset_index(drop=True)], axis=1
     )
-    log_train_test_dataset(train_combined, test_combined)
+
     # Save dataset manifest and lightweight metadata into artifacts/certain so
     # the sync process can read data_location and data_size. This will write
     # both data_manifest.json and certain/metadata/data.json into the active
@@ -468,53 +493,81 @@ with tracker.start_run(
     except Exception as e:
         print("Could not compute drift metrics:", e)
 
-    # Persist drift metrics as a small JSON artifact so host-side sync can read them
+    log_quality_from_data(
+        tracker,
+        data=df_sorted,
+        train_data=train_combined,
+        test_data=test_combined,
+        train_timestamps=df_sorted["utc_timestamp"].iloc[: len(X_train)],
+        test_timestamps=df_sorted["utc_timestamp"].iloc[
+            len(X_train) : len(X_train) + len(X_test)
+        ],
+        consistency_ranges={
+            "DE_price_day_ahead": {"min": 0.0, "max": 100.0},
+        },
+        name="complete_workflow_quality",
+        output_dir="data_quality",
+        data_id=run.info.run_id,
+    )
+
+    # Build a small synthetic demographic demo from the OPSD data so the
+    # demographic bias helper can be exercised without changing the main
+    # energy modeling workflow.
     try:
-        # Convert drift_df into a JSON-serializable structure
-        drift_records = []
-        if hasattr(drift_df, "to_dict") and not drift_df.empty:
-            for _, r in drift_df.iterrows():
-                # r may have 'key' like '[drift_metrics]feature1'
-                k = r.get("key")
-                col = k.replace("[drift_metrics]", "") if isinstance(k, str) else None
-                drift_records.append(
-                    {
-                        "column": col,
-                        "key": k,
-                        "p_value": float(r.get("value") or 0.0),
-                        "timestamp": int(
-                            r.get("timestamp") or pd.Timestamp.now(tz="UTC").timestamp()
-                        ),
-                    }
-                )
+        bias_demo_size = min(250, len(df_sorted))
+        bias_demo_df = df_sorted.head(bias_demo_size).copy()
+        rng = np.random.default_rng(42)
+        bias_demo_df["Text"] = (
+            "OPSD energy record "
+            + bias_demo_df["utc_timestamp"].astype(str)
+            + " load="
+            + bias_demo_df["DE_load_actual_entsoe_transparency"].round(2).astype(str)
+            + " price="
+            + bias_demo_df["DE_price_day_ahead"].round(2).astype(str)
+        )
+        bias_demo_df["Age"] = rng.integers(18, 70, size=len(bias_demo_df))
+        bias_demo_df["Nationality"] = rng.choice(
+            ["Greece", "Italy", "Germany", "Spain"], size=len(bias_demo_df)
+        )
+        bias_demo_df["Background"] = rng.choice(
+            ["Engineering", "Operations", "Research"], size=len(bias_demo_df)
+        )
+        bias_demo_df["Opinion"] = rng.choice(
+            ["Neutral", "Positive", "Concerned"], size=len(bias_demo_df)
+        )
+        bias_demo_df["AnswerQuality"] = rng.choice(
+            ["High", "Medium"], size=len(bias_demo_df)
+        )
+        bias_demo_df["BiasGroup"] = rng.choice(
+            ["Group A", "Group B", "Group C"], size=len(bias_demo_df)
+        )
+        bias_demo_df["FirstName"] = rng.choice(
+            ["Anna", "Marco", "Eleni", "Sofia"], size=len(bias_demo_df)
+        )
+        bias_demo_df["LastName"] = rng.choice(
+            ["Papadopoulos", "Rossi", "Nikolaou", "Georgiou"], size=len(bias_demo_df)
+        )
+        bias_demo_df["DateOfBirth"] = pd.to_datetime(
+            rng.integers(1_500_000_000, 1_700_000_000, size=len(bias_demo_df)),
+            unit="s",
+        ).astype(str)
 
-        summary = {
-            "num_tested": len(drift_records),
-            "num_drift": sum(1 for d in drift_records if d.get("p_value", 1) < 0.05),
-        }
-
-        drift_artifact = {
-            "run_id": run.info.run_id,
-            "model": {
-                # Demo run has no deployed model; indicate that explicitly
-                "experiment_id": run.info.experiment_id,
-                "deployment_id": "not deployed yet",
-                "model_id": "not deployed yet",
-            },
-            "columns": drift_records,
-            "summary": summary,
-        }
-
-        import tempfile
-
-        with tempfile.TemporaryDirectory() as _tmp:
-            path = os.path.join(_tmp, "drift_metrics.json")
-            with open(path, "w", encoding="utf-8") as fh:
-                json.dump(drift_artifact, fh, indent=2)
-            tracker.log_artifact(path, artifact_path="drift_metrics")
-        print("🧾 Wrote drift_metrics artifact")
+        log_demographic_bias_from_data(
+            tracker,
+            clean_df=bias_demo_df,
+            output_dir=Path("demographic_bias"),
+            max_clusters=4,
+            areas=["North", "South"],
+            append_random_areas=True,
+            area_column="Area",
+            area_choices=["North", "South", "East", "West"],
+            random_seed=42,
+            dataset_name="opsd_energy_bias_demo",
+            topic_title="OPSD energy bias demo",
+        )
+        print("🧭 Wrote demographic bias artifact")
     except Exception as e:
-        print("⚠️ Could not write drift artifact:", e)
+        print(f"⚠️ Could not write demographic bias artifact: {e}")
 
     timestamp_analysis(
         train_timestamps=df_sorted["utc_timestamp"].iloc[: len(X_train)],
@@ -693,6 +746,52 @@ with tracker.start_run(
         eval_metric="rmse",
     )
     final_model.fit(X_train, y_train)
+
+    # Train a separate price model so we can generate a model-based
+    # counterfactual for the electricity-price target.
+    price_feature_columns = [
+        col for col in df_sorted.select_dtypes(include=[np.number]).columns
+        if col != "DE_price_day_ahead"
+    ]
+    split_index = len(X_train)
+    price_feature_train = df_sorted.iloc[:split_index][price_feature_columns]
+    price_target_train = df_sorted.iloc[:split_index]["DE_price_day_ahead"]
+
+    price_model = xgb.XGBRegressor(
+        n_estimators=int(best_params.get("n_estimators", 100)),
+        max_depth=int(best_params.get("max_depth", 3)),
+        learning_rate=float(best_params.get("learning_rate", 0.1)),
+        random_state=42,
+        eval_metric="rmse",
+    )
+    price_model.fit(price_feature_train, price_target_train)
+
+    # Build a model-generated counterfactual from one test row.
+    # The intervention modifies input features only, then the trained price
+    # model searches for the smallest realistic change that brings the
+    # predicted price below the threshold.
+    try:
+        original_counterfactual, counterfactual_counterfactual, original_prediction, counterfactual_prediction, counterfactual_metadata = generate_price_counterfactual(
+            original_row=test_combined.iloc[[0]].copy(),
+            price_model=price_model,
+            feature_columns=price_feature_columns,
+            target_price=60.0,
+        )
+
+        log_counterfactual_from_data(
+            tracker,
+            original_df=original_counterfactual,
+            counterfactual_df=counterfactual_counterfactual,
+            protected_columns=["DE_load_actual_entsoe_transparency"],
+            data_id=run.info.run_id,
+        )
+        print(
+            "🎯 Price counterfactual: "
+            f"{original_prediction:.2f} -> {counterfactual_prediction:.2f} €/MWh "
+            f"using {counterfactual_metadata}"
+        )
+    except Exception as e:
+        print(f"⚠️ Could not write counterfactual artifact: {e}")
 
     log_model_info(
         model_information={

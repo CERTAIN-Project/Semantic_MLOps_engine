@@ -58,6 +58,10 @@ from misc.data_transform import (
     map_tokenizer_config,
     map_tokenization_stats,
     map_data_techniques,
+    map_demographic_bias_report,
+    map_quality_report,
+    map_privacy_report,
+    map_counterfactual_report,
     # New mappers for certain/metadata artifacts
     map_run_params,
     map_run_metrics,
@@ -1083,6 +1087,12 @@ def sync_data_resources(id_mapping):
         file_extension="emissions_data.json",
     )
 
+    if not isinstance(df, pd.DataFrame) or df.empty:
+        df = get_artifacts_data(
+            folder_name=artifact_path("code_carbon"),
+            file_extension="preprocessing.json",
+        )
+
     if not isinstance(df, pd.DataFrame):
         raise ValueError("The data is not in the expected DataFrame format.")
 
@@ -2023,6 +2033,105 @@ def sync_data_techniques(run_ids: list, id_mapping: dict):
         return {"rows_synced": 0, "status": "no matching data_techniques rows"}
 
     return {"rows_synced": rows_synced, "status": "success"}
+
+
+def sync_demographic_bias(run_ids: list, id_mapping: dict):
+    """Populate data_metrics from artifacts/certain/demographic_bias/*.json.
+
+    Each report is expanded into one or more data_metrics rows using the
+    data transformation pipeline. The artifact is expected to be the JSON
+    report emitted by certain_library.data_analysis.log_demographic_bias.
+    """
+    records = get_json_artifacts_data(folder_name=artifact_path("demographic_bias"))
+
+    if not records:
+        return {"rows_synced": 0, "status": "no demographic_bias artifacts found"}
+
+    rows = []
+    for run_id, _exp_id, record in records:
+        if run_id not in run_ids:
+            continue
+
+        mapped_rows = map_demographic_bias_report(record, run_id)
+        if not mapped_rows:
+            continue
+
+        data_id = id_mapping.get(run_id, {}).get("data_id")
+        if not data_id:
+            continue
+
+        for row in mapped_rows:
+            row["data_id"] = data_id
+            rows.append(row)
+
+    if not rows:
+        return {"rows_synced": 0, "status": "no matching demographic_bias rows"}
+
+    insert_dataframe(pd.DataFrame(rows), "data_metrics")
+    return {"rows_synced": len(rows), "status": "success"}
+
+
+def _sync_json_metrics_artifact(
+    folder_name: str,
+    run_ids: list,
+    id_mapping: dict,
+    map_fn,
+    status_label: str,
+):
+    records = get_json_artifacts_data(folder_name=artifact_path(folder_name))
+
+    if not records:
+        return {"rows_synced": 0, "status": f"no {status_label} artifacts found"}
+
+    rows = []
+    for run_id, _exp_id, record in records:
+        if run_id not in run_ids:
+            continue
+
+        data_id = id_mapping.get(run_id, {}).get("data_id")
+        if not data_id:
+            continue
+
+        mapped_rows = map_fn(record, run_id)
+        for row in mapped_rows or []:
+            row["data_id"] = data_id
+            rows.append(row)
+
+    if not rows:
+        return {"rows_synced": 0, "status": f"no matching {status_label} rows"}
+
+    insert_dataframe(pd.DataFrame(rows), "data_metrics")
+    return {"rows_synced": len(rows), "status": "success"}
+
+
+def sync_quality_metrics(run_ids: list, id_mapping: dict):
+    return _sync_json_metrics_artifact(
+        folder_name="log_quality",
+        run_ids=run_ids,
+        id_mapping=id_mapping,
+        map_fn=map_quality_report,
+        status_label="quality",
+    )
+
+
+def sync_privacy_metrics(run_ids: list, id_mapping: dict):
+    return _sync_json_metrics_artifact(
+        folder_name="log_privacy",
+        run_ids=run_ids,
+        id_mapping=id_mapping,
+        map_fn=map_privacy_report,
+        status_label="privacy",
+    )
+
+
+def sync_counterfactual_metrics(run_ids: list, id_mapping: dict):
+    return _sync_json_metrics_artifact(
+        folder_name="log_counterfactuals",
+        run_ids=run_ids,
+        id_mapping=id_mapping,
+        map_fn=map_counterfactual_report,
+        status_label="counterfactual",
+    )
 
 
 def sync_drift_metrics(run_ids: list, id_mapping: dict):
@@ -3113,6 +3222,10 @@ def sync_all():
         sync_run_inputs_from_artifacts(run_ids, id_mapping)
         sync_experiment_tags_from_artifacts(run_ids)
 
+        sync_quality_metrics(run_ids, id_mapping)
+        sync_privacy_metrics(run_ids, id_mapping)
+        sync_counterfactual_metrics(run_ids, id_mapping)
+
         sync_data(id_mapping)
         # Sync dataset manifest artifacts (certain/dataset and certain/metadata/data.json)
         # These have richer location/size info than the MLflow datasets SQL table
@@ -3121,6 +3234,8 @@ def sync_all():
         sync_data_metrics(id_mapping)
         sync_data_resources(id_mapping)
         sync_data_drift(id_mapping)
+
+        sync_demographic_bias(run_ids, id_mapping)
 
         # Sync drift metrics artifacts into the database
         sync_drift_metrics(run_ids, id_mapping)

@@ -4,6 +4,7 @@ import logging
 import pandas as pd
 from scipy.stats import ks_2samp
 import hashlib
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -1232,6 +1233,163 @@ def map_data_techniques(record: dict, run_id: str) -> dict:
                 )
 
     return {"techniques": techniques_rows, "hyperparameters": hyperparams_rows}
+
+
+def map_demographic_bias_report(record: dict, run_id: str) -> list[dict]:
+    """Map a demographic-bias JSON artifact into data_metrics rows.
+
+    The artifact shape is the report emitted by
+    certain_library.data_analysis.log_demographic_bias, containing clean/dirty
+    snapshots plus an optional comparison block.
+    """
+
+    if not isinstance(record, dict):
+        return []
+
+    rows: list[dict] = []
+    timestamp = int(pd.Timestamp.now(tz="UTC").timestamp())
+
+    def add_metric(key: str, value: Any, stage: str = "bias_analysis") -> None:
+        rows.append(
+            {
+                "run_id": run_id,
+                "data_id": None,
+                "key": f"[demographic_bias]{key}",
+                "value": "" if value is None else str(value),
+                "timestamp": timestamp,
+                "data_stage": stage,
+                "is_NaN": value is None,
+            }
+        )
+
+    clean = record.get("clean", {}) if isinstance(record.get("clean"), dict) else {}
+    clean_snapshot = clean.get("bias_snapshot", {}) if isinstance(clean.get("bias_snapshot"), dict) else {}
+    signals = clean_snapshot.get("cluster_bias_signals", {}) if isinstance(clean_snapshot.get("cluster_bias_signals"), dict) else {}
+
+    add_metric("records", clean_snapshot.get("records"))
+    add_metric("cluster_count", clean_snapshot.get("cluster_count"))
+    add_metric("anonymous_rate", clean_snapshot.get("anonymous_rate"))
+    add_metric("metadata_missing_rate", clean_snapshot.get("metadata_missing_rate"))
+    add_metric("weighted_nationality_tvd", signals.get("weighted_nationality_tvd"))
+    add_metric("weighted_background_tvd", signals.get("weighted_background_tvd"))
+    add_metric("weighted_age_bucket_tvd", signals.get("weighted_age_bucket_tvd"))
+    add_metric("largest_cluster_share", signals.get("largest_cluster_share"))
+    add_metric("silhouette_score", signals.get("silhouette_score"))
+
+    if record.get("comparison") and isinstance(record["comparison"], dict):
+        comparison = record["comparison"]
+        add_metric("delta_anonymous_rate", comparison.get("comparison", {}).get("delta_anonymous_rate"), stage="bias_comparison")
+        add_metric(
+            "delta_metadata_missing_rate",
+            comparison.get("comparison", {}).get("delta_metadata_missing_rate"),
+            stage="bias_comparison",
+        )
+
+        shift = comparison.get("comparison", {}).get("representation_shift", {})
+        if isinstance(shift, dict):
+            add_metric("nationality_tvd", shift.get("nationality_tvd"), stage="bias_comparison")
+            add_metric("background_tvd", shift.get("background_tvd"), stage="bias_comparison")
+            add_metric("age_bucket_tvd", shift.get("age_bucket_tvd"), stage="bias_comparison")
+
+    diagnosis = record.get("diagnosis", {}) if isinstance(record.get("diagnosis"), dict) else {}
+    add_metric("diagnosis_score", diagnosis.get("score"), stage="bias_summary")
+    add_metric("diagnosis_verdict", diagnosis.get("verdict"), stage="bias_summary")
+
+    return rows
+
+
+def _map_metric_artifact(
+    record: dict,
+    run_id: str,
+    artifact_prefix: str,
+    metric_block: str,
+    stage: str,
+) -> list[dict]:
+    """Convert a metrics JSON artifact into data_metrics rows."""
+
+    if not isinstance(record, dict):
+        return []
+
+    timestamp = int(pd.Timestamp.now(tz="UTC").timestamp())
+    rows: list[dict] = []
+    payload = record.get(metric_block) if isinstance(record.get(metric_block), dict) else {}
+    if not payload:
+        payload = record
+
+    for key, value in payload.items():
+        if key in {"data_id", "quality_scores", "privacy_metrics", "counterfactual_metrics", "consistency_ranges", "consistency_range_details", "protected_columns"}:
+            continue
+        rows.append(
+            {
+                "run_id": run_id,
+                "data_id": None,
+                "key": f"[{artifact_prefix}]{key}",
+                "value": "" if value is None else str(value),
+                "timestamp": timestamp,
+                "data_stage": stage,
+                "is_NaN": value is None,
+            }
+        )
+
+    return rows
+
+
+def map_quality_report(record: dict, run_id: str) -> list[dict]:
+    """Map a quality_metrics.json artifact into data_metrics rows."""
+
+    rows = _map_metric_artifact(
+        record=record,
+        run_id=run_id,
+        artifact_prefix="quality",
+        metric_block="quality_scores",
+        stage="quality",
+    )
+
+    if isinstance(record, dict):
+        details = record.get("quality_scores") or {}
+        if isinstance(details, dict):
+            for key, value in details.items():
+                if key in {"completeness", "accuracy", "consistency", "timeliness", "composite_score"}:
+                    continue
+                rows.append(
+                    {
+                        "run_id": run_id,
+                        "data_id": None,
+                        "key": f"[quality]{key}",
+                        "value": "" if value is None else str(value),
+                        "timestamp": int(pd.Timestamp.now(tz="UTC").timestamp()),
+                        "data_stage": "quality",
+                        "is_NaN": value is None,
+                    }
+                )
+
+    return rows
+
+
+def map_privacy_report(record: dict, run_id: str) -> list[dict]:
+    """Map a privacy_metrics.json artifact into data_metrics rows."""
+
+    rows = _map_metric_artifact(
+        record=record,
+        run_id=run_id,
+        artifact_prefix="privacy",
+        metric_block="privacy_metrics",
+        stage="privacy",
+    )
+    return rows
+
+
+def map_counterfactual_report(record: dict, run_id: str) -> list[dict]:
+    """Map a counterfactual_metrics.json artifact into data_metrics rows."""
+
+    rows = _map_metric_artifact(
+        record=record,
+        run_id=run_id,
+        artifact_prefix="counterfactual",
+        metric_block="counterfactual_metrics",
+        stage="counterfactuals",
+    )
+    return rows
 
 
 # ---------------------------------------------------------------------------
