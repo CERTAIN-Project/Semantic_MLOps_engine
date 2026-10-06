@@ -963,9 +963,9 @@
         rr:objectMap [ rr:column "ts" ; rr:datatype xsd:dateTime ]
     ] ;
 
-    # Link to model
+    # Link to model (prov:wasGeneratedBy needs an activity; a model is an entity)
     rr:predicateObjectMap [
-        rr:predicate prov:wasGeneratedBy ;
+        rr:predicate prov:wasDerivedFrom ;
         rr:objectMap [
             rr:template "https://w3id.org/aidoc-ap/models/{run_id}/{model_id}" ;
             rr:termType rr:IRI
@@ -1318,15 +1318,6 @@
         rr:predicate prov:used ;
         rr:objectMap [
             rr:template "https://w3id.org/aidoc-ap/data/{run_id}/{data_id}" ;
-            rr:termType rr:IRI
-        ]
-    ] ;
-
-    # Link run to deployment
-    rr:predicateObjectMap [
-        rr:predicate prov:generated ;
-        rr:objectMap [
-            rr:template "https://w3id.org/aidoc-ap/deployments/{experiment_id}/{model_id}/{deployment_id}" ;
             rr:termType rr:IRI
         ]
     ] .
@@ -2569,7 +2560,6 @@
     rr:subjectMap [
         rr:template "https://w3id.org/aidoc-ap/changelog/{run_id}" ;
         rr:class aidoc:ChangeLog ;
-        rr:class prov:Activity ;
     ] ;
 
     rr:predicateObjectMap [
@@ -2603,7 +2593,7 @@
     rr:logicalTable [
         rr:sqlQuery """
             SELECT run_id, log_id, change_description, changed_by,
-                   to_timestamp(CASE WHEN change_timestamp > 10000000000 THEN change_timestamp / 1000.0 ELSE change_timestamp END) AS change_ts
+                   to_char(to_timestamp(CASE WHEN change_timestamp > 10000000000 THEN change_timestamp / 1000.0 ELSE change_timestamp END), 'YYYY-MM-DD') AS change_date
             FROM change_logs
         """
     ] ;
@@ -2623,14 +2613,19 @@
         rr:objectMap [ rr:column "change_description" ; rr:datatype xsd:string ]
     ] ;
 
+    # A change record is an entity: attributed to its author, dated with aidoc:endDate
+    # (prov:wasAssociatedWith and prov:endedAtTime apply to activities)
     rr:predicateObjectMap [
-        rr:predicate prov:wasAssociatedWith ;
-        rr:objectMap [ rr:column "changed_by" ; rr:datatype xsd:string ]
+        rr:predicate prov:wasAttributedTo ;
+        rr:objectMap [
+            rr:template "https://w3id.org/aidoc-ap/users/{changed_by}" ;
+            rr:termType rr:IRI
+        ]
     ] ;
 
     rr:predicateObjectMap [
-        rr:predicate prov:endedAtTime ;
-        rr:objectMap [ rr:column "change_ts" ; rr:datatype xsd:dateTime ]
+        rr:predicate aidoc:endDate ;
+        rr:objectMap [ rr:column "change_date" ; rr:datatype xsd:date ]
     ] .
 
 
@@ -2780,16 +2775,6 @@
     rr:predicateObjectMap [
         rr:predicate dcterms:description ;
         rr:objectMap [ rr:column "description" ; rr:datatype xsd:string ]
-    ] ;
-
-    rr:predicateObjectMap [
-        rr:predicate prov:startedAtTime ;
-        rr:objectMap [ rr:column "creation_ts" ; rr:datatype xsd:dateTime ]
-    ] ;
-
-    rr:predicateObjectMap [
-        rr:predicate prov:endedAtTime ;
-        rr:objectMap [ rr:column "last_update_ts" ; rr:datatype xsd:dateTime ]
     ] ;
 
     # Link to experiment
