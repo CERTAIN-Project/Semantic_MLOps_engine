@@ -1016,22 +1016,41 @@
     rr:predicateObjectMap [
         rr:predicate dcterms:created ;
         rr:objectMap [ rr:column "ts" ; rr:datatype xsd:dateTime ]
+    ] .
+
+# The run that logged a resource used it (prov:used; PROV-O has no prov:wasUsedBy).
+<#RunUsesResourceTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [ rr:tableName "resources" ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/runs/{run_id}" ;
     ] ;
 
-    # Link to model
     rr:predicateObjectMap [
-        rr:predicate prov:wasUsedBy ;
+        rr:predicate prov:used ;
         rr:objectMap [
-            rr:template "https://w3id.org/aidoc-ap/models/{run_id}/{model_id}" ;
+            rr:template "https://w3id.org/aidoc-ap/models/{run_id}/{model_id}/resource/{key}/step/{step}" ;
             rr:termType rr:IRI
         ]
+    ] .
+
+# The hardware component provides the resource (aidoc:providesComputationalResource has the
+# domain aidoc:HardwareComponent; aidoc:requiresHardware applies to systems and artefacts).
+<#HardwareProvidesResourceTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [ rr:tableName "resources" ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/hardware/{run_id}/{model_id}/{key}" ;
     ] ;
 
-    # Link to the hardware component backing this resource
     rr:predicateObjectMap [
-        rr:predicate aidoc:requiresHardware ;
+        rr:predicate aidoc:providesComputationalResource ;
         rr:objectMap [
-            rr:template "https://w3id.org/aidoc-ap/hardware/{run_id}/{model_id}/{key}" ;
+            rr:template "https://w3id.org/aidoc-ap/models/{run_id}/{model_id}/resource/{key}/step/{step}" ;
             rr:termType rr:IRI
         ]
     ] .
@@ -1244,13 +1263,22 @@
     rr:predicateObjectMap [
         rr:predicate aidoc:resourceConfiguration ;
         rr:objectMap [ rr:column "performance" ; rr:datatype xsd:string ]
+    ] .
+
+# The deployment uses its runtime environment (prov:used; PROV-O has no prov:wasUsedBy).
+<#DeploymentUsesRuntimeTriplesMap>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [ rr:tableName "runtime_environment" ] ;
+
+    rr:subjectMap [
+        rr:template "https://w3id.org/aidoc-ap/deployments/{experiment_id}/{model_id}/{deployment_id}" ;
     ] ;
 
-    # Link to deployment
     rr:predicateObjectMap [
-        rr:predicate prov:wasUsedBy ;
+        rr:predicate prov:used ;
         rr:objectMap [
-            rr:template "https://w3id.org/aidoc-ap/deployments/{experiment_id}/{model_id}/{deployment_id}" ;
+            rr:template "https://w3id.org/aidoc-ap/deployments/{experiment_id}/{model_id}/{deployment_id}/runtime" ;
             rr:termType rr:IRI
         ]
     ] .
