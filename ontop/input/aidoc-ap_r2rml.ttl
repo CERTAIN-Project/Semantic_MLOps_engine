@@ -372,7 +372,14 @@
 <#DataSignaturesTriplesMap>
     a rr:TriplesMap ;
 
-    rr:logicalTable [ rr:tableName "data_signatures" ] ;
+    # signature is a json column; PostgreSQL json has no equality operator, so queries that
+    # need DISTINCT (and materialisation) fail unless the value is cast to text
+    rr:logicalTable [
+        rr:sqlQuery """
+            SELECT run_id, data_id, CAST(signature AS text) AS signature
+            FROM data_signatures
+        """
+    ] ;
 
     rr:subjectMap [
         rr:template "https://w3id.org/aidoc-ap/data/{run_id}/{data_id}" ;
