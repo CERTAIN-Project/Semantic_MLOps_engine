@@ -2419,7 +2419,7 @@
 
 
 # =============================================================================
-# VisualDocumentation -> Map from visual_documentation table
+# TechnicalDocumentation (VisualDocumentation before AIDOC-AP 1.2) -> Map from visual_documentation table
 # =============================================================================
 
 <#VisualDocumentationTriplesMap>
@@ -2437,7 +2437,7 @@
 
     rr:subjectMap [
         rr:template "https://w3id.org/aidoc-ap/visual-doc/{run_id}/{document_id}" ;
-        rr:class aidoc:VisualDocumentation ;
+        rr:class aidoc:TechnicalDocumentation ;
     ] ;
 
     rr:predicateObjectMap [
