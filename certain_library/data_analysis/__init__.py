@@ -7,6 +7,7 @@ from .log_demographic_bias import (
 	compute_age_bucket,
 	log_demographic_bias_from_data,
 )
+from .log_concept_drift import log_concept_drift_from_labels
 from .log_counterfactuals import (
 	generate_price_counterfactual,
 	log_counterfactual_from_data,
