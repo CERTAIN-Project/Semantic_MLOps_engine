@@ -472,6 +472,128 @@ The test should show:
 - Resource monitoring
 - Successful completion message
 
+## 🧪 Running IT Pilot 7 (NVCR → CERTAIN demographic bias)
+
+[test_docker/test_it_complete.py](test_docker/test_it_complete.py) runs the IT Pilot 7 pipeline end to end:
+
+1. **Phase 1:** get a clean/dirty dataset pair (scenario UI, data sink or offline)
+2. **Phase 2:** turn the public payload and hidden annotations into CERTAIN data frames
+3. **Phase 3:** run the CERTAIN demographic-bias analysis and log everything to MLflow (experiment `nvcr_certain_demographics_complete`)
+
+### Prerequisites
+
+- The `Synthetic-Data-Generation-Component` repository checked out **next to** this repository (docker-compose mounts `../Synthetic-Data-Generation-Component` read-only into `/app/Synthetic-Data-Generation-Component`)
+- A `.env` file in this repository, created from the template:
+
+```bash
+cp .env.example .env
+# Set OPENAI_API_KEY only if you want "LLM natural text" in the scenario UI
+```
+
+`.env` is read by the `library_tracker` container when it is created. After editing it, recreate the container:
+
+```bash
+docker compose up -d --force-recreate library_tracker
+```
+
+### Step 1: Start the services
+
+```bash
+docker compose up -d
+docker compose ps   # certain_library_tracker must publish 127.0.0.1:8769->8769
+```
+
+### Step 2: Run the pipeline
+
+```bash
+docker exec -it certain_library_tracker python test_docker/test_it_complete.py
+```
+
+### Step 3: Generate the dataset in the scenario UI (default mode)
+
+When the script prints:
+
+```
+Scenario UI ready: open http://127.0.0.1:8769 in your browser
+```
+
+1. Open http://127.0.0.1:8769 on your machine.
+2. Set **Batch id** to a new number. The browser may refill an old value, and `7` is also the offline demo batch's number.
+3. Choose the actors, countries, ages and bias settings.
+4. Choose the text mode:
+   - **Fast fallback:** a few seconds, no LLM call
+   - **LLM natural text:** one OpenAI call per record, which can take several minutes for 100 + 100 records
+5. Click **Generate datasets**.
+
+The script detects the new batch, stops the UI and continues with Phases 2 and 3:
+
+```
+Batch 42 generated in the UI; finishing post-processing...
+Using UI batch 42: 23 clean / 33 dirty records, allocation=manual, mode_mix={...}
+Saved the generated batch to /app/test_docker/generated_batches/batch_42
+Phase 2: adapt public payload and hidden annotations
+Phase 3: run CERTAIN demographic-bias analysis
+Pipeline completed successfully
+```
+
+The UI only runs while the script is waiting, and it shuts down after the first batch. To generate another batch, run the script again.
+
+### Where the results are saved
+
+| What | Location |
+|---|---|
+| Generated dataset (clean, dirty, annotations, config, clustering outputs) | `test_docker/generated_batches/batch_<id>/` on the host (`/app/test_docker/generated_batches/` in the container) |
+| Same dataset files in MLflow | run artifacts → `certain/scenario_ui/` |
+| Data frames used by the analysis | run artifacts → `certain/data_validation/` |
+| Demographic-bias report (JSON, HTML, clusters, snapshots) | run artifacts → `certain/demographic_bias/nvcr_batch_<id>_ui_*` (`_demo_*` for offline and data-sink runs) |
+| Metrics, params, verdict | MLflow UI at http://localhost:5001, experiment `nvcr_certain_demographics_complete` |
+
+While the UI is running it writes to a temporary folder inside the container, which is deleted when the run ends. Use `generated_batches/` or MLflow to find the data afterwards. `Synthetic-Data-Generation-Component/session/` on the host is not updated by this pipeline.
+
+### Other Phase 1 modes
+
+**Offline**: regenerates the fixed, deterministic batch 7. There is no UI and no LLM call, so this is the mode for unattended runs and CI:
+
+```bash
+docker exec -it -e IT_PHASE1_MODE=offline certain_library_tracker python test_docker/test_it_complete.py
+```
+
+In this mode the script also checks that the dirty set shows the expected skew toward Greece, Bulgaria and the 18-29 age group.
+
+**Data sink**: reads files already delivered by the data space (HTTP, folder, `file://` or `s3://<bucket>/<prefix>`):
+
+```bash
+docker exec -it \
+  -e DATASPACE_SOURCE="s3://<bucket>/<prefix>" \
+  -e DATASPACE_BATCH_ID=8 \
+  certain_library_tracker python test_docker/test_it_complete.py
+```
+
+Setting `DATASPACE_SOURCE` always takes priority over `IT_PHASE1_MODE`. Paths and URLs are resolved **inside the container**. For S3/MinIO, set the `MINIO_*` variables in `.env`. See [dataspace_connector/README.md](dataspace_connector/README.md) for all source types.
+
+### Settings
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `IT_PHASE1_MODE` | `ui` | `ui` or `offline` (ignored when `DATASPACE_SOURCE` is set) |
+| `DATASPACE_SOURCE` | empty | Data-sink location; when set, Phase 1 reads from it |
+| `DATASPACE_BATCH_ID` | `7` | Batch id for offline and data-sink modes |
+| `IT_UI_HOST` | `0.0.0.0` in Docker, `127.0.0.1` on the host | Interface the scenario UI listens on |
+| `IT_UI_PORT` | `8769` | Scenario UI port (must match the port published in docker-compose) |
+| `IT_UI_TIMEOUT_SECONDS` | `1800` | How long the script waits for **Generate datasets** |
+| `IT_UI_OUTPUT_DIR` | `test_docker/generated_batches` | Where UI-generated batches are saved |
+| `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL` | from `.env` | Used by **LLM natural text** |
+
+### Troubleshooting
+
+| Symptom | Cause / fix |
+|---|---|
+| http://127.0.0.1:8769 does not open | The script is not running yet, or has already finished. The UI only exists while the script waits. Also check that `docker compose ps` shows `127.0.0.1:8769->8769`. |
+| Nothing happens after **Generate datasets** | With **LLM natural text**, the script continues only after every record has its text. Wait, or use **Fast fallback**. Check the UI status line for errors (e.g. missing `OPENAI_API_KEY`). |
+| `Scenario UI exited early` | Port 8769 is already in use (e.g. a scenario UI started by hand). Stop it, or set `IT_UI_PORT` and publish that port. |
+| The run shows batch 7 | That is the number from the UI's **Batch id** field. The console note and `nvcr_batch_7_ui_*` artifacts confirm it is UI data, not the offline demo. |
+| `No batch was generated ... within 1800s` | Increase `IT_UI_TIMEOUT_SECONDS`. |
+
 ## 🔗 Using the Data Transfer API for Syncing
 
 ### API Health Check
