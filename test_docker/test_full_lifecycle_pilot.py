@@ -35,6 +35,8 @@ Set USE_DUMMY_DATA = True (default) for fully offline execution.
 Set USE_DUMMY_DATA = False to download the real OPSD dataset.
 """
 
+from certain_library.tracking.tracker import tracker
+
 import os
 import time
 import psutil
@@ -66,7 +68,10 @@ from certain_library.train_monitor.log_model import (
     log_model_signature,
 )
 from certain_library.data_analysis.log_whylogs import log_whylogs_profile
-from certain_library.log_basic.log_param import log_param
+from Semantic_MLOps_engine.certain_library.log_basic.log_params import (
+    log_param,
+    log_params,
+)
 from certain_library.data_analysis.log_dataset import (
     log_dataset,
     log_train_test_dataset,
@@ -312,14 +317,13 @@ def phase_training(mlflow_run) -> tuple:
     if USE_DUMMY_DATA:
         print("  🧪 Using synthetic dummy energy data")
         df = _make_dummy_energy_df(n_rows=2000)
-        log_param("data_url", "synthetic_dummy_data")
+        log_params({"data_url": "synthetic_dummy_data"})
     else:
         print(f"  🌐 Downloading OPSD dataset...")
         df = pd.read_csv(OPSD_URL, parse_dates=["utc_timestamp"])
-        log_param("data_url", OPSD_URL)
+        log_params({"data_url": OPSD_URL})
 
-    log_param("num_rows", df.shape[0])
-    log_param("num_columns", df.shape[1])
+    log_params({"num_rows": df.shape[0], "num_columns": df.shape[1]})
 
     # ---- Data cleaning pipeline ----
     df = df.dropna(subset=["DE_load_actual_entsoe_transparency"])
@@ -392,11 +396,15 @@ def phase_training(mlflow_run) -> tuple:
     best_trial = study.best_trial
 
     for trial in study.trials:
-        with mlflow.start_run(nested=True, run_name=f"Trial_{trial.number}"):
-            log_param("trial_number", trial.number)
-            log_param("n_estimators", trial.params["n_estimators"])
-            log_param("max_depth", trial.params["max_depth"])
-            log_param("learning_rate", trial.params["learning_rate"])
+        with tracker.start_run(nested=True, run_name=f"Trial_{trial.number}"):
+            log_params(
+                {
+                    "trial_number": trial.number,
+                    "n_estimators": trial.params["n_estimators"],
+                    "max_depth": trial.params["max_depth"],
+                    "learning_rate": trial.params["learning_rate"],
+                }
+            )
             if trial.value is not None:
                 log_metrics({"trial_mse": float(trial.value)}, step=trial.number)
             proc = psutil.Process(os.getpid())
@@ -538,7 +546,7 @@ def phase_deployment(run_id: str, xgb_version: str) -> str:
     model_id = "energy-load-xgb-v1"
 
     # Reopen the existing run — no new run is created
-    with mlflow.start_run(run_id=run_id):
+    with tracker.start_run(run_id=run_id):
 
         log_model_packaging(
             deployment_id=deployment_id,
@@ -628,7 +636,7 @@ def phase_decommissioning(run_id: str, deployment_id: str) -> None:
     """
     model_id = "energy-load-xgb-v1"
 
-    with mlflow.start_run(run_id=run_id):
+    with tracker.start_run(run_id=run_id):
 
         log_decommissioning(
             deployment_id=deployment_id,
@@ -669,8 +677,8 @@ def phase_decommissioning(run_id: str, deployment_id: str) -> None:
 #  MAIN
 # ===========================================================================
 def main() -> None:
-    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
-    mlflow.set_experiment(EXPERIMENT_NAME)
+    tracker.set_tracking_uri(MLFLOW_TRACKING_URI)
+    tracker.set_experiment(EXPERIMENT_NAME)
 
     _sep = "=" * 70
 
@@ -681,7 +689,7 @@ def main() -> None:
     print("PHASE 1 — TRAINING")
     print(_sep)
 
-    with mlflow.start_run(run_name="energy_xgb_v1_training") as run:
+    with tracker.start_run(run_name="energy_xgb_v1_training") as run:
         final_model, X_train, y_train, best_params, xgb_version, run_id = (
             phase_training(run)
         )

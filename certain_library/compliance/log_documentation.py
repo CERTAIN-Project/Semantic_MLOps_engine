@@ -8,14 +8,14 @@ log_visual_documentations      → ``visual_documentation/``        → ``visual
 log_explainable_ai             → ``explainable_ai/``              → ``explainable_ai_features`` table
 """
 
+from certain_library.tracking.tracker import tracker
+
 import os
 import json
 import time
 import tempfile
 import uuid
 from typing import List, Optional
-
-import mlflow
 
 
 def log_declarations_of_conformity(
@@ -127,6 +127,8 @@ def log_declarations_of_conformity(
     with tempfile.TemporaryDirectory() as tmp_dir:
         for d in declarations:
             declaration_id = d.get("declaration_id") or str(uuid.uuid4())
+            artifact_name = "declaration.json"
+            artifact_rel_path = f"declaration_of_conformity/{artifact_name}"
             record = {
                 "declaration_id": declaration_id,
                 "issuer": issuer,
@@ -138,15 +140,17 @@ def log_declarations_of_conformity(
                 "file_type": d["file_type"],
                 "mime_type": d["mime_type"],
                 "description": d.get("description") or "",
-                "link_to_artifacts": d.get("link_to_artifacts") or "",
-                "file_size": d.get("file_size"),
                 "creation_time": int(time.time()),
             }
-            fname = f"declaration_{declaration_id}.json"
+            fname = artifact_name
             path = os.path.join(tmp_dir, fname)
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(record, f, indent=2)
-            mlflow.log_artifact(path, artifact_path="declaration_of_conformity")
+            record["file_size"] = d.get("file_size") or os.path.getsize(path)
+            record["link_to_artifacts"] = d.get("link_to_artifacts") or f"mlflow://artifacts/{artifact_rel_path}"
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(record, f, indent=2)
+            tracker.log_artifact(path, artifact_path="declaration_of_conformity")
 
 
 def log_visual_documentations(
@@ -263,11 +267,11 @@ def log_visual_documentations(
                 "file_size": d.get("file_size"),
                 "creation_time": int(time.time()),
             }
-            fname = f"visual_doc_{document_id}.json"
+            fname = f"visual_doc.json"
             path = os.path.join(tmp_dir, fname)
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(record, f, indent=2)
-            mlflow.log_artifact(path, artifact_path="visual_documentation")
+            tracker.log_artifact(path, artifact_path="visual_documentation")
 
 
 def log_explainable_ai(
@@ -320,8 +324,8 @@ def log_explainable_ai(
         "implementation_details": implementation_details or "",
     }
     with tempfile.TemporaryDirectory() as tmp_dir:
-        fname = f"xai_{record['feature_id']}.json"
+        fname = f"xai.json"
         path = os.path.join(tmp_dir, fname)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(record, f, indent=2)
-        mlflow.log_artifact(path, artifact_path="explainable_ai")
+        tracker.log_artifact(path, artifact_path="explainable_ai")

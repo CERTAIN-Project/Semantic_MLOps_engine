@@ -12,8 +12,12 @@ log_model_packaging  → ``model_packaging/``             → ``model_packaging`
 log_build_testing    → ``build_and_integration_testing/`` → ``build_and_integration_testing`` table
 log_standard         → ``standards/``                   → ``standards`` table
 log_interface        → ``interfaces/``                  → ``interfaces`` table
+log_model_deployed   → ``deployment_logs/``             → ``model_deployed`` table
+log_monitor_logs     → ``deployment_logs/``             → ``monitor_logs`` table
 log_decommissioning  → ``decommissioning/``             → ``decomissioning`` table
 """
+
+from certain_library.tracking.tracker import tracker
 
 import os
 import json
@@ -21,8 +25,6 @@ import time
 import tempfile
 import uuid
 from typing import List, Optional
-
-import mlflow
 
 
 def log_model_packaging(
@@ -94,7 +96,7 @@ def log_model_packaging(
         path = os.path.join(tmp_dir, "model_packaging.json")
         with open(path, "w", encoding="utf-8") as f:
             json.dump(record, f, indent=2)
-        mlflow.log_artifact(path, artifact_path="model_packaging")
+        tracker.log_artifact(path, artifact_path="model_packaging")
 
 
 def log_build_testing(
@@ -150,6 +152,13 @@ def log_build_testing(
     """
     if not isinstance(test_results, dict):
         raise ValueError("test_results must be a dict")
+    # Normalize and require deployment and model identifiers. If missing,
+    # don't write the artifact — build/test artifacts should be emitted at
+    # deployment time when those identifiers are known.
+    if not deployment_id or not model_id:
+        # no deployment context -> no artifact written
+        return
+
     record = {
         "test_id": test_id or str(uuid.uuid4()),
         "deployment_id": deployment_id,
@@ -161,11 +170,34 @@ def log_build_testing(
         "test_results": test_results,
     }
     with tempfile.TemporaryDirectory() as tmp_dir:
-        fname = f"build_test_{record['test_id']}.json"
+        fname = f"build_test.json"
         path = os.path.join(tmp_dir, fname)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(record, f, indent=2)
-        mlflow.log_artifact(path, artifact_path="build_and_integration_testing")
+        # When run under an active MLflow run, include the run_id so the
+        # data_api sync can resolve deployment/model ids from id_mapping if
+        # necessary. The tracker will attach the artifact to the active run.
+        try:
+            import mlflow
+
+            arun = mlflow.active_run()
+            if arun is not None:
+                # read-modify-write the JSON to include run_id
+                try:
+                    with open(path, "r+", encoding="utf-8") as fh:
+                        data = json.load(fh)
+                        data.setdefault("run_id", arun.info.run_id)
+                        fh.seek(0)
+                        json.dump(data, fh, indent=2)
+                        fh.truncate()
+                except Exception:
+                    # if file ops fail, ignore and proceed to log artifact
+                    pass
+        except Exception:
+            # mlflow not available — continue and write artifact without run_id
+            pass
+
+        tracker.log_artifact(path, artifact_path="build_and_integration_testing")
 
 
 def log_standards(
@@ -216,6 +248,11 @@ def log_standards(
     -------
     None
     """
+    # Only log standards when tied to a deployment/model. If deployment
+    # identifiers are missing, do not persist deployment-scoped standards.
+    if not deployment_id or not model_id:
+        return
+
     if not isinstance(standards, list) or not standards:
         raise ValueError("standards must be a non-empty list of dicts")
     for i, s in enumerate(standards):
@@ -223,6 +260,11 @@ def log_standards(
             raise ValueError(
                 f"standards[{i}] must be a dict with at least a 'name' key"
             )
+
+    # Require deployment and model identifiers — only emit standards when
+    # tied to a deployment.
+    if not deployment_id or not model_id:
+        return
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         for s in standards:
@@ -236,11 +278,24 @@ def log_standards(
                 "version": s.get("version") or "",
                 "publication_date": s.get("publication_date"),
             }
-            fname = f"standard_{standard_id}.json"
+            fname = f"standard.json"
             path = os.path.join(tmp_dir, fname)
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(record, f, indent=2)
-            mlflow.log_artifact(path, artifact_path="standards")
+            try:
+                import mlflow
+
+                run = mlflow.active_run()
+                if run is not None:
+                    # annotate artifact with run_id for downstream mapping
+                    with open(path, "r", encoding="utf-8") as fh:
+                        payload = json.load(fh)
+                    payload.setdefault("run_id", run.info.run_id)
+                    with open(path, "w", encoding="utf-8") as fh:
+                        json.dump(payload, fh, indent=2)
+            except Exception:
+                pass
+            tracker.log_artifact(path, artifact_path="standards")
 
 
 def log_interface(
@@ -289,11 +344,117 @@ def log_interface(
         "documentation_link": documentation_link or "",
     }
     with tempfile.TemporaryDirectory() as tmp_dir:
-        fname = f"interface_{record['interface_id']}.json"
+        fname = f"interface.json"
         path = os.path.join(tmp_dir, fname)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(record, f, indent=2)
-        mlflow.log_artifact(path, artifact_path="interfaces")
+        tracker.log_artifact(path, artifact_path="interfaces")
+
+
+def log_model_deployed(
+    deployment_id: str,
+    model_id: str,
+    experiment_id: Optional[str] = None,
+    run_id: Optional[str] = None,
+    model_version: Optional[str] = None,
+    endpoint: Optional[str] = None,
+    model_format: Optional[str] = None,
+    size: Optional[str] = None,
+    description: Optional[str] = None,
+    user_id: Optional[str] = None,
+    current_stage: Optional[str] = None,
+    location: Optional[str] = None,
+    status: Optional[str] = None,
+    model_cateory: Optional[str] = None,
+    deployment_log: Optional[str] = None,
+) -> None:
+    """Log a structured deployment manifest for the model_deployed table.
+
+    This captures the columns stored in ``model_deployed`` and preserves the
+    raw deployment log snapshot alongside them so the sync layer can populate
+    the table even when only the textual deployment log is available.
+    """
+    if not deployment_id or not model_id:
+        return
+
+    try:
+        import mlflow
+
+        active = mlflow.active_run()
+        if run_id is None and active is not None:
+            run_id = active.info.run_id
+        if experiment_id is None and active is not None:
+            experiment_id = active.info.experiment_id
+    except Exception:
+        active = None
+
+    record = {
+        "deployment_id": deployment_id,
+        "model_id": model_id,
+        "experiment_id": experiment_id or "",
+        "run_id": run_id or "",
+        "model_version": model_version or "",
+        "endpoint": endpoint or "",
+        "model_format": model_format or "",
+        "size": size or "",
+        "description": description or "",
+        "user_id": user_id or "",
+        "current_stage": current_stage or "",
+        "location": location or endpoint or "",
+        "status": status or ("deployed" if endpoint else "not available yet"),
+        "model_cateory": model_cateory or "",
+        "deployment_log": deployment_log or "",
+        "deployed_time": int(time.time()),
+    }
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        path = os.path.join(tmp_dir, "model_deployed.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(record, f, indent=2)
+        tracker.log_artifact(path, artifact_path="deployment_logs")
+
+
+def log_monitor_logs(
+    deployment_id: str,
+    model_id: str,
+    message: str,
+    experiment_id: Optional[str] = None,
+    log_id: Optional[str] = None,
+    source: Optional[str] = None,
+) -> None:
+    """Log a deployment monitor message for the monitor_logs table.
+
+    The message is typically the deployment terminal output captured in
+    ``deployment_run.log`` so the database can store a searchable summary of
+    the deployment session.
+    """
+    if not deployment_id or not model_id or not message:
+        return
+
+    try:
+        import mlflow
+
+        active = mlflow.active_run()
+        if experiment_id is None and active is not None:
+            experiment_id = active.info.experiment_id
+    except Exception:
+        active = None
+
+    record = {
+        "log_id": log_id or str(uuid.uuid4()),
+        "deployment_id": deployment_id,
+        "experiment_id": experiment_id or "",
+        "model_id": model_id,
+        "message": message,
+        "source": source or "deployment_run.log",
+        "captured_at": int(time.time()),
+    }
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        path = os.path.join(tmp_dir, "monitor_log.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(record, f, indent=2)
+        tracker.log_artifact(path, artifact_path="deployment_logs")
 
 
 def log_decommissioning(
@@ -304,6 +465,15 @@ def log_decommissioning(
     procedure_details: Optional[str] = None,
     decommissioning_date: Optional[float] = None,
     decommissioning_id: Optional[str] = None,
+    system_name: Optional[str] = None,
+    decommissioning_plan: Optional[str] = None,
+    approvals: Optional[List[str]] = None,
+    data_retention_archive: Optional[str] = None,
+    migration: Optional[str] = None,
+    access_removal: Optional[str] = None,
+    infrastructure_shutdown: Optional[str] = None,
+    evidence_documentation: Optional[List[str]] = None,
+    audit_trail: Optional[str] = None,
 ) -> None:
     """
     Log model decommissioning information for a deployed model.
@@ -347,6 +517,15 @@ def log_decommissioning(
         "decomissioning_id": decommissioning_id or str(uuid.uuid4()),
         "deployment_id": deployment_id,
         "model_id": model_id,
+        "system_name": system_name or "",
+        "decommissioning_plan": decommissioning_plan or "",
+        "approvals": approvals or [],
+        "data_retention_archive": data_retention_archive or "",
+        "migration": migration or "",
+        "access_removal": access_removal or "",
+        "infrastructure_shutdown": infrastructure_shutdown or "",
+        "evidence_documentation": evidence_documentation or [],
+        "audit_trail": audit_trail or "",
         "decomissioning_date": decommissioning_date or int(time.time()),
         "decomissioning_actions": decommissioning_actions,
         "reason": reason,
@@ -356,4 +535,4 @@ def log_decommissioning(
         path = os.path.join(tmp_dir, "decommissioning.json")
         with open(path, "w", encoding="utf-8") as f:
             json.dump(record, f, indent=2)
-        mlflow.log_artifact(path, artifact_path="decommissioning")
+        tracker.log_artifact(path, artifact_path="decommissioning")

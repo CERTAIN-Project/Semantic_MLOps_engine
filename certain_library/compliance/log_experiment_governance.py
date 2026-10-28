@@ -7,6 +7,8 @@ log_ai_actors           → saves to ``ai_actors/`` artifact folder → ``ai_act
 log_labeling_procedures → saves to ``labeling_procedures/`` → ``labeling_procedures`` table
 """
 
+from certain_library.tracking.tracker import tracker
+
 import os
 import json
 import socket
@@ -14,8 +16,6 @@ import getpass
 import tempfile
 import uuid
 from typing import List, Optional
-
-import mlflow
 
 
 def _detect_runner() -> dict:
@@ -144,6 +144,16 @@ def log_ai_actors(
     # Priority 1: full dicts passed explicitly
     # Priority 2: simple string shortcut parameters
     # Priority 3: auto-detect from environment
+    # Backwards-compatibility: callers may pass (ai_providers, ai_deployers)
+    # as positional third/fourth args. Detect this and reassign.
+    if isinstance(use_manual_info, list) and ai_providers is None:
+        ai_providers = use_manual_info
+        # If the next parameter is also a list, it's the deployers list.
+        if isinstance(ai_provider_name, list):
+            ai_deployers = ai_provider_name
+        # Mark that manual info was provided
+        use_manual_info = True
+
     if ai_providers is None:
         if use_manual_info and ai_provider_name is not None:
             entry = {"name": ai_provider_name}
@@ -189,11 +199,24 @@ def log_ai_actors(
         "auditor": auditor,
         "organization": organization,
     }
+    # If an MLflow active run exists, include canonical experiment_id and run_id
+    # inside the artifact so downstream sync can use those values directly.
+    try:
+        import mlflow
+
+        run = mlflow.active_run()
+        if run is not None:
+            record["experiment_id"] = run.info.experiment_id
+            record["run_id"] = run.info.run_id
+    except Exception:
+        # mlflow not available or failure to read active run — fall back to
+        # leaving the artifact without run/experiment fields.
+        pass
     with tempfile.TemporaryDirectory() as tmp_dir:
         path = os.path.join(tmp_dir, "ai_actors.json")
         with open(path, "w", encoding="utf-8") as f:
             json.dump(record, f, indent=2)
-        mlflow.log_artifact(path, artifact_path="ai_actors")
+        tracker.log_artifact(path, artifact_path="ai_actors")
 
 
 def log_labeling_procedures(
@@ -293,8 +316,8 @@ def log_labeling_procedures(
                 "annotators": p.get("annotators") or [],
                 "link": p.get("link") or "",
             }
-            fname = f"labeling_{labeling_id}.json"
+            fname = f"labeling.json"
             path = os.path.join(tmp_dir, fname)
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(record, f, indent=2)
-            mlflow.log_artifact(path, artifact_path="labeling_procedures")
+            tracker.log_artifact(path, artifact_path="labeling_procedures")

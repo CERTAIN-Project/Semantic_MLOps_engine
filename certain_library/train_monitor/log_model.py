@@ -1,7 +1,7 @@
+from certain_library.tracking.tracker import tracker
 import pandas as pd
 from typing import Any, Dict, Union
 
-import mlflow
 from mlflow.models import infer_signature
 
 
@@ -37,8 +37,7 @@ def log_model_info(model_information: Dict[str, str]) -> None:
         if not isinstance(value, str):
             raise ValueError(f"Value for key '{key}' must be a string")
 
-    for key, value in model_information.items():
-        mlflow.log_param(key, value)
+    tracker.log_params(model_information)
 
 
 def log_model_architecture(
@@ -117,15 +116,15 @@ def log_model_architecture(
             raise ValueError("optimizer 'name' cannot be empty")
         optimizer_dict = optimizer
 
-    mlflow.log_param("losses", losses)
+    tracker.log_params({"losses": losses})
     # Log the optimizer name as the primary "optimizer" param for backwards compat
-    mlflow.log_param("optimizer", optimizer_dict["name"])
+    tracker.log_params({"optimizer": optimizer_dict["name"]})
     # Log every additional optimizer hyperparameter under "optimizer.<key>"
     for key, value in optimizer_dict.items():
         if key != "name":
-            mlflow.log_param(f"optimizer.{key}", value)
-    mlflow.log_param("regularization", regularization)
-    mlflow.log_param("early_stopping", early_stopping)
+            tracker.log_params({f"optimizer.{key}": value})
+    tracker.log_params({"regularization": regularization})
+    tracker.log_params({"early_stopping": early_stopping})
 
 
 # Input: A dictionary of hyperparameters to log
@@ -165,15 +164,21 @@ def log_model_hyperparameters(
             raise ValueError(f"Value for key '{key}' is not of type float, int, or str")
 
     if not keep_best:
-        for key, value in dict_of_hyperparameters.items():
-            mlflow.log_param(key, value)
+        tracker.log_params(dict_of_hyperparameters)
     else:
-        for key, value in dict_of_hyperparameters.items():
-            mlflow.log_param(f"best_{key}", value)
+        best_hyperparameters = {
+            f"best_{key}": value for key, value in dict_of_hyperparameters.items()
+        }
+        tracker.log_params(best_hyperparameters)
 
 
 # model should be generic since the type can vary based on the framework used
-def log_model_signature(model, train_data: pd.DataFrame, y_train: pd.Series) -> None:
+from typing import Optional
+
+
+def log_model_signature(
+    model, train_data: pd.DataFrame, y_train: Optional[pd.Series] = None
+) -> None:
     """
     Log the model architecture to MLflow.
 
@@ -230,14 +235,114 @@ def log_model_signature(model, train_data: pd.DataFrame, y_train: pd.Series) -> 
     signature = infer_signature(train_data, predictions)
 
     # Log the model with input example and signature
-    mlflow.xgboost.log_model(
-        xgb_model=model,
-        artifact_path="model",  # This creates a separate "model" folder
+    tracker.log_xgboost_model(
+        model,
+        artifact_path="certain/model",  # This creates a separate "model" folder
         input_example=input_example,
         signature=signature,
     )
 
     # Log the model signature as a parameter for tracking
-    mlflow.log_param("model_signature", str(signature))
-    mlflow.log_param("input_shape", str(train_data.shape))
-    mlflow.log_param("n_features", len(train_data.columns))
+    tracker.log_params({"model_signature": str(signature)})
+    tracker.log_params({"input_shape": str(train_data.shape)})
+    tracker.log_params({"n_features": len(train_data.columns)})
+
+    # Try to compute parameter counts and number of layers for common model types
+    # so this information is available as MLflow params and can be synced into
+    # the `model_architecture` table by the data API.
+    num_layers = None
+    num_total_parameters = None
+    num_trainable_parameters = None
+    num_non_trainable_parameters = None
+
+    try:
+        # XGBoost (scikit-learn wrapper)
+        if hasattr(model, "get_booster"):
+            try:
+                booster = model.get_booster()
+                # number of trees
+                try:
+                    dumps = booster.get_dump()
+                    num_trees = len(dumps)
+                except Exception:
+                    num_trees = None
+
+                # attempt to count leaf nodes via trees_to_dataframe when available
+                try:
+                    df_trees = booster.trees_to_dataframe()
+                    num_leaves = int((df_trees["Feature"] == "Leaf").sum())
+                except Exception:
+                    try:
+                        dump_json = booster.get_dump(dump_format="json")
+                        # count occurrences of the JSON leaf key
+                        num_leaves = sum(s.count('"leaf"') for s in dump_json)
+                    except Exception:
+                        num_leaves = None
+
+                if num_leaves is not None:
+                    num_total_parameters = int(num_leaves)
+                    num_trainable_parameters = int(num_leaves)
+                    num_non_trainable_parameters = 0
+                if num_trees is not None:
+                    num_layers = int(num_trees)
+            except Exception:
+                pass
+
+        # Keras / TensorFlow models
+        if num_total_parameters is None:
+            try:
+                import tensorflow as _tf
+
+                from tensorflow.keras import Model as KerasModel
+
+                if isinstance(model, KerasModel):
+                    try:
+                        total = model.count_params()
+                        # trainable params via summing trainable weights
+                        trainable = 0
+                        for w in getattr(model, "trainable_weights", []):
+                            try:
+                                trainable += int(_tf.keras.backend.count_params(w))
+                            except Exception:
+                                continue
+                        non_trainable = int(total - trainable)
+                        num_total_parameters = int(total)
+                        num_trainable_parameters = int(trainable)
+                        num_non_trainable_parameters = int(non_trainable)
+                        num_layers = len(getattr(model, "layers", []))
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+        # PyTorch models
+        if num_total_parameters is None:
+            try:
+                import torch
+
+                if isinstance(model, torch.nn.Module):
+                    total = sum(p.numel() for p in model.parameters())
+                    trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+                    non_trainable = int(total - trainable)
+                    num_total_parameters = int(total)
+                    num_trainable_parameters = int(trainable)
+                    num_non_trainable_parameters = int(non_trainable)
+            except Exception:
+                pass
+    except Exception:
+        # Keep tolerant: do not fail model logging if counting fails
+        pass
+
+    # Record any discovered counts as MLflow params so they are discoverable
+    try:
+        if num_layers is not None:
+            tracker.log_params({"number_of_layers": int(num_layers)})
+        if num_total_parameters is not None:
+            tracker.log_params({"number_of_total_parameters": int(num_total_parameters)})
+        if num_trainable_parameters is not None:
+            tracker.log_params({"number_of_trainable_parameters": int(num_trainable_parameters)})
+        if num_non_trainable_parameters is not None:
+            tracker.log_params({"number_of_non_trainable_parameters": int(num_non_trainable_parameters)})
+    except Exception:
+        # ignore any errors while logging these optional params
+        pass

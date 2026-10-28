@@ -3,9 +3,9 @@ services:
     image: postgres:13
     container_name: certain_databases
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
-      - ./docker_data/postgres/:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
       - ./init_databases.sql:/docker-entrypoint-initdb.d/01_init_databases.sql
     environment:
       POSTGRES_USER: postgres
@@ -14,7 +14,7 @@ services:
     networks:
       - certain_library_default
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -34,14 +34,7 @@ services:
       - PYTHONPATH=/app:/app/data_api
     working_dir: /app/data_api
     command: >
-      sh -c "
-      until pg_isready -h postgres -U postgres; do sleep 1; done &&
-      psql postgresql://postgres:postgres@postgres:5432/postgres -tc \"SELECT 1 FROM pg_database WHERE datname='certain_db'\" | grep -q 1 ||
-      psql postgresql://postgres:postgres@postgres:5432/postgres -c \"CREATE DATABASE certain_db\" &&
-      psql postgresql://postgres:postgres@postgres:5432/postgres -tc \"SELECT 1 FROM pg_database WHERE datname='mlflow'\" | grep -q 1 ||
-      psql postgresql://postgres:postgres@postgres:5432/postgres -c \"CREATE DATABASE mlflow\" &&
-      alembic upgrade head
-      "
+      sh -c "alembic upgrade head"
     restart: "no"
 
   mlflow:
@@ -53,7 +46,7 @@ services:
     ports:
       - "5001:5001"
     volumes:
-      - ./docker_data/mlflow_artifacts:/app/mlruns
+      - mlflow_artifacts:/app/mlruns
     environment:
       - MLFLOW_BACKEND_STORE_URI=postgresql://postgres:postgres@postgres:5432/mlflow
       - MLFLOW_DEFAULT_ARTIFACT_ROOT=/app/mlruns
@@ -62,7 +55,7 @@ services:
       - certain_library_default
     command: >
       sh -c "
-      pip install mlflow==2.21.2 SQLAlchemy==2.0.40 psycopg2-binary==2.9.10 &&
+      pip install mlflow==3.8.1 psycopg2-binary sqlalchemy==2.0.40 &&
       mlflow server
       --backend-store-uri postgresql://postgres:postgres@postgres:5432/mlflow
       --default-artifact-root /app/mlruns
@@ -94,8 +87,9 @@ services:
       - MLFLOW_TRACKING_URI=http://certain_mlflow:5001
       - PYTHONPATH=/app:/app/data_api
     volumes:
-      - ./docker_data/mlflow_artifacts:/app/mlruns
+      - mlflow_artifacts:/app/mlruns
       - ./test_docker:/app/test_docker
+      - ./.git:/app/.git:ro
     working_dir: /app/data_api
     command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"]
     healthcheck:
@@ -122,8 +116,9 @@ services:
       - MLFLOW_ARTIFACTS=/app/mlruns
       - PYTHONPATH=/app:/app/test_docker/model_retriever
     volumes:
-      - ./docker_data/mlflow_artifacts:/app/mlruns
+      - mlflow_artifacts:/app/mlruns
       - ./test_docker:/app/test_docker
+      - ./.git:/app/.git:ro
     working_dir: /app/test_docker/model_retriever
     command: ["/bin/bash", "./start.sh"]
     restart: "no"
@@ -140,15 +135,25 @@ services:
       - certain_library_default
     ports:
       - "8002:8002"
+      # Scenario UI used by test_docker/test_it_complete.py; localhost only because it has no authentication.
+      - "127.0.0.1:8769:8769"
+    env_file:
+      - path: .env
+        required: false
     environment:
       - MLFLOW_TRACKING_URI=postgresql+psycopg2://postgres:postgres@postgres:5432/mlflow
       - MLFLOW_DB=postgresql+psycopg2://postgres:postgres@postgres:5432/mlflow
       - MLFLOW_ARTIFACTS=/app/mlruns
       - MLFLOW_ARTIFACT_ROOT=/app/mlruns
-      - GIT_PYTHON_REFRESH=quiet
+      - CERTAIN_AUTO_SYNC_ON_RUN_END=true
+      - CERTAIN_SYNC_ALL_URL=http://data_transfer:8001/sync/all
       - PYTHONPATH=/app:/app/certain_library
     volumes:
-      - ./docker_data/mlflow_artifacts:/app/mlruns
+      - mlflow_artifacts:/app/mlruns
+      - ./test_docker:/app/test_docker
+      - ./dataspace_connector:/app/dataspace_connector:ro
+      - ./.git:/app/.git:ro
+      - ../Synthetic-Data-Generation-Component:/app/Synthetic-Data-Generation-Component:ro
     stdin_open: true
     tty: true
 
@@ -168,9 +173,6 @@ services:
     networks:
       - certain_library_default
 
-  # ── Ontop (SPARQL / virtual knowledge graph) ──────────────────────────
-  # Downloads the PostgreSQL JDBC driver once, then the ontop service
-  # picks it up from a shared volume.
   download_jdbc:
     image: curlimages/curl:latest
     container_name: ontop_download_jdbc
@@ -223,6 +225,8 @@ services:
     restart: unless-stopped
 
 volumes:
+  postgres_data:
+  mlflow_artifacts:
   jdbc_driver:
 
 networks:

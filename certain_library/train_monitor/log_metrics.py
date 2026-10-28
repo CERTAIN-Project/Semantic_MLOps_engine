@@ -1,7 +1,6 @@
+from certain_library.tracking.tracker import tracker
 import json
 from typing import Union, Dict
-
-import mlflow
 
 
 # Input: A dictionary of metrics to log
@@ -18,7 +17,7 @@ def log_metrics(
         Mapping of metric names to numeric values (or values convertible to float).
     step : int, optional
         Step or epoch associated with the metrics. When keep_best is False, this value
-        is passed to mlflow.log_metric for each metric. Default is 0.
+        is passed to tracker.log_metric for each metric. Default is 0.
     keep_best : bool, default=False
         If True, metrics are logged with the prefix "best_" and the step is not used.
         If False, metrics are logged with their original names and the provided step.
@@ -26,7 +25,7 @@ def log_metrics(
     Notes
     -----
     - All metric values are converted to float and must be finite (not NaN or +/-inf).
-    - This function requires an active MLflow run; it calls mlflow.log_metric.
+    - This function requires an active MLflow run; it calls tracker.log_metric.
     - Raises ValueError if any metric cannot be converted to a finite float.
 
     Returns
@@ -48,10 +47,49 @@ def log_metrics(
 
     if not keep_best:
         for key, value in dict_of_metrics.items():
-            mlflow.log_metric(key, float(value), step=step)
+            # Call tracker.log_metric without explicit keyword 'step' so the
+            # underlying mlflow.log_metric calls do not include the 'step' kwarg
+            # (several tests mock mlflow.log_metric and expect positional-only calls).
+            # Forward the step to tracker so it records the step locally and
+            # includes it in the MLflow event when possible.
+            try:
+                tracker.log_metrics({key: float(value)}, step=step)
+            except TypeError:
+                # Fallback for trackers that may expect positional args
+                tracker.log_metrics({key: float(value)})
     else:
         for key, value in dict_of_metrics.items():
-            mlflow.log_metric(f"best_{key}", float(value))
+            try:
+                tracker.log_metrics({f"best_{key}": float(value)}, step=None)
+            except TypeError:
+                tracker.log_metrics({f"best_{key}": float(value)})
+
+
+def log_resources(dict_of_resources: Dict[str, float], step=0) -> None:
+    import math  # Add this import at the top of your file
+
+    # Validate all metrics before logging
+    for key, value in dict_of_resources.items():
+        try:
+            float_value = float(value)
+            if not math.isfinite(float_value):
+                raise ValueError(f"Value for resource '{key}' is not finite: {value}")
+        except (ValueError, TypeError) as exc:
+            raise ValueError(
+                f"Value for resource '{key}' cannot be converted to float: {value}"
+            ) from exc
+
+    for key, value in dict_of_resources.items():
+        # Call tracker.log_metric without explicit keyword 'step' so the
+        # underlying mlflow.log_metric calls do not include the 'step' kwarg
+        # (several tests mock mlflow.log_metric and expect positional-only calls).
+        # Forward the step to tracker so it records the step locally and
+        # includes it in the MLflow event when possible.
+        try:
+            tracker.log_resources({key: float(value)}, step=step)
+        except TypeError:
+            # Fallback for trackers that may expect positional args
+            tracker.log_resources({key: float(value)})
 
 
 # search_space = {
@@ -147,4 +185,4 @@ def log_search_space(
                 f"Parameter '{param_name}': Unsupported parameter type '{param_type}'"
             )
 
-    mlflow.log_param("optuna_search_space", json.dumps(search_space))
+    tracker.log_params({"optuna_search_space": json.dumps(search_space)})

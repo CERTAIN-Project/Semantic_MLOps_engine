@@ -64,6 +64,7 @@ class Runs(Base):
 
     run_id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     run_name = Column(String)
+    parent_id = Column(String)
     source_type = Column(String)
     source_name = Column(String)
     user_id = Column(String)
@@ -109,6 +110,10 @@ class Runs(Base):
         back_populates="run",
         uselist=False,
         cascade="all, delete-orphan",
+    )
+    # Link to a runtime environment record (one-per-run when available)
+    runtime_environment = relationship(
+        "RuntimeEnvironment", back_populates="run", uselist=False
     )
 
 
@@ -205,9 +210,15 @@ class RuntimeEnvironment(Base):
     model_id = Column(
         String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
     )
+    # Optional run_id to link a runtime environment to the run that produced it
+    run_id = Column(String, ForeignKey("runs.run_id"), nullable=True)
 
     server_name = Column(String)
     performance = Column(Integer)
+    # Combined runtime/python environment details captured from artifacts:
+    #   - certain/metadata/runtime_env.json (python_version, platform, env_vars, in_docker, ...)
+    #   - certain/model/python_env.yaml (python version + pip build_dependencies/dependencies)
+    details = Column(JSON)
 
     __table_args__ = (
         ForeignKeyConstraint(
@@ -223,6 +234,9 @@ class RuntimeEnvironment(Base):
     deployment = relationship(
         "ModelDeployed", back_populates="runtime_environment", uselist=False
     )
+
+    # Back-reference to the run that produced the runtime environment artifact
+    run = relationship("Runs", back_populates="runtime_environment", uselist=False)
 
 
 class MonitorLog(Base):
@@ -265,9 +279,10 @@ class DriftMetric(Base):
     experiment_id = Column(
         String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
     )
-    deployment_id = Column(
-        String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
-    )
+    # Make deployment_id optional (nullable). Some artifacts may not include
+    # a deployment identifier; keep the column but do not require it in the
+    # primary key so rows can be inserted without a deployment_id.
+    deployment_id = Column(String, nullable=True)
     model_id = Column(
         String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
     )
@@ -316,7 +331,12 @@ class RunCode(Base):
         nullable=False,
         default=lambda: str(uuid.uuid4()),
     )
-    git_commit_hash = Column(String, nullable=False)
+    git_commit_hash = Column(String, nullable=True)
+    git_commit_short = Column(String, nullable=True)
+    git_branch = Column(String, nullable=True)
+    git_message = Column(String, nullable=True)
+    git_author = Column(String, nullable=True)
+    git_author_email = Column(String, nullable=True)
     name = Column(String)
 
     run = relationship("Run", back_populates="code", uselist=False)
@@ -435,6 +455,8 @@ class DataTechniques(Base):
     data_id = Column(String, nullable=False, default=lambda: str(uuid.uuid4()))
     technique_name = Column(ARRAY(String), nullable=False)
     data_technique_stage = Column(String)
+    # JSON blob containing method, library, parameters, notes, etc.
+    technique_details = Column(JSON)
 
     __table_args__ = (
         PrimaryKeyConstraint("run_id", "data_id", "technique_name"),
@@ -738,15 +760,17 @@ class AIActors(Base):
         primary_key=True,
         default=lambda: str(uuid.uuid4()),
     )
-    experiment_id = Column(String, primary_key=True, nullable=False)
+    # Use run_id (runs.run_id) instead of experiment_id as the parent reference.
+    # This allows ai_actors rows to be associated with a specific run.
+    run_id = Column(String, primary_key=True, nullable=False)
     ai_provider = Column(String)
     ai_deployer = Column(String)
     auditor = Column(String)
     organization = Column(String)
 
     __table_args__ = (
-        PrimaryKeyConstraint("ai_actors_id", "experiment_id"),
-        ForeignKeyConstraint(["experiment_id"], ["experiments.experiment_id"]),
+        PrimaryKeyConstraint("ai_actors_id", "run_id"),
+        ForeignKeyConstraint(["run_id"], ["runs.run_id"]),
     )
 
 
@@ -857,6 +881,9 @@ class DeclarationOfConformity(Base):
 
     description = Column(String)
     creation_time = Column(Numeric, nullable=False, default=1672531200)
+    # Optional deployment_id: some artifacts may include an explicit deployment
+    # identifier. Keep it nullable to avoid breaking existing rows.
+    deployment_id = Column(String, nullable=True)
 
     __table_args__ = (
         PrimaryKeyConstraint("declaration_id", "run_id"),
@@ -893,39 +920,30 @@ class VisualDocumentation(Base):
 class Standard(Base):
     __tablename__ = "standards"
 
+    # Follow the same shape as DeclarationOfConformity: one artifact row per
+    # run, with optional deployment_id when provided by the artifact.
     standard_id = Column(
         String,
-        primary_key=True,
         default=lambda: str(uuid.uuid4()),
     )
-    experiment_id = Column(
-        String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
-    )
-    deployment_id = Column(
-        String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
-    )
-    model_id = Column(
-        String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
-    )
+    run_id = Column(String, nullable=False)
+
+    # Metadata
     name = Column(String, nullable=False)
-    description = Column(String)
-    version = Column(String)
-    publication_date = Column(Numeric)
+    description = Column(String, nullable=False)
+    version = Column(String, nullable=False)
+    publication_date = Column(Integer)
+
+    creation_time = Column(Numeric, nullable=False, default=1672531200)
+    # Optional deployment_id: some artifacts may include an explicit deployment
+    # identifier. Keep it nullable to avoid breaking existing rows.
+    deployment_id = Column(String, nullable=True)
+    model_id = Column(String, nullable=True)
 
     __table_args__ = (
-        PrimaryKeyConstraint(
-            "standard_id", "experiment_id", "deployment_id", "model_id"
-        ),
-        ForeignKeyConstraint(
-            ["experiment_id", "deployment_id", "model_id"],
-            [
-                "model_deployed.experiment_id",
-                "model_deployed.deployment_id",
-                "model_deployed.model_id",
-            ],
-        ),
+        PrimaryKeyConstraint("standard_id", "run_id", "model_id"),
+        ForeignKeyConstraint(["run_id"], ["runs.run_id"]),
     )
-
 
 class Interface(Base):
     __tablename__ = "interfaces"
@@ -938,6 +956,7 @@ class Interface(Base):
     experiment_id = Column(
         String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
     )
+    run_id = Column(String, ForeignKey("runs.run_id"), nullable=True)
     deployment_id = Column(
         String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
     )
@@ -963,6 +982,8 @@ class Interface(Base):
         ),
     )
 
+    run = relationship("Runs")
+
 
 class ExplainableAIFeature(Base):
     __tablename__ = "explainable_ai_features"
@@ -976,6 +997,8 @@ class ExplainableAIFeature(Base):
     feature_name = Column(ARRAY(String), nullable=False)
     feature_values = Column(ARRAY(String), nullable=False)
     implementation_details = Column(String)
+    # Optional deployment_id stored when artifact contains it
+    deployment_id = Column(String, nullable=True)
 
     __table_args__ = (
         PrimaryKeyConstraint("feature_id", "run_id"),
@@ -992,14 +1015,19 @@ class HumanOversightMechanism(Base):
         default=lambda: str(uuid.uuid4()),
     )
     experiment_id = Column(String, nullable=False)
+    run_id = Column(String, ForeignKey("runs.run_id"), nullable=True)
     oversight_type = Column(String, nullable=False)
     description = Column(String)
     implementation_details = Column(String)
+    # Optional deployment_id stored when artifact contains it
+    deployment_id = Column(String, nullable=True)
 
     __table_args__ = (
         PrimaryKeyConstraint("mechanism_id", "experiment_id"),
         ForeignKeyConstraint(["experiment_id"], ["experiments.experiment_id"]),
     )
+
+    run = relationship("Runs")
 
 
 class TransparencyMeasure(Base):
@@ -1050,6 +1078,15 @@ class Decomissioning(Base):
     experiment_id = Column(String, nullable=False, default=lambda: str(uuid.uuid4()))
     deployment_id = Column(String, nullable=False, default=lambda: str(uuid.uuid4()))
     model_id = Column(String, nullable=False, default=lambda: str(uuid.uuid4()))
+    system_name = Column(String)
+    decommissioning_plan = Column(String)
+    approvals = Column(ARRAY(String))
+    data_retention_archive = Column(String)
+    migration = Column(String)
+    access_removal = Column(String)
+    infrastructure_shutdown = Column(String)
+    evidence_documentation = Column(ARRAY(String))
+    audit_trail = Column(String)
     decomissioning_date = Column(Numeric, nullable=False, default=1672531200)
     decomissioning_actions = Column(ARRAY(String), nullable=False)
     reason = Column(String, nullable=False)

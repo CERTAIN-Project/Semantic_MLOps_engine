@@ -1,10 +1,10 @@
+from certain_library.tracking.tracker import tracker
 import os
 import tempfile
 import time
 import uuid
 from typing import List
 
-import mlflow
 import pandas as pd
 
 
@@ -54,4 +54,4 @@ def log_run_logs(
     with tempfile.TemporaryDirectory() as tmp_dir:
         csv_path = os.path.join(tmp_dir, f"logs_{log_type}.csv")
         df.to_csv(csv_path, index=False)
-        mlflow.log_artifact(csv_path, artifact_path="run_logs")
+        tracker.log_artifact(csv_path, artifact_path="run_logs")

@@ -10,15 +10,14 @@ log_transparency_measure → ``transparency_measures/``    → ``transparency_me
 log_change               → ``change_logs/``              → ``change_logs`` table
 """
 
+from certain_library.tracking.tracker import tracker
+
 import os
 import json
 import time
 import tempfile
 import uuid
 from typing import List
-
-import mlflow
-
 
 _RISK_ALLOWED_KEYS = {"risk_description", "risk_type", "risk_level", "risk_id"}
 
@@ -70,11 +69,11 @@ def log_risk(risks: List[dict]) -> None:
             "risk_level": risk_level,
         }
         with tempfile.TemporaryDirectory() as tmp_dir:
-            fname = f"risk_{record['risk_id']}.json"
+            fname = f"risk.json"
             path = os.path.join(tmp_dir, fname)
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(record, f, indent=2)
-            mlflow.log_artifact(path, artifact_path="risks")
+            tracker.log_artifact(path, artifact_path="risks")
 
 
 _OVERSIGHT_ALLOWED_KEYS = {
@@ -128,11 +127,11 @@ def log_human_oversight(oversights: List[dict]) -> None:
             "implementation_details": item.get("implementation_details") or "",
         }
         with tempfile.TemporaryDirectory() as tmp_dir:
-            fname = f"oversight_{record['mechanism_id']}.json"
+            fname = f"oversight.json"
             path = os.path.join(tmp_dir, fname)
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(record, f, indent=2)
-            mlflow.log_artifact(path, artifact_path="human_oversight")
+            tracker.log_artifact(path, artifact_path="human_oversight")
 
 
 _TRANSPARENCY_ALLOWED_KEYS = {
@@ -195,11 +194,11 @@ def log_transparency_measure(measures: List[dict]) -> None:
             "implementation_details": item.get("implementation_details") or "",
         }
         with tempfile.TemporaryDirectory() as tmp_dir:
-            fname = f"transparency_{record['measure_id']}.json"
+            fname = f"transparency.json"
             path = os.path.join(tmp_dir, fname)
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(record, f, indent=2)
-            mlflow.log_artifact(path, artifact_path="transparency_measures")
+            tracker.log_artifact(path, artifact_path="transparency_measures")
 
 
 _CHANGE_ALLOWED_KEYS = {"change_description", "changed_by", "log_id"}
@@ -246,8 +245,8 @@ def log_change(changes: List[dict]) -> None:
             "change_timestamp": int(time.time()),
         }
         with tempfile.TemporaryDirectory() as tmp_dir:
-            fname = f"change_{record['log_id']}.json"
+            fname = f"change.json"
             path = os.path.join(tmp_dir, fname)
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(record, f, indent=2)
-            mlflow.log_artifact(path, artifact_path="change_logs")
+            tracker.log_artifact(path, artifact_path="change_logs")
