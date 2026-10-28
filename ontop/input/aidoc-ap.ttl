@@ -12,10 +12,15 @@
 @prefix widoco: <https://w3id.org/widoco/vocab#> .
 @prefix dcterms: <http://purl.org/dc/terms/> .
 @prefix server: <http://w3id.org/devops-infra/server#> .
+@prefix dpv: <https://w3id.org/dpv#> .
+@prefix dpv-ai: <https://w3id.org/dpv/ai#> .
+@prefix dpv-aiact: <https://w3id.org/dpv/legal/eu/aiact#> .
+@prefix dpv-tech: <https://w3id.org/dpv/tech#> .
 @base <https://w3id.org/aidoc-ap#> .
 
 <https://w3id.org/aidoc-ap#> rdf:type owl:Ontology ;
-                              owl:versionIRI <https://w3id.org/aidoc-ap/1.0> ;
+                              owl:versionIRI <https://w3id.org/aidoc-ap/1.2> ;
+                              owl:priorVersion <https://w3id.org/aidoc-ap/1.1> ;
                               dcterms:contributor [ rdf:type foaf:Person ;
                                                     foaf:name "Timea Pahi" ;
                                                     foaf:organization "University of Applied Sciences St. Pölten"
@@ -33,8 +38,9 @@
                                                 foaf:name "Fabian Kovac" ;
                                                 foaf:organization "University of Applied Sciences St. Pölten"
                                               ] ;
-                              dcterms:description "The AI Documentation Application Profile (AIDOC-AP) is designed to provide a structured, machine-readable model of an AI system and its entire lifecycle. It is built as a modular framework, rooted in established semantic web standards and enhanced with domain-specific concepts from the research material provided. The core of AIDOC-AP is a graph-based representation that captures the provenance of all AI artifacts, the activities that create and modify them, and the agents responsible for those activities."@en ;
+                              dcterms:description "AIDOC-AP is an application profile for representing the technical documentation of AI systems required under Article 11 and Annex IV of the EU AI Act in a structured, machine-readable form. It reuses established Semantic Web vocabularies (PROV-O, DCAT, MLSchema, AIRO, VAIR, DPV) where possible and adds Annex IV-specific terms, so that provider documentation can be captured as a knowledge graph and checked for completeness against the regulation."@en ;
                               dcterms:issued "2025-12-04"^^xsd:date ;
+                              dcterms:modified "2026-07-15"^^xsd:date ;
                               dcterms:language "en" ;
                               dcterms:license <https://creativecommons.org/licenses/by/4.0/> ;
                               dcterms:publisher [ foaf:homepage <https://certain-project.eu> ;
@@ -44,7 +50,8 @@
                               vann:preferredNamespacePrefix "aidoc" ;
                               vann:preferredNamespaceUri "https://w3id.org/aidoc-ap#" ;
                               rdfs:label "AIDOC-AP"@en ;
-                              owl:versionInfo "1.0" ;
+                              owl:versionInfo "1.2" ;
+                              skos:changeNote "v1.2: aidoc:VisualDocumentation was renamed and generalised to aidoc:TechnicalDocumentation, the Annex IV technical documentation artefact (aidoc:hasVisualDocumentation accordingly to aidoc:hasTechnicalDocumentation); grounded via rdfs:subClassOf dpv-aiact:TechnicalDocumentation."@en ;
                               schema:funding <https://cordis.europa.eu/project/id/101189650> ;
                               schema:keywords "AI systems, ontology, AIDOC-AP, AI lifecycle, AI Act"@en .
 
@@ -248,6 +255,12 @@ dcterms:hasPart rdf:type owl:ObjectProperty .
               rdfs:comment "Links an AI system to the interface it provides to users or operators."@en ;
               rdfs:label "has interface"@en .
 
+###  https://w3id.org/aidoc-ap#hasChangeLog
+:hasChangeLog rdf:type owl:ObjectProperty ;
+              rdfs:domain :AISystem ;
+              rdfs:range :ChangeLog ;
+              rdfs:comment "Links an AI system to its change log."@en ;
+              rdfs:label "has changelog"@en .
 
 ###  https://w3id.org/aidoc-ap#hasLifecycleStage
 :hasLifecycleStage rdf:type owl:ObjectProperty ;
@@ -295,12 +308,12 @@ dcterms:hasPart rdf:type owl:ObjectProperty .
                         rdfs:label "has transparency measure"@en .
 
 
-###  https://w3id.org/aidoc-ap#hasVisualDocumentation
-:hasVisualDocumentation rdf:type owl:ObjectProperty ;
+###  https://w3id.org/aidoc-ap#hasTechnicalDocumentation
+:hasTechnicalDocumentation rdf:type owl:ObjectProperty ;
                         rdfs:domain :AISystem ;
-                        rdfs:range :VisualDocumentation ;
-                        rdfs:comment "Links an AI system to visual documentation such as photographs, diagrams, or illustrations showing external features, markings, and internal layout."@en ;
-                        rdfs:label "has visual documentation"@en .
+                        rdfs:range :TechnicalDocumentation ;
+                        rdfs:comment "Links an AI system to its technical documentation as required by Article 11 and Annex IV, including textual documents and, where applicable, photographs or illustrations showing external features, markings, and internal layout (Annex IV 1(c))."@en ;
+                        rdfs:label "has technical documentation"@en .
 
 
 ###  https://w3id.org/aidoc-ap#hasFrequency
@@ -343,6 +356,13 @@ dcterms:hasPart rdf:type owl:ObjectProperty .
               rdfs:range <http://www.w3.org/ns/prov#Activity> ;
               rdfs:comment "Links a monitoring activity to the type of activity that is logged."@en ;
               rdfs:label "logs activity"@en .
+
+###  https://w3id.org/aidoc-ap#logsActivity
+:producesLog rdf:type owl:ObjectProperty ;
+              rdfs:domain :DataMonitoringAndLogging ;
+              rdfs:range :Log ;
+              rdfs:comment "Links a monitoring activity to the log it produces."@en ;
+              rdfs:label "produces log"@en .
 
 
 ###  https://w3id.org/aidoc-ap#requiresHardware
@@ -412,17 +432,17 @@ dcterms:hasPart rdf:type owl:ObjectProperty .
 
 ###  https://w3id.org/aidoc-ap#hasSourceDataset
 :hasSourceDataset rdf:type owl:ObjectProperty ;
-                  rdfs:domain :DataProcessing ;
+                  rdfs:domain :DataPipeline ;
                   rdfs:range :Dataset ;
-                  rdfs:comment "Links a DataProcessing activity to its source datasets."@en ;
+                  rdfs:comment "Links a DataPipeline activity to its source datasets."@en ;
                   rdfs:label "has source dataset"@en .
 
 
 ###  https://w3id.org/aidoc-ap#producesDataset
 :producesDataset rdf:type owl:ObjectProperty ;
-                 rdfs:domain :DataProcessing ;
+                 rdfs:domain :DataPipeline ;
                  rdfs:range :Dataset ;
-                 rdfs:comment "Links a DataProcessing activity to the finished dataset it produces."@en ;
+                 rdfs:comment "Links a DataPipeline activity to the finished dataset it produces."@en ;
                  rdfs:label "produces dataset"@en .
 
 
@@ -528,9 +548,9 @@ dcterms:hasPart rdf:type owl:ObjectProperty .
 
 ###  https://w3id.org/aidoc-ap#depicts
 :depicts rdf:type owl:DatatypeProperty ;
-         rdfs:domain :VisualDocumentation ;
+         rdfs:domain :TechnicalDocumentation ;
          rdfs:range xsd:string ;
-         rdfs:comment "Description of what the visual documentation shows (e.g., 'external view', 'internal layout', 'marking placement')."@en ;
+         rdfs:comment "Description of what the technical documentation shows or covers (e.g., 'external view', 'internal layout', 'marking placement')."@en ;
          rdfs:label "depicts"@en ;
          skos:closeMatch foaf:depicts .
 
@@ -555,13 +575,20 @@ dcterms:hasPart rdf:type owl:ObjectProperty .
                  rdfs:label "has architecture"@en .
 
 
-###  https://w3id.org/aidoc-ap#intendedPurpose
-:intendedPurpose rdf:type owl:DatatypeProperty ;
-                 rdfs:domain :AISystem ;
-                 rdfs:range xsd:string ;
+###  https://w3id.org/aidoc-ap#IntendedPurpose
+:IntendedPurpose rdf:type owl:Class ;
+                 rdfs:subClassOf dpv-aiact:IntendedPurpose ;
                  dcterms:source "EU AI Act 2024/1689, Article 3(12)" ;
-                 rdfs:comment "Intended purpose means the use for which an AI system is intended by the provider, including the specific context and conditions of use, as specified in the information supplied by the provider in the instructions for use, promotional or sales materials and statements, as well as in the technical documentation."@en ;
-                 rdfs:label "intended purpose"@en .
+                 rdfs:comment "The use for which an AI system is intended by the provider, including the specific context and conditions of use, as specified in the instructions for use, promotional or sales materials and statements, and the technical documentation. Modelled as a class so that intended purposes can be related (e.g. via skos:broader/narrower), compared and tracked across system versions."@en ;
+                 rdfs:label "Intended Purpose"@en .
+
+###  https://w3id.org/aidoc-ap#hasIntendedPurpose
+:hasIntendedPurpose rdf:type owl:ObjectProperty ;
+                 rdfs:domain :AISystem ;
+                 rdfs:range :IntendedPurpose ;
+                 dcterms:source "EU AI Act 2024/1689, Article 3(12)" ;
+                 rdfs:comment "Links an AI system to its intended purpose, modelled as an aidoc:IntendedPurpose resource rather than a plain string, so that purposes can be linked, compared and tracked across system versions."@en ;
+                 rdfs:label "has intended purpose"@en .
 
 
 ###  https://w3id.org/aidoc-ap#labelingGuideline
@@ -580,12 +607,39 @@ dcterms:hasPart rdf:type owl:ObjectProperty .
                      rdfs:label "missing data strategy"@en .
 
 
-###  https://w3id.org/aidoc-ap#modality
-:modality rdf:type owl:DatatypeProperty ;
+###  https://w3id.org/aidoc-ap#Modality
+:Modality rdf:type owl:Class ;
+          dcterms:source "EU AI Act 2024/1689, Annex IV(1)" ;
+          rdfs:comment "The form in which the AI system is provided or placed on the market (e.g. standalone software, a software service/API, a component embedded in a product, or a hardware product). Modelled as a class with a controlled vocabulary so provision forms can be enumerated, compared and reused across systems."@en ;
+          rdfs:label "Modality"@en .
+
+###  https://w3id.org/aidoc-ap#hasModality
+:hasModality rdf:type owl:ObjectProperty ;
           rdfs:domain :AISystem ;
-          rdfs:range xsd:string ;
-          rdfs:comment "The physical form or modality in which the AI system is provided (e.g., standalone software, API)."@en ;
-          rdfs:label "modality"@en .
+          rdfs:range :Modality ;
+          rdfs:comment "Links an AI system to its form of provision, modelled as a resource rather than a plain string. The datatype property aidoc:modality is retained as a string shortcut for text-based documentation workflows."@en ;
+          rdfs:label "has modality"@en .
+
+:StandaloneSoftware rdf:type owl:NamedIndividual , :Modality ;
+          rdfs:label "Standalone software"@en ;
+          skos:definition "The AI system is provided as a standalone software application installed and run by the deployer."@en .
+
+:SoftwareService rdf:type owl:NamedIndividual , :Modality ;
+          rdfs:label "Software service / API"@en ;
+          skos:definition "The AI system is provided as a hosted service consumed over an interface such as a web API."@en .
+
+:EmbeddedComponent rdf:type owl:NamedIndividual , :Modality ;
+          rdfs:label "Embedded component"@en ;
+          skos:definition "The AI system is provided as a component embedded within a larger software or hardware product."@en .
+
+:HardwareProduct rdf:type owl:NamedIndividual , :Modality ;
+          rdfs:label "Hardware product"@en ;
+          skos:definition "The AI system is provided as, or integrated into, a physical hardware product."@en .
+
+:CloudService rdf:type owl:NamedIndividual , :Modality ;
+          rdfs:label "Cloud service"@en ;
+          skos:definition "The AI system is provided as a managed cloud service."@en ;
+          skos:broader :SoftwareService .
 
 
 ###  https://w3id.org/aidoc-ap#outlierHandlingMethod
@@ -1170,12 +1224,12 @@ foaf:Person rdf:type owl:Class .
                      rdfs:label "Transparency Measure"@en .
 
 
-###  https://w3id.org/aidoc-ap#VisualDocumentation
-:VisualDocumentation rdf:type owl:Class ;
+###  https://w3id.org/aidoc-ap#TechnicalDocumentation
+:TechnicalDocumentation rdf:type owl:Class ;
                      rdfs:subClassOf <http://www.w3.org/ns/prov#Entity> ;
-                     rdfs:comment "Visual documentation of an AI system including photographs, illustrations, diagrams, or renderings that show external features, internal layout, or markings as required by Annex IV."@en ;
-                     rdfs:label "Visual Documentation"@en ;
-                     skos:closeMatch foaf:Image .
+                     rdfs:comment "Technical documentation of an AI system as required by Article 11 and Annex IV of the EU AI Act. This can include textual documents as well as photographs, illustrations, diagrams, or renderings showing external features, internal layout, or markings (Annex IV 1(c))."@en ;
+                     rdfs:label "Technical Documentation"@en ;
+                     skos:changeNote "Renamed and generalised from aidoc:VisualDocumentation in v1.2."@en .
 
 
 ###  https://w3id.org/airo#AICapability
@@ -1509,4 +1563,29 @@ foaf:Person rdf:type owl:Class .
                       skos:definition "Techniques that identify patterns and structures in unlabeled data." .
 
 
-###  Generated by the OWL API (version 4.5.29.2024-05-13T12:11:03Z) https://github.com/owlcs/owlapi
+#################################################################
+#    Alignments to the Data Privacy Vocabulary (DPV 2.x)
+#
+#    AIDOC-AP grounds its Annex IV terms in DPV (core, AI, AI Act, TECH).
+#    AIDOC-AP terms are Annex IV-scoped SPECIALISATIONS of the broader DPV
+#    concepts, so we assert rdfs:subClassOf (AIDOC subClassOf DPV) rather
+#    than owl:equivalentClass: adding Annex IV documentation constraints
+#    narrows the extension, which co-extensional equivalence would
+#    misrepresent. Where there is no clean subsumption (same concept, or DPV
+#    is the narrower term) we use SKOS mapping relations. Curated starting
+#    set; extended as further correspondences pass the alignment curation.
+#################################################################
+
+# AIDOC-AP is the narrower, Annex IV-scoped specialisation of the DPV class:
+:AISystem rdfs:subClassOf dpv-ai:AISystem .
+:AIModel rdfs:subClassOf dpv-ai:Model .
+:Standard rdfs:subClassOf dpv:Standard .
+:AIProvider rdfs:subClassOf dpv-aiact:AIProvider .
+:AIDeployer rdfs:subClassOf dpv-aiact:AIDeployer .
+:TechnicalDocumentation rdfs:subClassOf dpv-aiact:TechnicalDocumentation .
+
+# Concept-level correspondences without a clean subsumption:
+:Auditor skos:closeMatch dpv-tech:Auditor .
+:HumanOversightMechanism skos:closeMatch dpv:HumanOversight .
+# DPV's EU declaration of conformity is the narrower (EU-specific) term:
+:DeclarationOfConformity skos:narrowMatch dpv-aiact:EUDeclarationOfConformity .
