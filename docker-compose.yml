@@ -50,6 +50,7 @@ services:
     environment:
       - MLFLOW_BACKEND_STORE_URI=postgresql://postgres:postgres@postgres:5432/mlflow
       - MLFLOW_DEFAULT_ARTIFACT_ROOT=/app/mlruns
+      - GIT_PYTHON_REFRESH=quiet
     networks:
       - certain_library_default
     command: >

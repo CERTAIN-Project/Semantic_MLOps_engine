@@ -34,3 +34,9 @@ whylabs-client==0.6.16
 pytest
 pandas
 minio>=7.0.0
+torch
+tabulate
+lightgbm
+nvidia-ml-py
+tabpfn
+skl2onnx

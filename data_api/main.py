@@ -3,6 +3,7 @@ from urllib.parse import urlparse
 import io
 import sys
 import json
+import inspect
 import pandas as pd
 import inspect
 import yaml

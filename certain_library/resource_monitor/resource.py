@@ -253,4 +253,7 @@ def stop_tracker(
     if os.path.exists(output_location["output_dir"]) and not os.listdir(
         output_location["output_dir"]
     ):
-        os.rmdir(output_location["output_dir"])
+        try:
+            os.rmdir(output_location["output_dir"])
+        except Exception as exc:
+            print(f"[WARN] Could not remove emissions directory {output_location['output_dir']}: {exc}")
