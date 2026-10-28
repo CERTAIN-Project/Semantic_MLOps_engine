@@ -730,10 +730,16 @@ def run_regressor(
     try:
         artifact_dir = algorithm._artifact_dir()
         if os.path.exists(artifact_dir):
-            mlflow.log_artifacts(
-                artifact_dir,
-                artifact_path="artifacts_for_counterfactuals",
+            # Upload only this run's KPI file, not the whole accumulated folder.
+            kpi_file = algorithm._dataset_artifact_path(
+                "kpis_train",
+                recommendation_date,
             )
+            if os.path.exists(kpi_file):
+                mlflow.log_artifact(
+                    kpi_file,
+                    artifact_path="artifacts_for_counterfactuals",
+                )
 
             pipeline_file = algorithm._artifact_path(
                 "profitability_recommendation_pipeline",
@@ -744,7 +750,6 @@ def run_regressor(
                 mlflow.log_artifact(pipeline_file, artifact_path="model")
     except Exception:
         pass
-
     return result
 
 
