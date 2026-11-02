@@ -11,14 +11,22 @@ from typing import Any, Dict, List, Optional
 import mlflow
 import numpy as np
 import pandas as pd
+import psutil
 
 try:
     from tabpfn import TabPFNRegressor
 except ImportError:
     TabPFNRegressor = None
 
-from certain_library.log_basic.log_param import log_param
-from certain_library.train_monitor.log_metrics import log_metrics
+from certain_library.tracking.tracker import tracker
+from certain_library.log_basic.log_params import log_params
+from certain_library.train_monitor.log_metrics import log_metrics, log_resources
+from certain_library.git_tracking import log_git_metadata
+from certain_library.metadata.artifact_metadata import (
+    collect_runtime_environment,
+    save_runtime_env_as_artifact,
+    save_dataset_manifest,
+)
 from certain_library.train_monitor.log_model import (
     log_model_info,
     log_model_hyperparameters,
@@ -130,12 +138,16 @@ def run_basic_dataset_analysis(
                 "Required analysis script not found: {}".format(script_path)
             )
 
-    with mlflow.start_run(run_name="dataset_analysis_subrun", nested=True) as run:
+    with tracker.start_run(
+        run_name="dataset_analysis_subrun",
+        nested=True,
+        tags={"run_stage": "dataset_analysis"},
+    ) as run:
         run_id = run.info.run_id
 
-        log_param("dataset_path", dataset_path)
-        log_param("output_directory", output_directory)
-        log_param("dataset_analysis_script", dataset_analysis_script)
+        log_params({"dataset_path": dataset_path})
+        log_params({"output_directory": output_directory})
+        log_params({"dataset_analysis_script": dataset_analysis_script})
 
         for start_date, end_date, num_splits, num_future, suffix in DATASET_ANALYSIS_PERIODS:
             print(
@@ -161,7 +173,7 @@ def run_basic_dataset_analysis(
                 "assets_{}.csv".format(suffix),
             ]
 
-            log_param("start_subprocess_dataset_analysis", True)
+            log_params({"start_subprocess_dataset_analysis": True})
             try:
                 subprocess.run(asset_command, check=True, env=child_env)
             except subprocess.CalledProcessError as exc:
@@ -171,14 +183,18 @@ def run_basic_dataset_analysis(
                     )
                 ) from exc
 
-            log_param("finish_subprocess_dataset_analysis", True)
+            log_params({"finish_subprocess_dataset_analysis": True})
 
-    with mlflow.start_run(run_name="customer_analysis_subrun", nested=True) as run:
+    with tracker.start_run(
+        run_name="customer_analysis_subrun",
+        nested=True,
+        tags={"run_stage": "customer_analysis"},
+    ) as run:
         run_id = run.info.run_id
 
-        log_param("dataset_path", dataset_path)
-        log_param("output_directory", output_directory)
-        log_param("customer_analysis_script", customer_analysis_script)
+        log_params({"dataset_path": dataset_path})
+        log_params({"output_directory": output_directory})
+        log_params({"customer_analysis_script": customer_analysis_script})
 
         for start_date, end_date, num_splits, num_future, suffix in DATASET_ANALYSIS_PERIODS:
             print(
@@ -205,7 +221,7 @@ def run_basic_dataset_analysis(
                 "customers_{}.csv".format(suffix),
             ]
 
-            log_param("start_subprocess_customer_analysis", True)
+            log_params({"start_subprocess_customer_analysis": True})
             try:
                 subprocess.run(customer_command, check=True, env=child_env)
             except subprocess.CalledProcessError as exc:
@@ -215,7 +231,7 @@ def run_basic_dataset_analysis(
                     )
                 ) from exc
 
-            log_param("finish_subprocess_customer_analysis", True)
+            log_params({"finish_subprocess_customer_analysis": True})
             print("End analysis for period: {} to {}".format(start_date, end_date))
 
 
@@ -264,10 +280,10 @@ def run_dataset_analysis_mode_if_requested() -> bool:
 
     analysis_args = parser.parse_args(sys.argv[2:])
 
-    log_param("dataset_path", analysis_args.dataset_path)
-    log_param("output_dir", analysis_args.output_dir)
-    log_param("dataset_analysis_script", analysis_args.dataset_analysis_script)
-    log_param("customer_analysis_script", analysis_args.customer_analysis_script)
+    log_params({"dataset_path": analysis_args.dataset_path})
+    log_params({"output_dir": analysis_args.output_dir})
+    log_params({"dataset_analysis_script": analysis_args.dataset_analysis_script})
+    log_params({"customer_analysis_script": analysis_args.customer_analysis_script})
 
     run_basic_dataset_analysis(
         dataset_path=analysis_args.dataset_path,
@@ -366,6 +382,24 @@ full_short_kpis = [
     "exp_mean_63d",
     "exp_mean_126d",
 ]
+
+
+def log_run_metadata(run_tags: Dict[str, str]) -> None:
+    """Write git, tag and runtime-environment metadata for the active parent run."""
+    try:
+        git_meta = log_git_metadata()
+        print("Logged git metadata: {}".format(git_meta))
+    except Exception as exc:
+        print("[WARN] Could not log git metadata: {}".format(exc))
+
+    tracker.set_tags(run_tags)
+
+    try:
+        env = collect_runtime_environment()
+        save_runtime_env_as_artifact(env)
+        print("Wrote runtime_env.json artifact")
+    except Exception as exc:
+        print("[WARN] Could not write runtime_env.json: {}".format(exc))
 
 
 def safe_log_dataset(df: pd.DataFrame, name: str, output_dir: str) -> None:
@@ -891,7 +925,11 @@ def _run_counterfactual_generation(
             "Counterfactual generator not found: {}".format(COUNTERFACTUALS_SCRIPT)
         )
 
-    with mlflow.start_run(run_name="counterfactual_generation_sudrun", nested=True) as run:
+    with tracker.start_run(
+        run_name="counterfactual_generation_sudrun",
+        nested=True,
+        tags={"run_stage": "counterfactual_generation"},
+    ) as run:
         if importlib.util.find_spec("dice_ml") is None:
             print("[WARN] dice_ml is not installed; skipping counterfactual generation.")
             return
@@ -958,22 +996,39 @@ def run_single_experiment(
         print("Skipped {}; metrics already exist.".format(alg_name))
         return None
 
-    with mlflow.start_run(run_name=alg_name, nested=True) as run:
+    with tracker.start_run(
+        run_name=alg_name,
+        nested=True,
+        tags={
+            "run_stage": "recommendation",
+            "recommendation_date": rec_date.strftime("%Y-%m-%d"),
+        },
+    ) as run:
         print("Run started: {}".format(run.info.run_id))
 
-        log_param("algorithm_name", alg_name)
-        log_param("model", args.model)
-        log_param("recommendation_date", str(rec_date))
-        log_param("future_date", str(future_date))
-        log_param("months", months_term)
+        # Dataset size/location metadata (certain/metadata/data.json)
+        try:
+            save_dataset_manifest(
+                run_id=run.info.run_id,
+                files_or_path=[args.interactions, args.time_series],
+                write_manifest=False,
+            )
+        except Exception as exc:
+            print("[WARN] Could not write dataset manifest: {}".format(exc))
+
+        log_params({"algorithm_name": alg_name})
+        log_params({"model": args.model})
+        log_params({"recommendation_date": str(rec_date)})
+        log_params({"future_date": str(future_date)})
+        log_params({"months": months_term})
         if args.model in (RFR, LGBM):
-            log_param("n_estimators", int(params[0]))
-            log_param("feature_set", params[1])
+            log_params({"n_estimators": int(params[0])})
+            log_params({"feature_set": params[1]})
         else:
-            log_param("feature_set", params[0])
+            log_params({"feature_set": params[0]})
             if len(params) >= 2:
-                log_param("sample_fraction", float(params[1]))
-        log_param("output_dir", output_dir)
+                log_params({"sample_fraction": float(params[1])})
+        log_params({"output_dir": output_dir})
 
         safe_log_dataset(interaction_data.data, "transactions", "datasets")
         safe_log_whylogs(interaction_data.data, "transactions_profile")
@@ -1028,10 +1083,10 @@ def run_single_experiment(
             except Exception as exc:
                 print("[WARN] Could not log timestamp analysis: {}".format(exc))
 
-        log_param("num_train_rows", splitted_data.train.shape[0])
-        log_param("num_test_rows", splitted_data.test.shape[0])
-        log_param("num_users", len(splitted_data.users))
-        log_param("num_assets", len(splitted_data.assets))
+        log_params({"num_train_rows": splitted_data.train.shape[0]})
+        log_params({"num_test_rows": splitted_data.test.shape[0]})
+        log_params({"num_users": len(splitted_data.users)})
+        log_params({"num_assets": len(splitted_data.assets)})
 
         metrics = build_metrics(splitted_data, rec_date, future_date)
 
@@ -1054,6 +1109,11 @@ def run_single_experiment(
         finally:
             stop_tracker(tracker_data, output_location)
             print("Resource monitoring stopped")
+
+        # System resources (certain/metadata/run_resources.json)
+        mem_info = psutil.Process(os.getpid()).memory_info()
+        log_resources({"memory_usage_mb": mem_info.rss / 1024 / 1024})
+        log_resources({"cpu_usage_percent": psutil.cpu_percent(interval=1)})
 
         _run_counterfactual_generation(args.model, params, rec_date)
 
@@ -1102,11 +1162,18 @@ def main() -> None:
     else:
         mlflow.set_tracking_uri(_env_uri)
 
-    mlflow.set_experiment(experiment_name)
+    tracker.set_experiment(
+        experiment_name=experiment_name,
+        tags={"team": "finance", "project": "far_trans_demo", "owner": "dimitrios"},
+    )
     print("Experiment: {}".format(experiment_name))
 
     if len(sys.argv) > 1 and sys.argv[1] == DATASET_ANALYSIS_MODE:
-        with mlflow.start_run(run_name="customer+dataset_analysis"):
+        with tracker.start_run(
+            run_name="customer+dataset_analysis",
+            tags={"project": "far_trans_demo", "run_type": "dataset_analysis"},
+        ):
+            log_run_metadata({"run_stage": "dataset_analysis", "run_type": "demo"})
             if run_dataset_analysis_mode_if_requested():
                 return
 
@@ -1143,7 +1210,12 @@ def main() -> None:
 
     dates, future_dates = get_dates_from_args(args, data)
 
-    with mlflow.start_run(run_name=model_name) as parent_run:
+    with tracker.start_run(
+        run_name=model_name,
+        tags={"project": "far_trans_demo", "model": args.model},
+    ) as parent_run:
+        log_run_metadata({"run_stage": "recommendation", "run_type": "demo"})
+
         if args.model in (RFR, LGBM):
             if len(args.params) < 2:
                 sys.stderr.write(
@@ -1176,18 +1248,18 @@ def main() -> None:
                     )
                     sys.exit(1)
 
-        log_param("model", args.model)
-        log_param("params", args.params)
+        log_params({"model": args.model})
+        log_params({"params": args.params})
         # CHANGED: parent run logging is model-aware.
         if args.model in (RFR, LGBM):
-            log_param("feature_set", args.params[1])
-            log_param("n_estimators", int(args.params[0]))
+            log_params({"feature_set": args.params[1]})
+            log_params({"n_estimators": int(args.params[0])})
         else:
-            log_param("feature_set", args.params[0])
+            log_params({"feature_set": args.params[0]})
             if len(args.params) >= 2:
-                log_param("sample_fraction", float(args.params[1]))
+                log_params({"sample_fraction": float(args.params[1])})
 
-        log_param("months", args.months)
+        log_params({"months": args.months})
 
         for i in range(len(dates)):
             run_single_experiment(

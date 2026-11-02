@@ -61,6 +61,7 @@ services:
       --default-artifact-root /app/mlruns
       --host 0.0.0.0
       --port 5001
+      --allowed-hosts certain_mlflow,certain_mlflow:5001,localhost,localhost:5001,127.0.0.1,127.0.0.1:5001
       "
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5001/')\" || exit 1"]

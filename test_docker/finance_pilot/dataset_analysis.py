@@ -23,7 +23,7 @@ from finance_pilot.data.financial_data_continuous import FinancialContinuousData
 from finance_pilot.data.financial_interaction_data import FinancialInteractionData
 
 
-from certain_library.log_basic.log_param import log_param
+from certain_library.log_basic.log_params import log_params
 
 from ..test_finance_pitol import safe_log_dataset
 
@@ -100,11 +100,11 @@ if __name__ == "__main__":
         else:
             exit(-1)
 
-        log_param('date_format', date_format)
-        log_param('min_date', min_date)
-        log_param('max_date', max_date)
-        log_param('num_splits', num_splits)
-        log_param('num_future', num_future)
+        log_params({'date_format': date_format})
+        log_params({'min_date': min_date})
+        log_params({'max_date': max_date})
+        log_params({'num_splits': num_splits})
+        log_params({'num_future': num_future})
 
         directory = args.output_dir
 
@@ -148,8 +148,8 @@ if __name__ == "__main__":
             for date in future_dates_args:
                 future_dates.append(pd.to_datetime(date))
 
-        log_param('num_splits', num_splits)
-        log_param('num_future', num_future)
+        log_params({'num_splits': num_splits})
+        log_params({'num_future': num_future})
 
         print("Selected dates:")
         for i in range(0, len(dates)):
@@ -157,7 +157,7 @@ if __name__ == "__main__":
 
         values = []
         for i in range(0, len(dates)):
-            log_param('start_date_{}'.format(i), dates[i])
+            log_params({'start_date_{}'.format(i): dates[i]})
             print("Starting " + str(dates[i]))
 
             rec_date = dates[i]
@@ -228,7 +228,7 @@ if __name__ == "__main__":
             values.append(date_values)
 
             print("Finished " + str(dates[i]))
-            log_param('finish_date_{}'.format(i), dates[i])
+            log_params({'finish_date_{}'.format(i): dates[i]})
         df = pd.DataFrame(values)
         df.set_index("timestamp")
         df.to_csv(os.path.join(directory, end_file))

@@ -22,7 +22,7 @@ from data.financial_asset_time_series import FinancialAssetTimeSeries
 from data.financial_data_continuous import FinancialContinuousData
 from data.financial_interaction_data import FinancialInteractionData
 
-from certain_library.log_basic.log_param import log_param
+from certain_library.log_basic.log_params import log_params
 from certain_library.train_monitor.log_metrics import log_metrics
 
 from ..test_finance_pitol import safe_log_dataset
@@ -103,13 +103,13 @@ if __name__ == "__main__":
         directory = args.output_dir
         end_file = args.summary_file
 
-        log_param('date_format', date_format)
-        log_param('min_date', min_date)
-        log_param('max_date', max_date)
-        log_param('num_splits', num_splits)
-        log_param('num_future', num_future)
-        log_param('output_dir', directory)
-        log_param('summary_file', end_file)
+        log_params({'date_format': date_format})
+        log_params({'min_date': min_date})
+        log_params({'max_date': max_date})
+        log_params({'num_splits': num_splits})
+        log_params({'num_future': num_future})
+        log_params({'output_dir': directory})
+        log_params({'summary_file': end_file})
 
         timea = dt.datetime.now()
 
@@ -359,7 +359,7 @@ if __name__ == "__main__":
             values.append(value)
             timeb = dt.datetime.now() - timea
             print("Finished " + str(dates[i]) + " (" + '{}'.format(timeb) + ")")
-            log_param('finish_date_{}'.format(i), dates[i])
+            log_params({'finish_date_{}'.format(i): dates[i]})
 
         df = pd.DataFrame(values, columns=columns)
         df.set_index("timestamp")

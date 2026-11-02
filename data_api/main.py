@@ -772,10 +772,9 @@ def sync_runtime_environment_from_artifacts(id_mapping: dict):
 
     # If there are runtime environment rows to insert, ensure the
     # model_deployed parent table has the corresponding parent rows. Some
-    # runs may have produced runtime_env artifacts before any deployment
+    # runs may have produced runtime_env artifacts without any deployment
     # artifacts; to allow inserting runtime_environment we create minimal
-    # model_deployed rows from id_mapping + runs information when the
-    # model_deployed table appears empty.
+    # model_deployed rows for every key that has no parent yet.
     if rows:
         try:
             from sqlalchemy import MetaData, Table, select
@@ -783,66 +782,36 @@ def sync_runtime_environment_from_artifacts(id_mapping: dict):
             metadata = MetaData()
             md_table = Table("model_deployed", metadata, autoload_with=target_engine)
             with target_engine.connect() as conn:
-                q = select(md_table).limit(1)
-                exist = conn.execute(q).fetchone()
+                existing_keys = {
+                    (str(r.experiment_id), str(r.deployment_id), str(r.model_id))
+                    for r in conn.execute(
+                        select(
+                            md_table.c.experiment_id,
+                            md_table.c.deployment_id,
+                            md_table.c.model_id,
+                        )
+                    )
+                }
         except Exception:
-            exist = True  # if reflection fails, avoid creating parents
+            existing_keys = None  # if reflection fails, avoid creating parents
 
-        # If model_deployed is empty (no parent rows) and we have id_mapping,
-        # synthesize minimal parent rows.
-        if not exist and id_mapping:
-            try:
-                runs_df = get_runs_data()
-            except Exception:
-                runs_df = None
-
-            run_to_experiment = {}
-            if isinstance(runs_df, pd.DataFrame) and not runs_df.empty:
-                for _, r in runs_df.iterrows():
-                    rid = r.get("run_uuid") or r.get("run_id")
-                    if rid:
-                        run_to_experiment[str(rid)] = r.get("experiment_id")
-
-            parent_rows = []
+        if existing_keys is not None:
             now_ts = int(pd.Timestamp.now(tz="UTC").timestamp())
-            for rid, mapping in id_mapping.items():
-                exp_id = run_to_experiment.get(rid)
-                if not exp_id:
-                    # attempt to derive experiment_id via artifacts folder
-                    try:
-                        from app import mlflow_connector as _mlfc
-                        from urllib.parse import urlparse as _up
-                        import os as _os
-
-                        parsed = _up(_mlfc.mlflow_artifacts_uri)
-                        artifacts_root = parsed.path if parsed.path else _mlfc.mlflow_artifacts_uri
-                        # scan experiments if necessary
-                        if _os.path.isdir(artifacts_root):
-                            for exp_candidate in _os.listdir(artifacts_root):
-                                run_folder = _os.path.join(artifacts_root, exp_candidate, str(rid))
-                                if _os.path.exists(run_folder):
-                                    exp_id = exp_candidate
-                                    break
-                    except Exception:
-                        exp_id = None
-
-                if not exp_id:
-                    # skip creating model_deployed without an experiment context
-                    continue
-
-                parent_rows.append(
-                    {
-                        "experiment_id": exp_id,
-                        "deployment_id": mapping.get("deployment_id"),
-                        "model_id": mapping.get("model_id"),
+            parent_rows = {}
+            for row in rows:
+                key = (row["experiment_id"], row["deployment_id"], row["model_id"])
+                if key not in existing_keys and key not in parent_rows:
+                    parent_rows[key] = {
+                        "experiment_id": row["experiment_id"],
+                        "deployment_id": row["deployment_id"],
+                        "model_id": row["model_id"],
                         "deployed_time": now_ts,
                         "model_version": 1,
-                        "run_id": rid,
+                        "run_id": row["run_id"],
                     }
-                )
 
             if parent_rows:
-                insert_dataframe(pd.DataFrame(parent_rows), "model_deployed")
+                insert_dataframe(pd.DataFrame(list(parent_rows.values())), "model_deployed")
 
         import pandas as _pd
 

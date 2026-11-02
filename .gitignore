@@ -147,6 +147,7 @@ code_carbon/
 
 # Docker data
 docker_data/
+test_docker/results/
 
 certain/
 dataset/
