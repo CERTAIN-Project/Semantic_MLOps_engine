@@ -217,13 +217,11 @@ from certain_library.data_analysis.log_counterfactuals import (
     log_counterfactual_from_data,
 )
 
-original_cf, counterfactual_cf, original_price, cf_price, metadata = (
-    generate_price_counterfactual(
-        original_row=test_combined.iloc[[0]],
-        price_model=price_model,
-        feature_columns=price_feature_columns,
-        target_price=60.0,
-    )
+original_cf, counterfactual_cf, original_price, cf_price, metadata = generate_price_counterfactual(
+    original_row=test_combined.iloc[[0]],
+    price_model=price_model,
+    feature_columns=price_feature_columns,
+    target_price=60.0,
 )
 
 log_counterfactual_from_data(

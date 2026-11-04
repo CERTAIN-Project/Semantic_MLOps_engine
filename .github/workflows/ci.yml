@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   lint:
-    name: Lint (ruff)
+    name: lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -36,7 +36,7 @@ jobs:
         run: ruff format --check .
 
   test:
-    name: Tests (pytest, Python 3.11)
+    name: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
