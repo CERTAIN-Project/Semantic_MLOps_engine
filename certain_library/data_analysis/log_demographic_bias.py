@@ -6,10 +6,10 @@ import html
 import json
 import math
 import re
-import tempfile
 from collections import Counter
+from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import Any, Iterable, Optional, Sequence, cast
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
@@ -29,7 +29,6 @@ except ImportError:  # pragma: no cover - optional dependency
     _SKLEARN_AVAILABLE = False
 
 from certain_library.tracking.tracker import tracker
-
 
 METADATA_FIELDS = [
     "FirstName",
@@ -105,6 +104,7 @@ def _ensure_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     if not isinstance(df, pd.DataFrame):
         raise TypeError("df must be a pandas DataFrame")
     return df.copy()
+
 
 # Define the age bucket helper function
 # You need to change the AgeBucket you should change the following function: _age_bucket
@@ -183,7 +183,7 @@ def _normalise_series(values: Iterable[Any]) -> np.ndarray:
     return ((array - minimum) / (maximum - minimum)) * 2.0 - 1.0
 
 
-def _safe_mean(series: pd.Series) -> Optional[float]:
+def _safe_mean(series: pd.Series) -> float | None:
     numeric = pd.to_numeric(series, errors="coerce").dropna()
     if numeric.empty:
         return None
@@ -250,7 +250,8 @@ def _filter_demographic_subset(
     if areas:
         if area_column not in filtered.columns:
             raise KeyError(
-                f"Column '{area_column}' is missing. Set append_random_areas=True or provide an existing area column."
+                f"Column '{area_column}' is missing. Set append_random_areas=True or "
+                "provide an existing area column."
             )
         normalized_areas = {_normalize_country(area) for area in areas if _normalize_country(area)}
         if normalized_areas:
@@ -281,9 +282,13 @@ def _flatten_dataset(
                 normalized_metadata[field] = internal_metadata.get(field)
 
         if normalized_metadata.get("Nationality") in (None, ""):
-            normalized_metadata["Nationality"] = metadata.get("Country") or metadata.get("Country/Nationality")
+            normalized_metadata["Nationality"] = metadata.get("Country") or metadata.get(
+                "Country/Nationality"
+            )
 
-        missing_fields = [field for field in PUBLIC_METADATA_FIELDS if metadata.get(field) in (None, "")]
+        missing_fields = [
+            field for field in PUBLIC_METADATA_FIELDS if metadata.get(field) in (None, "")
+        ]
         text_value = _safe_string(record.get("Text"))
         row = {
             "batch_id": batch_id,
@@ -331,7 +336,9 @@ def _load_internal_annotations(session_dir: Path, batch_id: int) -> dict[str, di
     }
 
 
-def _select_cluster_count(matrix: Any, record_count: int, max_clusters: int) -> tuple[int, float | None]:
+def _select_cluster_count(
+    matrix: Any, record_count: int, max_clusters: int
+) -> tuple[int, float | None]:
     if record_count < 4:
         return 1, None
 
@@ -378,11 +385,15 @@ def _top_terms_per_cluster(
         cluster_matrix = matrix[member_indices]
         weights = np.asarray(cluster_matrix.mean(axis=0)).ravel()
         ranked_indices = weights.argsort()[::-1][:top_n]
-        top_terms[cluster_id] = [str(feature_names[index]) for index in ranked_indices if weights[index] > 0]
+        top_terms[cluster_id] = [
+            str(feature_names[index]) for index in ranked_indices if weights[index] > 0
+        ]
     return top_terms
 
 
-def _cluster_dataset_without_sklearn(clustered: pd.DataFrame, max_clusters: int) -> tuple[pd.DataFrame, dict[str, Any]]:
+def _cluster_dataset_without_sklearn(
+    clustered: pd.DataFrame, max_clusters: int
+) -> tuple[pd.DataFrame, dict[str, Any]]:
     token_sets = [set(_tokenise(text)) for text in clustered["Text"].fillna("").tolist()]
     cluster_tokens: list[Counter[str]] = []
     assignments: list[int] = []
@@ -438,7 +449,11 @@ def _cluster_dataset(df: pd.DataFrame, max_clusters: int) -> tuple[pd.DataFrame,
 
     if matrix.shape[1] == 0 or len(texts) < 2:
         clustered["cluster_id"] = 0
-        return clustered, {"cluster_count": 1, "silhouette_score": None, "cluster_top_terms": {"0": []}}
+        return clustered, {
+            "cluster_count": 1,
+            "silhouette_score": None,
+            "cluster_top_terms": {"0": []},
+        }
 
     best_k, best_score = _select_cluster_count(matrix, len(clustered), max_clusters)
     if best_k == 1:
@@ -458,7 +473,9 @@ def _cluster_dataset(df: pd.DataFrame, max_clusters: int) -> tuple[pd.DataFrame,
     }
 
 
-def _build_cluster_summary(clustered_df: pd.DataFrame, clustering_meta: dict[str, Any]) -> dict[str, Any]:
+def _build_cluster_summary(
+    clustered_df: pd.DataFrame, clustering_meta: dict[str, Any]
+) -> dict[str, Any]:
     overall_nationality = _normalise_distribution(clustered_df["Nationality"])
     overall_background = _normalise_distribution(clustered_df["Background"])
     overall_age_bucket = _normalise_distribution(clustered_df["AgeBucket"])
@@ -519,21 +536,33 @@ def _representation_summary(df: pd.DataFrame) -> dict[str, Any]:
     }
 
 
-def _build_bias_snapshot(clustered_df: pd.DataFrame, cluster_summary: dict[str, Any]) -> dict[str, Any]:
+def _build_bias_snapshot(
+    clustered_df: pd.DataFrame, cluster_summary: dict[str, Any]
+) -> dict[str, Any]:
     total_records = len(clustered_df)
     total_metadata_slots = total_records * len(PUBLIC_METADATA_FIELDS)
-    field_null_rates = {field: float(clustered_df[field].isna().mean()) for field in PUBLIC_METADATA_FIELDS}
+    field_null_rates = {
+        field: float(clustered_df[field].isna().mean()) for field in PUBLIC_METADATA_FIELDS
+    }
     clusters = cluster_summary["clusters"]
-    weighted_nationality_tvd = sum(cluster["share_of_dataset"] * cluster["nationality_tvd_vs_dataset"] for cluster in clusters)
-    weighted_background_tvd = sum(cluster["share_of_dataset"] * cluster["background_tvd_vs_dataset"] for cluster in clusters)
-    weighted_age_bucket_tvd = sum(cluster["share_of_dataset"] * cluster["age_bucket_tvd_vs_dataset"] for cluster in clusters)
+    weighted_nationality_tvd = sum(
+        cluster["share_of_dataset"] * cluster["nationality_tvd_vs_dataset"] for cluster in clusters
+    )
+    weighted_background_tvd = sum(
+        cluster["share_of_dataset"] * cluster["background_tvd_vs_dataset"] for cluster in clusters
+    )
+    weighted_age_bucket_tvd = sum(
+        cluster["share_of_dataset"] * cluster["age_bucket_tvd_vs_dataset"] for cluster in clusters
+    )
     largest_cluster_share = max((cluster["share_of_dataset"] for cluster in clusters), default=1.0)
 
     return {
         "records": total_records,
         "cluster_count": cluster_summary["cluster_count"],
         "anonymous_rate": float(clustered_df["is_anonymous"].mean()),
-        "metadata_missing_rate": float(clustered_df["metadata_missing_count"].sum() / total_metadata_slots),
+        "metadata_missing_rate": float(
+            clustered_df["metadata_missing_count"].sum() / total_metadata_slots
+        ),
         "field_null_rates": field_null_rates,
         "representation": _representation_summary(clustered_df),
         "cluster_bias_signals": {
@@ -639,7 +668,8 @@ def _bias_diagnosis(
         ),
     ]
     rows.extend(
-        (name, value, "protected group distribution differs by cluster") for name, value in weighted_signals.items()
+        (name, value, "protected group distribution differs by cluster")
+        for name, value in weighted_signals.items()
     )
 
     score = max([missing_rate, cluster_concentration * 0.5, *weighted_signals.values()])
@@ -656,8 +686,16 @@ def _bias_diagnosis(
         missing_delta = abs(float(comparison.get("delta_metadata_missing_rate", 0.0) or 0.0))
         anonymous_delta = abs(float(comparison.get("delta_anonymous_rate", 0.0) or 0.0))
         rows = [
-            ("nationality shift", representation_rows["nationality shift"], "dirty vs clean nationality mix"),
-            ("background shift", representation_rows["background shift"], "dirty vs clean role mix"),
+            (
+                "nationality shift",
+                representation_rows["nationality shift"],
+                "dirty vs clean nationality mix",
+            ),
+            (
+                "background shift",
+                representation_rows["background shift"],
+                "dirty vs clean role mix",
+            ),
             ("age shift", representation_rows["age shift"], "dirty vs clean age mix"),
             ("metadata loss delta", missing_delta, "extra missing protected metadata"),
             ("anonymous delta", anonymous_delta, "extra anonymous records"),
@@ -723,7 +761,9 @@ def _slugify_name(value: Any) -> str:
     return slug or "demographic_bias"
 
 
-def _build_named_report_payload(dataset_name: str, topic_title: str, analysis: dict[str, Any]) -> dict[str, Any]:
+def _build_named_report_payload(
+    dataset_name: str, topic_title: str, analysis: dict[str, Any]
+) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "dataset_name": dataset_name,
         "topic_title": topic_title,
@@ -754,8 +794,14 @@ def _render_report_html(report_payload: dict[str, Any]) -> str:
         ("score", f"{float(diagnosis['score']):.3f}"),
         ("driver", f"{diagnosis['driver_name']} ({float(diagnosis['driver_value']):.3f})"),
         ("clean records", str(int(clean_bias["records"]))),
-        ("clean nationality tvd", f"{float(clean_bias['cluster_bias_signals']['weighted_nationality_tvd']):.3f}"),
-        ("clean age tvd", f"{float(clean_bias['cluster_bias_signals']['weighted_age_bucket_tvd']):.3f}"),
+        (
+            "clean nationality tvd",
+            f"{float(clean_bias['cluster_bias_signals']['weighted_nationality_tvd']):.3f}",
+        ),
+        (
+            "clean age tvd",
+            f"{float(clean_bias['cluster_bias_signals']['weighted_age_bucket_tvd']):.3f}",
+        ),
     ]
 
     if dirty_payload is not None:
@@ -794,27 +840,30 @@ def _render_report_html(report_payload: dict[str, Any]) -> str:
         )
 
     items = "".join(
-        f"<tr><th>{html.escape(label)}</th><td>{html.escape(value)}</td></tr>" for label, value in rows
+        f"<tr><th>{html.escape(label)}</th><td>{html.escape(value)}</td></tr>"
+        for label, value in rows
     )
 
+    dataset_title = html.escape(str(report_payload.get("dataset_name", "demographic_bias")))
     return f"""<!doctype html>
 <html lang=\"en\">
 <head>
   <meta charset=\"utf-8\" />
   <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
-  <title>{html.escape(str(report_payload.get('dataset_name', 'demographic_bias')))} demographic bias report</title>
+  <title>{dataset_title} demographic bias report</title>
   <style>
     body {{ font-family: Arial, sans-serif; margin: 24px; color: #0f172a; background: #f8fafc; }}
     table {{ border-collapse: collapse; min-width: 520px; background: #fff; }}
     th, td {{ border: 1px solid #cbd5e1; padding: 8px 12px; text-align: left; }}
     th {{ background: #e2e8f0; }}
-    .card {{ background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 16px; margin-bottom: 16px; }}
+    .card {{ background: #fff; border: 1px solid #cbd5e1; border-radius: 8px;
+      padding: 16px; margin-bottom: 16px; }}
   </style>
 </head>
 <body>
   <div class=\"card\">
-    <h1>{html.escape(str(report_payload.get('dataset_name', 'demographic_bias')))} demographic bias report</h1>
-    <p>{html.escape(str(report_payload.get('topic_title', '')))}</p>
+    <h1>{dataset_title} demographic bias report</h1>
+    <p>{html.escape(str(report_payload.get("topic_title", "")))}</p>
   </div>
   <table>
     <tbody>
@@ -876,7 +925,9 @@ def _write_named_analysis_artifacts(
     return artifacts
 
 
-def _log_named_analysis_results(logger: Any, report_payload: dict[str, Any], artifacts: dict[str, Path]) -> None:
+def _log_named_analysis_results(
+    logger: Any, report_payload: dict[str, Any], artifacts: dict[str, Path]
+) -> None:
     if logger is None:
         return
 
@@ -915,7 +966,7 @@ def _log_named_analysis_results(logger: Any, report_payload: dict[str, Any], art
 
 def analyze_demographic_bias(
     clean_df: pd.DataFrame,
-    dirty_df: Optional[pd.DataFrame] = None,
+    dirty_df: pd.DataFrame | None = None,
     max_clusters: int = 6,
     age_range: tuple[float | int, float | int] | None = None,
     countries: Sequence[str] | None = None,
@@ -971,7 +1022,9 @@ def analyze_demographic_bias(
         dirty_clustered, dirty_cluster_meta = _cluster_dataset(dirty_df, max_clusters=max_clusters)
         dirty_cluster_summary = _build_cluster_summary(dirty_clustered, dirty_cluster_meta)
         dirty_bias_snapshot = _build_bias_snapshot(dirty_clustered, dirty_cluster_summary)
-        comparison = _compare_clean_dirty(clean_clustered, dirty_clustered, clean_bias_snapshot, dirty_bias_snapshot)
+        comparison = _compare_clean_dirty(
+            clean_clustered, dirty_clustered, clean_bias_snapshot, dirty_bias_snapshot
+        )
 
     diagnosis = _bias_diagnosis(clean_bias_snapshot, comparison)
 
@@ -995,7 +1048,7 @@ def analyze_demographic_bias(
 
 def build_demographic_bias_artifacts(
     clean_df: pd.DataFrame,
-    dirty_df: Optional[pd.DataFrame] = None,
+    dirty_df: pd.DataFrame | None = None,
     output_dir: Path | None = None,
     max_clusters: int = 6,
     logger: Any = None,
@@ -1027,10 +1080,16 @@ def build_demographic_bias_artifacts(
         area_choices=area_choices,
         random_seed=random_seed,
     )
-    report_payload = _build_named_report_payload(dataset_name=dataset_name, topic_title=topic_title, analysis=analysis)
+    report_payload = _build_named_report_payload(
+        dataset_name=dataset_name, topic_title=topic_title, analysis=analysis
+    )
     resolved_output_dir = (output_dir or Path("demographic_bias_outputs")).resolve()
-    artifacts = _write_named_analysis_artifacts(dataset_name, resolved_output_dir, report_payload, analysis)
-    _log_named_analysis_results(_resolve_logger(logger) if logger is not None else None, report_payload, artifacts)
+    artifacts = _write_named_analysis_artifacts(
+        dataset_name, resolved_output_dir, report_payload, analysis
+    )
+    _log_named_analysis_results(
+        _resolve_logger(logger) if logger is not None else None, report_payload, artifacts
+    )
 
     return {
         "dataset_name": dataset_name,
@@ -1047,7 +1106,7 @@ def build_demographic_bias_artifacts(
 def log_demographic_bias_from_data(
     logger: Any,
     clean_df: pd.DataFrame,
-    dirty_df: Optional[pd.DataFrame] = None,
+    dirty_df: pd.DataFrame | None = None,
     output_dir: Path | None = None,
     max_clusters: int = 6,
     age_range: tuple[float | int, float | int] | None = None,
@@ -1080,7 +1139,9 @@ def log_demographic_bias_from_data(
     )
 
 
-def _build_report_payload(batch_id: int, topic_title: str, analysis: dict[str, Any]) -> dict[str, Any]:
+def _build_report_payload(
+    batch_id: int, topic_title: str, analysis: dict[str, Any]
+) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "batch_id": batch_id,
         "topic_title": topic_title,
@@ -1148,7 +1209,9 @@ def _write_analysis_artifacts(
     return artifacts
 
 
-def _log_analysis_results(logger: Any, batch_id: int, report_payload: dict[str, Any], artifacts: dict[str, Path]) -> None:
+def _log_analysis_results(
+    logger: Any, batch_id: int, report_payload: dict[str, Any], artifacts: dict[str, Path]
+) -> None:
     if logger is None:
         return
 
@@ -1206,7 +1269,8 @@ def build_batch_demographic_bias_artifacts(
     dirty_path = resolved_session_dir / f"simulation_output_dirty_{batch_id}.json"
     if not clean_path.exists() or not dirty_path.exists():
         raise FileNotFoundError(
-            f"Batch {batch_id} not found in {resolved_session_dir}. Expected paired clean/dirty JSON files."
+            f"Batch {batch_id} not found in {resolved_session_dir}. "
+            "Expected paired clean/dirty JSON files."
         )
 
     batch_output_dir = (
@@ -1219,8 +1283,18 @@ def build_batch_demographic_bias_artifacts(
     dirty_payload = _load_json(dirty_path)
     internal_annotations = _load_internal_annotations(resolved_session_dir, batch_id)
 
-    clean_df = _flatten_dataset(clean_payload, dataset_type="clean", batch_id=batch_id, internal_annotations=internal_annotations["clean"])
-    dirty_df = _flatten_dataset(dirty_payload, dataset_type="dirty", batch_id=batch_id, internal_annotations=internal_annotations["dirty"])
+    clean_df = _flatten_dataset(
+        clean_payload,
+        dataset_type="clean",
+        batch_id=batch_id,
+        internal_annotations=internal_annotations["clean"],
+    )
+    dirty_df = _flatten_dataset(
+        dirty_payload,
+        dataset_type="dirty",
+        batch_id=batch_id,
+        internal_annotations=internal_annotations["dirty"],
+    )
 
     analysis = analyze_demographic_bias(
         clean_df,
@@ -1239,8 +1313,12 @@ def build_batch_demographic_bias_artifacts(
         topic_title=clean_payload.get("TopicTitle") or dirty_payload.get("TopicTitle") or "",
         analysis=analysis,
     )
-    artifacts = _write_named_analysis_artifacts(f"batch_{batch_id}", batch_output_dir, report_payload, analysis)
-    _log_named_analysis_results(_resolve_logger(logger) if logger is not None else None, report_payload, artifacts)
+    artifacts = _write_named_analysis_artifacts(
+        f"batch_{batch_id}", batch_output_dir, report_payload, analysis
+    )
+    _log_named_analysis_results(
+        _resolve_logger(logger) if logger is not None else None, report_payload, artifacts
+    )
 
     comparison_report = {
         "batch_id": batch_id,

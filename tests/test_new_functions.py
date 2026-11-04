@@ -15,33 +15,32 @@ Covers:
 
 import os
 import shutil
-import uuid
-import time
-import tempfile
-
-import pandas as pd
-import pytest
-from unittest.mock import patch, MagicMock
-
-# ── certain_library imports ──────────────────────────────────────────────────
-from certain_library.train_monitor.log_checkpoints import log_checkpoint
-from certain_library.train_monitor.log_weights import log_weight_distribution
-from certain_library.train_monitor.log_examples import log_examples
-from certain_library.log_basic.log_run_logs import log_run_logs
 
 # ── data_api map-function imports ────────────────────────────────────────────
 import sys
+import time
+import uuid
+from unittest.mock import MagicMock, patch
+
+import pandas as pd
+import pytest
+from certain_library.log_basic.log_run_logs import log_run_logs
+
+# ── certain_library imports ──────────────────────────────────────────────────
+from certain_library.train_monitor.log_checkpoints import log_checkpoint
+from certain_library.train_monitor.log_examples import log_examples
+from certain_library.train_monitor.log_weights import log_weight_distribution
 
 sys.path.insert(
     0,
     os.path.join(os.path.dirname(__file__), "..", "data_api"),
 )
 from misc.data_transform import (  # noqa: E402
-    map_run_code,
     map_checkpoints,
-    map_weight_distribution,
     map_examples,
+    map_run_code,
     map_run_logs,
+    map_weight_distribution,
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -258,9 +257,7 @@ class TestLogRunLogs:
             log_run_logs(["Error occurred", "Training done"], log_type="stderr")
 
         df = pd.read_csv(persistent)
-        assert set(["log_id", "log_type", "log_message", "log_creation_time"]).issubset(
-            df.columns
-        )
+        assert set(["log_id", "log_type", "log_message", "log_creation_time"]).issubset(df.columns)
         assert len(df) == 2
         assert all(df["log_type"] == "stderr")
         assert list(df["log_message"]) == ["Error occurred", "Training done"]
@@ -292,13 +289,9 @@ class TestMapRunCode:
     def _make_tags_df(self, run_id, commit="abc123", source="train.py"):
         rows = []
         if commit:
-            rows.append(
-                {"run_uuid": run_id, "key": "mlflow.source.git.commit", "value": commit}
-            )
+            rows.append({"run_uuid": run_id, "key": "mlflow.source.git.commit", "value": commit})
         if source:
-            rows.append(
-                {"run_uuid": run_id, "key": "mlflow.source.name", "value": source}
-            )
+            rows.append({"run_uuid": run_id, "key": "mlflow.source.name", "value": source})
         return pd.DataFrame(rows)
 
     def test_returns_correct_fields(self):
@@ -381,8 +374,6 @@ class TestMapWeightDistribution:
         assert result["step"] == 10
 
     def test_nan_mean_becomes_zero_and_is_nan_true(self):
-        import math
-
         row = self._make_row(mean=float("nan"), std=float("nan"))
         result = map_weight_distribution(row, ID_MAPPING)
         assert result["mean"] == 0.0

@@ -6,17 +6,17 @@ Create Date: 2026-04-29
 
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects.postgresql import JSON
 
 # revision identifiers, used by Alembic.
 revision: str = "b9e1f2a3c4d5"
-down_revision: Union[str, None] = "3398c5bcabed"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "3398c5bcabed"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -35,9 +35,7 @@ def upgrade() -> None:
         sa.Column("truncation", sa.Boolean(), nullable=True),
         sa.Column("stride", sa.Integer(), nullable=True),
         sa.Column("special_tokens", JSON, nullable=True),
-        sa.Column(
-            "creation_time", sa.Numeric(), nullable=False, server_default="1672531200"
-        ),
+        sa.Column("creation_time", sa.Numeric(), nullable=False, server_default="1672531200"),
         sa.PrimaryKeyConstraint("tokenizer_id", "run_id"),
         sa.ForeignKeyConstraint(["run_id"], ["runs.run_id"]),
     )
@@ -58,9 +56,7 @@ def upgrade() -> None:
         sa.Column("truncation_rate", sa.Float(), nullable=True),
         sa.Column("padding_rate", sa.Float(), nullable=True),
         sa.Column("oov_rate", sa.Float(), nullable=True),
-        sa.Column(
-            "creation_time", sa.Numeric(), nullable=False, server_default="1672531200"
-        ),
+        sa.Column("creation_time", sa.Numeric(), nullable=False, server_default="1672531200"),
         sa.PrimaryKeyConstraint("stats_id", "run_id"),
         sa.ForeignKeyConstraint(["run_id"], ["runs.run_id"]),
     )

@@ -1,15 +1,15 @@
-import pytest
-import pandas as pd
 import json
 from unittest.mock import patch
 
+import pandas as pd
+import pytest
+from certain_library.train_monitor.log_metrics import log_metrics, log_search_space
 from certain_library.train_monitor.log_model import (
-    log_model_info,
     log_model_architecture,
     log_model_hyperparameters,
+    log_model_info,
     log_model_signature,
 )
-from certain_library.train_monitor.log_metrics import log_metrics, log_search_space
 
 
 class TestLogModelInfo:
@@ -22,9 +22,7 @@ class TestLogModelInfo:
 
             # Verify all dataset parameters were logged
             assert mock_log_param.call_count == len(opsd_dataset_params)
-            mock_log_param.assert_any_call(
-                "dataset_name", "Open Power System Data - Time Series"
-            )
+            mock_log_param.assert_any_call("dataset_name", "Open Power System Data - Time Series")
             mock_log_param.assert_any_call(
                 "data_url", "https://data.open-power-system-data.org/time_series/"
             )
@@ -44,17 +42,13 @@ class TestLogModelInfo:
 
     def test_log_model_info_empty_dict(self):
         """Test with empty dictionary."""
-        with pytest.raises(
-            ValueError, match="Input model_information dictionary cannot be empty"
-        ):
+        with pytest.raises(ValueError, match="Input model_information dictionary cannot be empty"):
             log_model_info({})
 
     def test_log_model_info_non_string_values(self):
         """Test with non-string values."""
         invalid_info = {"model_type": "XGBRegressor", "max_steps": 75}
-        with pytest.raises(
-            ValueError, match="Value for key 'max_steps' must be a string"
-        ):
+        with pytest.raises(ValueError, match="Value for key 'max_steps' must be a string"):
             log_model_info(invalid_info)
 
 
@@ -164,9 +158,7 @@ class TestLogMetrics:
         with patch("mlflow.log_metric") as mock_log_metric:
             log_metrics(trial_metrics)
             mock_log_metric.assert_any_call("trial_mse", trial["trial_mse"])
-            mock_log_metric.assert_any_call(
-                "trial_memory_usage_mb", trial["trial_memory_usage_mb"]
-            )
+            mock_log_metric.assert_any_call("trial_memory_usage_mb", trial["trial_memory_usage_mb"])
 
     def test_log_best_mse_metric(self, opsd_best_hyperparams):
         """Test logging best MSE metric with prefix."""
@@ -205,15 +197,12 @@ class TestLogSearchSpace:
 
     def test_log_search_space_missing_type(self):
         """Test with missing type key."""
-        from typing import Dict, Union, List
 
         # Add type annotation to satisfy the type checker
-        invalid_space: Dict[str, Dict[str, Union[str, float, int, bool, List]]] = {
+        invalid_space: dict[str, dict[str, str | float | int | bool | list]] = {
             "param1": {"low": 1, "high": 10}
         }
-        with pytest.raises(
-            ValueError, match="Parameter 'param1' is missing required 'type' key"
-        ):
+        with pytest.raises(ValueError, match="Parameter 'param1' is missing required 'type' key"):
             log_search_space(invalid_space)
 
 

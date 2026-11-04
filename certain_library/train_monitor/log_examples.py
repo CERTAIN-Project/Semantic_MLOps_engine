@@ -1,16 +1,17 @@
-from certain_library.tracking.tracker import tracker
 import os
 import tempfile
 import time
-from typing import List, Any
+from typing import Any
 
 import pandas as pd
 
+from certain_library.tracking.tracker import tracker
+
 
 def log_examples(
-    inputs: List[Any],
-    predictions: List[Any],
-    ground_truths: List[Any],
+    inputs: list[Any],
+    predictions: list[Any],
+    ground_truths: list[Any],
     step: int = 0,
     stage: str = "inference",
 ) -> None:
@@ -48,9 +49,7 @@ def log_examples(
     if not inputs:
         raise ValueError("inputs list must not be empty")
     if len(inputs) != len(predictions) or len(inputs) != len(ground_truths):
-        raise ValueError(
-            "inputs, predictions, and ground_truths must have the same length"
-        )
+        raise ValueError("inputs, predictions, and ground_truths must have the same length")
 
     now = int(time.time())
 

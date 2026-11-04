@@ -9,12 +9,12 @@
 #  http://mozilla.org/MPL/2.0/.
 
 import pandas as pd
-
 from finance_pilot.utils.constants import (
     DEFAULT_ITEM_COL,
     DEFAULT_RATING_COL,
     DEFAULT_TIMESTAMP_COL,
 )
+
 
 class FinancialAssetTimeSeries:
     """
@@ -34,7 +34,8 @@ class FinancialAssetTimeSeries:
 
     def load(self):
         """
-        Loads the data in the raw file into memory. It turns the contents of the file into a dataframe.
+        Loads the data in the raw file into memory. It turns the contents of the file into a
+        dataframe.
         :return: a dataframe containing the timeseries information: asset_id, date, close_price.
         """
         data = pd.read_csv(
@@ -49,9 +50,13 @@ class FinancialAssetTimeSeries:
         )
         self.data = data[[DEFAULT_ITEM_COL, DEFAULT_RATING_COL, DEFAULT_TIMESTAMP_COL]]
         self.data[DEFAULT_TIMESTAMP_COL] = pd.to_datetime(self.data[DEFAULT_TIMESTAMP_COL])
-        # As they represent cases where the data has not been properly collected, we remove those items with
-        # zero values.
-        assets = self.data[self.data[DEFAULT_RATING_COL] == 0.0][DEFAULT_ITEM_COL].unique().flatten()
+        # As they represent cases where the data has not been properly collected, we remove those
+        # items with zero values.
+        assets = (
+            self.data[self.data[DEFAULT_RATING_COL] == 0.0][DEFAULT_ITEM_COL].unique().flatten()
+        )
         self.data = self.data[~self.data[DEFAULT_ITEM_COL].isin(assets)]
         # Remove duplicates
-        self.data.drop_duplicates(subset=[DEFAULT_ITEM_COL, DEFAULT_TIMESTAMP_COL], keep='last', inplace=True)
+        self.data.drop_duplicates(
+            subset=[DEFAULT_ITEM_COL, DEFAULT_TIMESTAMP_COL], keep="last", inplace=True
+        )

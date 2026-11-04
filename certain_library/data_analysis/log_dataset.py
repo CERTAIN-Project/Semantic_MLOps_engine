@@ -1,10 +1,11 @@
-from certain_library.tracking.tracker import tracker
 import os
-from typing import Any, List, Optional, Union
+from typing import Any, Union
 
 import numpy as np
 import pandas as pd
 from mlflow.data.pandas_dataset import from_pandas
+
+from certain_library.tracking.tracker import tracker
 
 # ---------------------------------------------------------------------------
 # Optional framework imports — none are hard dependencies
@@ -36,7 +37,7 @@ except ImportError:
 SupportedData = Union[
     pd.DataFrame,
     np.ndarray,
-    List[Any],  # list of lists or list of dicts
+    list[Any],  # list of lists or list of dicts
     dict,
     "pl.DataFrame",  # polars (optional)
     "torch.Tensor",  # pytorch tensor (optional)
@@ -60,7 +61,7 @@ def _tensor_to_numpy(tensor: Any) -> np.ndarray:
     raise TypeError(f"Cannot convert {type(tensor).__name__} to numpy array.")
 
 
-def _batch_to_dataframe(batch: Any, columns: Optional[List[str]]) -> pd.DataFrame:
+def _batch_to_dataframe(batch: Any, columns: list[str] | None) -> pd.DataFrame:
     """
     Convert a single batch (tensor, tuple/list of tensors, or numpy array)
     to a DataFrame.  Tuples are treated as (features, labels) — the label
@@ -87,7 +88,7 @@ def _batch_to_dataframe(batch: Any, columns: Optional[List[str]]) -> pd.DataFram
 
 
 def _to_dataframe(
-    data: SupportedData, columns: Optional[List[str]] = None, n_rows: int = 0
+    data: SupportedData, columns: list[str] | None = None, n_rows: int = 0
 ) -> pd.DataFrame:
     """
     Convert any supported data type to a :class:`pandas.DataFrame`.
@@ -197,12 +198,8 @@ def _to_dataframe(
                         f"array width ({data.shape[1]})"
                     )
                 return pd.DataFrame(data, columns=columns)
-            return pd.DataFrame(
-                data, columns=[f"col_{i}" for i in range(data.shape[1])]
-            )
-        raise ValueError(
-            f"numpy arrays with ndim={data.ndim} are not supported (max 2-D)"
-        )
+            return pd.DataFrame(data, columns=[f"col_{i}" for i in range(data.shape[1])])
+        raise ValueError(f"numpy arrays with ndim={data.ndim} are not supported (max 2-D)")
 
     # --- list ---
     if isinstance(data, list):
@@ -236,8 +233,7 @@ def _to_dataframe(
         supported += ["tf.Tensor", "tf.data.Dataset"]
 
     raise TypeError(
-        f"Unsupported data type: {type(data).__name__}. "
-        f"Supported types: {', '.join(supported)}."
+        f"Unsupported data type: {type(data).__name__}. Supported types: {', '.join(supported)}."
     )
 
 
@@ -252,7 +248,7 @@ def log_dataset(
     output_dir: str = "dataset",
     non_nan: bool = False,
     save_full_dataset: bool = False,
-    columns: Optional[List[str]] = None,
+    columns: list[str] | None = None,
 ) -> None:
     """
     Log a dataset to MLflow.
@@ -350,7 +346,7 @@ def log_train_test_dataset(
     output_dir: str = "dataset",
     non_nan: bool = False,
     save_full_dataset: bool = False,
-    columns: Optional[List[str]] = None,
+    columns: list[str] | None = None,
 ) -> None:
     """
     Log training and testing datasets to MLflow.

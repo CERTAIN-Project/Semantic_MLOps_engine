@@ -1,13 +1,11 @@
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
-
 from alembic import context
 
 # add your model's MetaData object here
 # for 'autogenerate' support
 from app.models import Base
+from sqlalchemy import engine_from_config, pool
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -41,9 +39,7 @@ def run_migrations_offline() -> None:
     """
     import os
 
-    url = os.environ.get("ALEMBIC_DATABASE_URL") or config.get_main_option(
-        "sqlalchemy.url"
-    )
+    url = os.environ.get("ALEMBIC_DATABASE_URL") or config.get_main_option("sqlalchemy.url")
     context.configure(
         url=url,
         target_metadata=target_metadata,

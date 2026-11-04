@@ -9,11 +9,7 @@
 #  http://mozilla.org/MPL/2.0/.
 
 from finance_pilot.data.base_data import BaseData
-from finance_pilot.utils.constants import (
-    DEFAULT_ITEM_COL,
-    DEFAULT_RATING_COL,
-    DEFAULT_USER_COL
-)
+from finance_pilot.utils.constants import DEFAULT_ITEM_COL, DEFAULT_RATING_COL, DEFAULT_USER_COL
 
 
 class SplittedData:
@@ -21,8 +17,19 @@ class SplittedData:
     Class for representing the splitted data.
     """
 
-    def __init__(self, time_series, train, test, customers, assets, min_date, rec_date, max_date, valid=None,
-                 valid_date=None):
+    def __init__(
+        self,
+        time_series,
+        train,
+        test,
+        customers,
+        assets,
+        min_date,
+        rec_date,
+        max_date,
+        valid=None,
+        valid_date=None,
+    ):
         """
         Representation of the splitted data:
         :param time_series: a DataFrame containing the time series for the split.
@@ -46,7 +53,9 @@ class SplittedData:
         posit = self.test[self.test[DEFAULT_ITEM_COL].isin(self.assets)]
         posit = posit[posit[DEFAULT_RATING_COL] > 0.0]
         for user in self.test[DEFAULT_USER_COL].unique().flatten():
-            self.positive_assets[user] = set(posit[posit[DEFAULT_USER_COL] == user][DEFAULT_ITEM_COL].unique().flatten())
+            self.positive_assets[user] = set(
+                posit[posit[DEFAULT_USER_COL] == user][DEFAULT_ITEM_COL].unique().flatten()
+            )
 
         self.min_date = min_date
         self.max_date = max_date

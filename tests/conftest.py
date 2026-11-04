@@ -1,11 +1,11 @@
-import pytest
-import pandas as pd
-import numpy as np
-import tempfile
 import os
-import json
-from unittest.mock import Mock, patch
+import tempfile
+from unittest.mock import Mock
+
 import mlflow
+import numpy as np
+import pandas as pd
+import pytest
 from codecarbon import EmissionsTracker
 
 from tests.test_opsd_variables import OPSDTestVariables
@@ -39,14 +39,6 @@ def opsd_cleaned_data_pipeline():
 
     # Create the pipeline stages with the expected keys
     stages = OPSDTestVariables.create_cleaned_data_pipeline_stages(sample_data)
-
-    # Ensure all expected keys exist
-    expected_keys = [
-        "dropped_missing_target",
-        "df_cleaned",
-        "df_filtered",
-        "df_augmented",
-    ]
 
     # Add missing keys if they don't exist
     if "dropped_missing" not in stages and "dropped_missing_target" in stages:

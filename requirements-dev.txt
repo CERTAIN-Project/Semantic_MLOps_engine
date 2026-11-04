@@ -1,0 +1,9 @@
+# Development and CI dependencies (tests, linting).
+# Runtime dependencies are in requirements.txt.
+pytest>=7.0.0
+pytest-cov
+black>=22.0.0
+flake8>=5.0.0
+mypy>=1.0.0
+ruff==0.17.3
+pre-commit

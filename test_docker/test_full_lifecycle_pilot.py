@@ -35,15 +35,55 @@ Set USE_DUMMY_DATA = True (default) for fully offline execution.
 Set USE_DUMMY_DATA = False to download the real OPSD dataset.
 """
 
-from certain_library.tracking.tracker import tracker
-
 import os
 import time
-import psutil
-import mlflow
-import pandas as pd
-import numpy as np
 
+import numpy as np
+import pandas as pd
+import psutil
+
+# ---------------------------------------------------------------------------
+# certain_library imports
+# ---------------------------------------------------------------------------
+from certain_library.compliance.log_deployment import (
+    log_build_testing,
+    log_decommissioning,
+    log_interface,
+    log_model_packaging,
+    log_standards,
+)
+from certain_library.compliance.log_documentation import (
+    log_declarations_of_conformity,
+    log_explainable_ai,
+    log_visual_documentations,
+)
+from certain_library.compliance.log_experiment_governance import (
+    log_ai_actors,
+    log_labeling_procedures,
+)
+from certain_library.compliance.log_governance import (
+    log_change,
+    log_human_oversight,
+    log_risk,
+    log_transparency_measure,
+)
+from certain_library.data_analysis.log_dataset import (
+    log_dataset,
+    log_train_test_dataset,
+)
+from certain_library.data_analysis.log_timeseries import timestamp_analysis
+from certain_library.data_analysis.log_whylogs import log_whylogs_profile
+from certain_library.resource_monitor.resource import start_tracker, stop_tracker
+from certain_library.tracking.tracker import tracker
+from certain_library.train_monitor.log_metrics import log_metrics, log_search_space
+from certain_library.train_monitor.log_model import (
+    log_model_architecture,
+    log_model_info,
+    log_model_signature,
+)
+from Semantic_MLOps_engine.certain_library.log_basic.log_params import (
+    log_params,
+)
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 
@@ -56,49 +96,6 @@ EXPERIMENT_NAME = "energy_load_forecasting_lifecycle"
 OPSD_URL = (
     "https://data.open-power-system-data.org/time_series/"
     "2020-10-06/time_series_60min_singleindex.csv"
-)
-
-# ---------------------------------------------------------------------------
-# certain_library imports
-# ---------------------------------------------------------------------------
-from certain_library.train_monitor.log_metrics import log_metrics, log_search_space
-from certain_library.train_monitor.log_model import (
-    log_model_info,
-    log_model_architecture,
-    log_model_signature,
-)
-from certain_library.data_analysis.log_whylogs import log_whylogs_profile
-from Semantic_MLOps_engine.certain_library.log_basic.log_params import (
-    log_param,
-    log_params,
-)
-from certain_library.data_analysis.log_dataset import (
-    log_dataset,
-    log_train_test_dataset,
-)
-from certain_library.data_analysis.log_timeseries import timestamp_analysis
-from certain_library.resource_monitor.resource import start_tracker, stop_tracker
-from certain_library.compliance.log_governance import (
-    log_risk,
-    log_human_oversight,
-    log_transparency_measure,
-    log_change,
-)
-from certain_library.compliance.log_experiment_governance import (
-    log_ai_actors,
-    log_labeling_procedures,
-)
-from certain_library.compliance.log_documentation import (
-    log_declarations_of_conformity,
-    log_visual_documentations,
-    log_explainable_ai,
-)
-from certain_library.compliance.log_deployment import (
-    log_model_packaging,
-    log_build_testing,
-    log_standards,
-    log_interface,
-    log_decommissioning,
 )
 
 
@@ -162,9 +159,7 @@ def augment_with_noise(
     noise_factor: float = 0.01,
 ) -> pd.DataFrame:
     df_aug = df.copy()
-    df_aug[f"{column}_aug"] = df_aug[column] + noise_factor * np.random.normal(
-        size=len(df_aug)
-    )
+    df_aug[f"{column}_aug"] = df_aug[column] + noise_factor * np.random.normal(size=len(df_aug))
     return df_aug
 
 
@@ -179,8 +174,8 @@ def phase_training(mlflow_run) -> tuple:
     -------
     (final_model, X_train, y_train, best_params, run_id)
     """
-    import xgboost as xgb
     import optuna
+    import xgboost as xgb
 
     run_id = mlflow_run.info.run_id
     print(f"  Run ID : {run_id}")
@@ -271,7 +266,9 @@ def phase_training(mlflow_run) -> tuple:
             },
             {
                 "oversight_type": "periodic-audit",
-                "description": "Quarterly audit of model performance metrics and dataset freshness.",
+                "description": (
+                    "Quarterly audit of model performance metrics and dataset freshness."
+                ),
                 "implementation_details": (
                     "Automated report generated from MLflow tracking server and "
                     "reviewed by the AI governance team."
@@ -319,7 +316,7 @@ def phase_training(mlflow_run) -> tuple:
         df = _make_dummy_energy_df(n_rows=2000)
         log_params({"data_url": "synthetic_dummy_data"})
     else:
-        print(f"  🌐 Downloading OPSD dataset...")
+        print("  🌐 Downloading OPSD dataset...")
         df = pd.read_csv(OPSD_URL, parse_dates=["utc_timestamp"])
         log_params({"data_url": OPSD_URL})
 
@@ -348,9 +345,7 @@ def phase_training(mlflow_run) -> tuple:
     y = df_sorted[target]
     X = df_sorted.select_dtypes(include=[np.number]).drop(columns=[target])
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, shuffle=False
-    )
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
     train_combined = pd.concat(
         [X_train.reset_index(drop=True), y_train.reset_index(drop=True)], axis=1
     )
@@ -361,16 +356,12 @@ def phase_training(mlflow_run) -> tuple:
 
     timestamp_analysis(
         train_timestamps=df_sorted["utc_timestamp"].iloc[: len(X_train)],
-        test_timestamps=df_sorted["utc_timestamp"].iloc[
-            len(X_train) : len(X_train) + len(X_test)
-        ],
+        test_timestamps=df_sorted["utc_timestamp"].iloc[len(X_train) : len(X_train) + len(X_test)],
         output_dir="timestamps",
     )
 
     # ---- Hyperparameter search ----
-    tracker_data, output_location = start_tracker(
-        output_file_name="emissions_hyperparams"
-    )
+    tracker_data, output_location = start_tracker(output_file_name="emissions_hyperparams")
 
     search_space = {
         "n_estimators": {"type": "int", "low": 10, "high": 50},
@@ -487,8 +478,7 @@ def phase_training(mlflow_run) -> tuple:
                 "file_type": "pdf",
                 "mime_type": "application/pdf",
                 "description": (
-                    "Declaration of conformity for the energy load forecasting "
-                    "XGBoost model."
+                    "Declaration of conformity for the energy load forecasting XGBoost model."
                 ),
             }
         ],
@@ -525,8 +515,7 @@ def phase_training(mlflow_run) -> tuple:
             feature_names=[f for f, _ in top],
             feature_values=[f"{v:.4f}" for _, v in top],
             implementation_details=(
-                "XGBoost built-in feature importance (gain). "
-                "Top-10 features by gain score."
+                "XGBoost built-in feature importance (gain). Top-10 features by gain score."
             ),
         )
 
@@ -547,7 +536,6 @@ def phase_deployment(run_id: str, xgb_version: str) -> str:
 
     # Reopen the existing run — no new run is created
     with tracker.start_run(run_id=run_id):
-
         log_model_packaging(
             deployment_id=deployment_id,
             model_id=model_id,
@@ -603,8 +591,7 @@ def phase_deployment(run_id: str, xgb_version: str) -> str:
                 {
                     "name": "ETSI EN 303 645",
                     "description": (
-                        "Cyber security standard referenced for "
-                        "data pipeline security."
+                        "Cyber security standard referenced for data pipeline security."
                     ),
                     "version": "v2.1.1",
                 },
@@ -637,7 +624,6 @@ def phase_decommissioning(run_id: str, deployment_id: str) -> None:
     model_id = "energy-load-xgb-v1"
 
     with tracker.start_run(run_id=run_id):
-
         log_decommissioning(
             deployment_id=deployment_id,
             model_id=model_id,
@@ -690,9 +676,7 @@ def main() -> None:
     print(_sep)
 
     with tracker.start_run(run_name="energy_xgb_v1_training") as run:
-        final_model, X_train, y_train, best_params, xgb_version, run_id = (
-            phase_training(run)
-        )
+        final_model, X_train, y_train, best_params, xgb_version, run_id = phase_training(run)
 
     print(f"  ✅ Training complete  |  run_id: {run_id}")
     print()
@@ -724,7 +708,7 @@ def main() -> None:
     print(_sep)
 
     phase_decommissioning(run_id=run_id, deployment_id=deployment_id)
-    print(f"  ✅ Decommissioning compliance logged")
+    print("  ✅ Decommissioning compliance logged")
     print()
 
     # -------------------------------------------------------------------
@@ -743,9 +727,7 @@ def main() -> None:
     print("  Phase 1 — Training")
     print("    • ai_actors, labeling_procedures")
     print("    • risks, human_oversight_mechanisms, transparency_measures, change_logs")
-    print(
-        "    • declaration_of_conformity, visual_documentation, explainable_ai_features"
-    )
+    print("    • declaration_of_conformity, visual_documentation, explainable_ai_features")
     print("    • model_architecture, model_params, metrics, datasets, resources")
     print()
     print("  Phase 2 — Deployment")

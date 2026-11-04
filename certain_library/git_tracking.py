@@ -1,13 +1,12 @@
+import json
 import os
 import subprocess
-from typing import Optional, Dict
-
-import mlflow
-import json
 from datetime import datetime
 
+import mlflow
 
-def _run_git_command(args, repo_path: str = "/app") -> Optional[str]:
+
+def _run_git_command(args, repo_path: str = "/app") -> str | None:
     try:
         result = subprocess.run(
             ["git"] + args,
@@ -59,7 +58,7 @@ def save_git_metadata(
     return metadata_file
 
 
-def log_git_metadata(repo_path: str = "/app") -> Dict[str, Optional[str]]:
+def log_git_metadata(repo_path: str = "/app") -> dict[str, str | None]:
     """Log Git metadata into the active MLflow run as tags."""
     """Save git metadata as an artifact file named 'git_metadata.json'.
 
@@ -119,9 +118,7 @@ def log_git_metadata(repo_path: str = "/app") -> Dict[str, Optional[str]]:
             exp_id = active.info.experiment_id
             run_id = active.info.run_id
             try:
-                save_git_metadata(
-                    exp_id, run_id, repo_path=repo_path, artifacts_root=ar
-                )
+                save_git_metadata(exp_id, run_id, repo_path=repo_path, artifacts_root=ar)
             except Exception:
                 # best-effort; ignore filesystem write failures
                 pass
@@ -131,26 +128,20 @@ def log_git_metadata(repo_path: str = "/app") -> Dict[str, Optional[str]]:
     return metadata
 
 
-def get_git_metadata(repo_path: str = "/app") -> Dict[str, Optional[str]]:
+def get_git_metadata(repo_path: str = "/app") -> dict[str, str | None]:
     """Collect Git metadata by running git commands in repo_path.
 
     This is the fallback used when artifact-stored metadata is not available.
     """
     meta = {
         "git.commit": _run_git_command(["rev-parse", "HEAD"], repo_path),
-        "git.commit.short": _run_git_command(
-            ["rev-parse", "--short", "HEAD"], repo_path
-        ),
-        "git.branch": _run_git_command(
-            ["rev-parse", "--abbrev-ref", "HEAD"], repo_path
-        ),
+        "git.commit.short": _run_git_command(["rev-parse", "--short", "HEAD"], repo_path),
+        "git.branch": _run_git_command(["rev-parse", "--abbrev-ref", "HEAD"], repo_path),
         "git.message": _run_git_command(["log", "-1", "--pretty=%B"], repo_path),
         "git.author": _run_git_command(["log", "-1", "--pretty=%an"], repo_path),
         "git.author.email": _run_git_command(["log", "-1", "--pretty=%ae"], repo_path),
         "git.commit.date": _run_git_command(["log", "-1", "--pretty=%cI"], repo_path),
-        "git.remote": _run_git_command(
-            ["config", "--get", "remote.origin.url"], repo_path
-        ),
+        "git.remote": _run_git_command(["config", "--get", "remote.origin.url"], repo_path),
         "git.is_dirty": bool(_run_git_command(["status", "--porcelain"], repo_path)),
     }
     return meta

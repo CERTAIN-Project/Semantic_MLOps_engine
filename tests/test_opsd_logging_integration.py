@@ -1,12 +1,10 @@
-import pytest
-import pandas as pd
-import numpy as np
-import os
 import json
-import time
-from unittest.mock import patch, Mock, mock_open
+import os
+from unittest.mock import Mock, mock_open, patch
 
 import certain_library as cl
+import pandas as pd
+
 from tests.test_opsd_variables import OPSDTestVariables
 
 
@@ -20,9 +18,7 @@ class TestOPSDLoggingIntegration:
 
             # Verify all dataset parameters were logged
             assert mock_log_param.call_count == len(OPSDTestVariables.DATASET_PARAMS)
-            mock_log_param.assert_any_call(
-                "dataset_name", "Open Power System Data - Time Series"
-            )
+            mock_log_param.assert_any_call("dataset_name", "Open Power System Data - Time Series")
             mock_log_param.assert_any_call(
                 "data_url", "https://data.open-power-system-data.org/time_series/"
             )
@@ -39,24 +35,20 @@ class TestOPSDLoggingIntegration:
 
     def test_log_best_hyperparameters(self):
         """Test logging best hyperparameters from Optuna optimization."""
-        with patch("mlflow.log_param") as mock_log_param, patch(
-            "mlflow.log_metric"
-        ) as mock_log_metric:
-
+        with (
+            patch("mlflow.log_param") as mock_log_param,
+            patch("mlflow.log_metric") as mock_log_metric,
+        ):
             # Log best hyperparameters as parameters
             best_params = {
                 "n_estimators": OPSDTestVariables.BEST_HYPERPARAMS["best_n_estimators"],
                 "max_depth": OPSDTestVariables.BEST_HYPERPARAMS["best_max_depth"],
-                "learning_rate": OPSDTestVariables.BEST_HYPERPARAMS[
-                    "best_learning_rate"
-                ],
+                "learning_rate": OPSDTestVariables.BEST_HYPERPARAMS["best_learning_rate"],
             }
             cl.log_model_hyperparameters(best_params, keep_best=True)
 
             # Log best MSE as metric
-            cl.log_metrics(
-                {"mse": OPSDTestVariables.BEST_HYPERPARAMS["best_mse"]}, keep_best=True
-            )
+            cl.log_metrics({"mse": OPSDTestVariables.BEST_HYPERPARAMS["best_mse"]}, keep_best=True)
 
             # Verify best hyperparameters logged with prefix
             mock_log_param.assert_any_call("best_n_estimators", 75)
@@ -66,10 +58,11 @@ class TestOPSDLoggingIntegration:
 
     def test_log_trial_metrics_nested_runs(self):
         """Test logging trial metrics in nested runs like Optuna trials."""
-        with patch("mlflow.start_run") as mock_start_run, patch(
-            "mlflow.log_param"
-        ) as mock_log_param, patch("mlflow.log_metric") as mock_log_metric:
-
+        with (
+            patch("mlflow.start_run") as mock_start_run,
+            patch("mlflow.log_param") as mock_log_param,
+            patch("mlflow.log_metric") as mock_log_metric,
+        ):
             # Mock nested run context
             mock_nested_run = Mock()
             mock_nested_run.__enter__ = Mock()
@@ -78,9 +71,7 @@ class TestOPSDLoggingIntegration:
 
             # Log each trial
             for trial_data in OPSDTestVariables.SAMPLE_TRIAL_METRICS:
-                with mock_start_run(
-                    nested=True, run_name=f"Trial_{trial_data['trial_number']}"
-                ):
+                with mock_start_run(nested=True, run_name=f"Trial_{trial_data['trial_number']}"):
                     # Log trial hyperparameters
                     trial_params = {
                         "n_estimators": trial_data["n_estimators"],
@@ -93,9 +84,7 @@ class TestOPSDLoggingIntegration:
                     trial_metrics = {
                         "trial_mse": trial_data["trial_mse"],
                         "trial_memory_usage_mb": trial_data["trial_memory_usage_mb"],
-                        "trial_cpu_usage_percent": trial_data[
-                            "trial_cpu_usage_percent"
-                        ],
+                        "trial_cpu_usage_percent": trial_data["trial_cpu_usage_percent"],
                         "trial_number": float(trial_data["trial_number"]),
                     }
                     cl.log_metrics(trial_metrics)
@@ -112,28 +101,21 @@ class TestOPSDLoggingIntegration:
     def test_log_stepwise_training_metrics(self):
         """Test logging stepwise training metrics like incremental XGBoost."""
         with patch("mlflow.log_metric") as mock_log_metric:
-
             # Log stepwise metrics with step parameter
             for step_data in OPSDTestVariables.STEPWISE_METRICS:
                 # Simulate mlflow.log_metric with step parameter
                 mock_log_metric("mse", step_data["mse"], step=step_data["step"])
-                mock_log_metric(
-                    "r2_score", step_data["r2_score"], step=step_data["step"]
-                )
+                mock_log_metric("r2_score", step_data["r2_score"], step=step_data["step"])
 
             # Verify stepwise metrics were logged
-            expected_calls = (
-                len(OPSDTestVariables.STEPWISE_METRICS) * 2
-            )  # mse + r2_score
+            expected_calls = len(OPSDTestVariables.STEPWISE_METRICS) * 2  # mse + r2_score
             assert mock_log_metric.call_count == expected_calls
 
     def test_log_model_parameters(self):
         """Test logging final model parameters."""
         with patch("mlflow.log_param") as mock_log_param:
             # Convert numeric values to strings for log_model_info
-            model_params_str = {
-                k: str(v) for k, v in OPSDTestVariables.MODEL_PARAMS.items()
-            }
+            model_params_str = {k: str(v) for k, v in OPSDTestVariables.MODEL_PARAMS.items()}
             cl.log_model_info(model_params_str)
 
             # Verify model parameters logged
@@ -145,14 +127,12 @@ class TestOPSDLoggingIntegration:
         """Test logging datasets with OPSD structure."""
         # Create sample OPSD data
         sample_data = OPSDTestVariables.create_sample_opsd_dataframe(100)
-        X_train, X_test, y_train, y_test, _, _ = OPSDTestVariables.get_train_test_split(
-            sample_data
-        )
+        X_train, X_test, y_train, y_test, _, _ = OPSDTestVariables.get_train_test_split(sample_data)
 
-        with patch("mlflow.log_input") as mock_log_input, patch(
-            "mlflow.log_artifact"
-        ) as mock_log_artifact:
-
+        with (
+            patch("mlflow.log_input") as mock_log_input,
+            patch("mlflow.log_artifact") as mock_log_artifact,
+        ):
             cl.log_dataset(X_train, X_test, temp_directory)
 
             # Verify MLflow inputs logged with correct context
@@ -172,18 +152,17 @@ class TestOPSDLoggingIntegration:
         """Test logging timestamp analysis like in OPSD."""
         # Create sample data and split
         sample_data = OPSDTestVariables.create_sample_opsd_dataframe(100)
-        _, _, _, _, train_timestamps, test_timestamps = (
-            OPSDTestVariables.get_train_test_split(sample_data)
+        _, _, _, _, train_timestamps, test_timestamps = OPSDTestVariables.get_train_test_split(
+            sample_data
         )
 
-        with patch("mlflow.log_param") as mock_log_param, patch(
-            "mlflow.log_artifact"
-        ) as mock_log_artifact, patch("builtins.open", mock_open()) as mock_file, patch(
-            "os.makedirs"
-        ), patch(
-            "os.remove"
+        with (
+            patch("mlflow.log_param") as mock_log_param,
+            patch("mlflow.log_artifact") as mock_log_artifact,
+            patch("builtins.open", mock_open()),
+            patch("os.makedirs"),
+            patch("os.remove"),
         ):
-
             cl.timestamp_analysis(train_timestamps, test_timestamps, temp_directory)
 
             # Verify timestamp parameters logged
@@ -210,10 +189,10 @@ class TestOPSDLoggingIntegration:
         sample_data = OPSDTestVariables.create_sample_opsd_dataframe(100)
         stages = OPSDTestVariables.create_cleaned_data_pipeline_stages(sample_data)
 
-        with patch("whylogs.log") as mock_whylogs, patch(
-            "mlflow.log_artifact"
-        ) as mock_log_artifact:
-
+        with (
+            patch("whylogs.log") as mock_whylogs,
+            patch("mlflow.log_artifact") as mock_log_artifact,
+        ):
             # Setup WhyLogs mock
             mock_results = Mock()
             mock_results.profile.view().to_pandas.return_value = pd.DataFrame(
@@ -239,9 +218,7 @@ class TestOPSDLoggingIntegration:
 
             # Verify all profiles logged
             assert mock_whylogs.call_count == len(OPSDTestVariables.WHYLOGS_PROFILES)
-            assert mock_log_artifact.call_count == len(
-                OPSDTestVariables.WHYLOGS_PROFILES
-            )
+            assert mock_log_artifact.call_count == len(OPSDTestVariables.WHYLOGS_PROFILES)
 
             # Verify correct artifact path
             for call in mock_log_artifact.call_args_list:
@@ -250,10 +227,11 @@ class TestOPSDLoggingIntegration:
 
     def test_log_emissions_tracking_all_phases(self, temp_directory):
         """Test emissions tracking for all phases like in OPSD."""
-        with patch("codecarbon.EmissionsTracker") as mock_tracker_class, patch(
-            "mlflow.log_artifact"
-        ) as mock_log_artifact, patch("os.path.exists", return_value=True):
-
+        with (
+            patch("codecarbon.EmissionsTracker") as mock_tracker_class,
+            patch("mlflow.log_artifact") as mock_log_artifact,
+            patch("os.path.exists", return_value=True),
+        ):
             mock_tracker = Mock()
             mock_tracker_class.return_value = mock_tracker
 
@@ -288,9 +266,7 @@ class TestOPSDLoggingIntegration:
                 cl.stop_tracker(tracker, output_location)
 
             # Verify all emissions files logged
-            assert mock_log_artifact.call_count == len(
-                OPSDTestVariables.EMISSIONS_FILES
-            )
+            assert mock_log_artifact.call_count == len(OPSDTestVariables.EMISSIONS_FILES)
 
             # Verify correct artifact path
             for call in mock_log_artifact.call_args_list:
@@ -310,24 +286,22 @@ class TestOPSDLoggingIntegration:
 
     def test_complete_opsd_pipeline_simulation(self, temp_directory):
         """Test complete OPSD pipeline using all predefined variables."""
-        with patch("codecarbon.EmissionsTracker") as mock_tracker_class, patch(
-            "whylogs.log"
-        ) as mock_whylogs, patch("mlflow.log_param") as mock_log_param, patch(
-            "mlflow.log_metric"
-        ) as mock_log_metric, patch(
-            "mlflow.log_artifact"
-        ) as mock_log_artifact, patch(
-            "mlflow.log_input"
-        ) as mock_log_input, patch(
-            "mlflow.start_run"
-        ) as mock_nested_run, patch(
-            "os.path.exists", return_value=True
-        ), patch(
-            "os.remove"  # Mock os.remove to prevent file deletion errors
-        ) as mock_remove, patch(
-            "os.makedirs"  # Mock os.makedirs to prevent directory creation issues
-        ) as mock_makedirs:
-
+        with (
+            patch("codecarbon.EmissionsTracker") as mock_tracker_class,
+            patch("whylogs.log") as mock_whylogs,
+            patch("mlflow.log_param") as mock_log_param,
+            patch("mlflow.log_metric") as mock_log_metric,
+            patch("mlflow.log_artifact") as mock_log_artifact,
+            patch("mlflow.log_input") as mock_log_input,
+            patch("mlflow.start_run") as mock_nested_run,
+            patch("os.path.exists", return_value=True),
+            patch(
+                "os.remove"  # Mock os.remove to prevent file deletion errors
+            ),
+            patch(
+                "os.makedirs"  # Mock os.makedirs to prevent directory creation issues
+            ),
+        ):
             # Setup mocks
             mock_tracker = Mock()
             mock_tracker_class.return_value = mock_tracker
@@ -370,13 +344,9 @@ class TestOPSDLoggingIntegration:
                 else:
                     # Use available stage data or fallback to df_augmented
                     stage_key = (
-                        f"df_{profile_name}"
-                        if f"df_{profile_name}" in stages
-                        else "df_augmented"
+                        f"df_{profile_name}" if f"df_{profile_name}" in stages else "df_augmented"
                     )
-                    cl.log_whylogs_profile(
-                        stages[stage_key], profile_name, temp_directory
-                    )
+                    cl.log_whylogs_profile(stages[stage_key], profile_name, temp_directory)
             # Create and stop emissions tracking
             emissions_file1 = os.path.join(temp_directory, "emissions_data.csv")
             content1 = OPSDTestVariables.get_emissions_file_content("data_processing")
@@ -404,9 +374,7 @@ class TestOPSDLoggingIntegration:
 
             # Log trial metrics in nested runs
             for trial_data in OPSDTestVariables.SAMPLE_TRIAL_METRICS:
-                with mock_nested_run(
-                    nested=True, run_name=f"Trial_{trial_data['trial_number']}"
-                ):
+                with mock_nested_run(nested=True, run_name=f"Trial_{trial_data['trial_number']}"):
                     trial_params = {
                         k: v
                         for k, v in trial_data.items()
@@ -414,9 +382,7 @@ class TestOPSDLoggingIntegration:
                     }
                     cl.log_model_hyperparameters(trial_params)
 
-                    trial_metrics = {
-                        k: v for k, v in trial_data.items() if k.startswith("trial_")
-                    }
+                    trial_metrics = {k: v for k, v in trial_data.items() if k.startswith("trial_")}
                     cl.log_metrics(trial_metrics)
 
             # Log best hyperparameters
@@ -426,14 +392,10 @@ class TestOPSDLoggingIntegration:
                 if k != "best_mse"
             }
             cl.log_model_hyperparameters(best_params, keep_best=True)
-            cl.log_metrics(
-                {"mse": OPSDTestVariables.BEST_HYPERPARAMS["best_mse"]}, keep_best=True
-            )
+            cl.log_metrics({"mse": OPSDTestVariables.BEST_HYPERPARAMS["best_mse"]}, keep_best=True)
 
             emissions_file2 = os.path.join(temp_directory, "emissions_hyperparams.csv")
-            content2 = OPSDTestVariables.get_emissions_file_content(
-                "hyperparameter_optimization"
-            )
+            content2 = OPSDTestVariables.get_emissions_file_content("hyperparameter_optimization")
             with open(emissions_file2, "w") as f:
                 import csv
                 import io
@@ -459,9 +421,7 @@ class TestOPSDLoggingIntegration:
                 cl.log_metrics(step_metrics)
 
             # Log final model parameters
-            model_params_str = {
-                k: str(v) for k, v in OPSDTestVariables.MODEL_PARAMS.items()
-            }
+            model_params_str = {k: str(v) for k, v in OPSDTestVariables.MODEL_PARAMS.items()}
             cl.log_model_info(model_params_str)
 
             emissions_file3 = os.path.join(temp_directory, "emissions_train.csv")
@@ -481,15 +441,9 @@ class TestOPSDLoggingIntegration:
             cl.log_metrics(OPSDTestVariables.FINAL_METRICS)
 
             # Verify comprehensive logging
-            assert (
-                mock_log_param.call_count >= 15
-            )  # Dataset, model, hyperparams, timestamps
-            assert (
-                mock_log_metric.call_count >= 20
-            )  # Trial, stepwise, best, final metrics
-            assert (
-                mock_log_artifact.call_count >= 10
-            )  # Emissions, whylogs, datasets, timestamps
+            assert mock_log_param.call_count >= 15  # Dataset, model, hyperparams, timestamps
+            assert mock_log_metric.call_count >= 20  # Trial, stepwise, best, final metrics
+            assert mock_log_artifact.call_count >= 10  # Emissions, whylogs, datasets, timestamps
             assert mock_log_input.call_count == 2  # Train and test datasets
             assert mock_whylogs.call_count == 4  # All WhyLogs profiles
             assert mock_nested_run.call_count == 3  # Optuna trials

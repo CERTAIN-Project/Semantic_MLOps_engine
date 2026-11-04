@@ -1,11 +1,9 @@
 import pandas as pd
-from finance_pilot.utils.constants import DEFAULT_TIMESTAMP_COL
-
 from finance_pilot.algorithms.kpi_gen.kpi_generator import KPIGenerator
+from finance_pilot.utils.constants import DEFAULT_TIMESTAMP_COL
 
 
 class LoadKPIGenerator(KPIGenerator):
-
     def __init__(self, file):
         super().__init__()
         self.file = file

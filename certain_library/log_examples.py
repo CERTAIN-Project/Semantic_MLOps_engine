@@ -1,6 +1,6 @@
-import os
 import json
-from typing import Any, Dict, List
+import os
+from typing import Any
 
 # Utility to write example JSON files under MLflow artifacts structure.
 # Usage:
@@ -17,16 +17,22 @@ def _sanitize_step(step: int) -> str:
     return f"{step:02d}"
 
 
-def log_examples_step(artifacts_root: str, experiment_id: str, run_id: str, step: int, examples: List[Dict[str, Any]]):
-    """Write examples to artifacts/<experiment>/<run>/artifacts/certain/examples/example_step_xx.json
+def log_examples_step(
+    artifacts_root: str, experiment_id: str, run_id: str, step: int, examples: list[dict[str, Any]]
+):
+    """Write examples to
+    artifacts/<experiment>/<run>/artifacts/certain/examples/example_step_xx.json
 
     artifacts_root: path to mlflow artifacts root (e.g. /app/mlruns)
     experiment_id: experiment folder name under artifacts_root
     run_id: run folder name under experiment folder
     step: integer step number
-    examples: list of example dicts with keys input, prediction, ground_truth, optional stage, timestamp
+    examples: list of example dicts with keys input, prediction, ground_truth,
+        optional stage, timestamp
     """
-    base = os.path.join(artifacts_root, str(experiment_id), str(run_id), "artifacts", "certain", "examples")
+    base = os.path.join(
+        artifacts_root, str(experiment_id), str(run_id), "artifacts", "certain", "examples"
+    )
     _ensure_dir(base)
     filename = f"example_step_{_sanitize_step(step)}.json"
     target = os.path.join(base, filename)

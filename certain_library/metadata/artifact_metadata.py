@@ -1,13 +1,13 @@
-import os
 import json
+import os
 import platform
 import sys
 import tempfile
-from datetime import datetime, timezone
-from typing import Dict, Any, Optional, List
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
 
 import mlflow
-from pathlib import Path
 
 try:
     import requests
@@ -15,7 +15,7 @@ except Exception:
     requests = None
 
 
-def _active_run_info() -> Optional[Dict[str, str]]:
+def _active_run_info() -> dict[str, str] | None:
     try:
         run = mlflow.active_run()
         if run is None:
@@ -27,7 +27,7 @@ def _active_run_info() -> Optional[Dict[str, str]]:
 
 def save_params_as_artifact(
     id: str,
-    params: Dict[str, str],
+    params: dict[str, str],
     type_of_params: str = "run",
 ) -> str:
     """
@@ -39,9 +39,7 @@ def save_params_as_artifact(
     directory is removed afterward, an empty string is returned after upload.
     """
 
-    normalized_params: Dict[str, str] = {
-        str(key): str(value) for key, value in params.items()
-    }
+    normalized_params: dict[str, str] = {str(key): str(value) for key, value in params.items()}
 
     record = {
         f"{type_of_params}_id": str(id),
@@ -78,7 +76,7 @@ def save_params_as_artifact(
 
 def save_metrics_as_artifact(
     run_id: str,
-    metrics: Dict[str, list[Dict[str, Any]]],
+    metrics: dict[str, list[dict[str, Any]]],
 ) -> str:
     """
     Save complete MLflow metric history under:
@@ -89,7 +87,7 @@ def save_metrics_as_artifact(
     record = {
         "run_id": str(run_id),
         "run_metrics": metrics,
-        "captured_at": datetime.now(timezone.utc).isoformat(),
+        "captured_at": datetime.now(UTC).isoformat(),
     }
 
     if _active_run_info() is None:
@@ -119,7 +117,7 @@ def save_metrics_as_artifact(
 
 def save_inputs_as_artifact(
     run_id: str,
-    inputs: List[Dict[str, Any]],
+    inputs: list[dict[str, Any]],
 ) -> str:
     """
     Save logged MLflow inputs as:
@@ -129,7 +127,7 @@ def save_inputs_as_artifact(
 
     record = {
         "run_inputs": inputs,
-        "captured_at": datetime.now(timezone.utc).isoformat(),
+        "captured_at": datetime.now(UTC).isoformat(),
     }
 
     with tempfile.TemporaryDirectory() as temporary_directory:
@@ -155,8 +153,8 @@ def save_inputs_as_artifact(
     return ""
 
 
-def _extract_run_inputs(run: Any) -> List[Dict[str, Any]]:
-    inputs: List[Dict[str, Any]] = []
+def _extract_run_inputs(run: Any) -> list[dict[str, Any]]:
+    inputs: list[dict[str, Any]] = []
 
     run_inputs = getattr(run.inputs, "dataset_inputs", [])
 
@@ -170,9 +168,7 @@ def _extract_run_inputs(run: Any) -> List[Dict[str, Any]]:
                 "dataset_source": getattr(dataset, "source", None),
                 "dataset_schema": getattr(dataset, "schema", None),
                 "dataset_profile": getattr(dataset, "profile", None),
-                "tags": {
-                    tag.key: tag.value for tag in getattr(dataset_input, "tags", [])
-                },
+                "tags": {tag.key: tag.value for tag in getattr(dataset_input, "tags", [])},
             }
         )
 
@@ -181,7 +177,7 @@ def _extract_run_inputs(run: Any) -> List[Dict[str, Any]]:
 
 def save_resources_as_artifact(
     run_id: str,
-    resources: Dict[str, List[Dict[str, Any]]],
+    resources: dict[str, list[dict[str, Any]]],
 ) -> str:
     """
     Save the complete system-resource history for an MLflow run as:
@@ -197,7 +193,7 @@ def save_resources_as_artifact(
     if active.info.run_id != run_id:
         raise RuntimeError("The supplied run_id does not match the active MLflow run.")
 
-    normalized_resources: Dict[str, List[Dict[str, Any]]] = {}
+    normalized_resources: dict[str, list[dict[str, Any]]] = {}
 
     for resource_name, history in resources.items():
         normalized_resources[str(resource_name)] = [
@@ -212,7 +208,7 @@ def save_resources_as_artifact(
     record = {
         "run_id": str(run_id),
         "run_resources": normalized_resources,
-        "captured_at": datetime.now(timezone.utc).isoformat(),
+        "captured_at": datetime.now(UTC).isoformat(),
     }
 
     with tempfile.TemporaryDirectory() as temporary_directory:
@@ -239,10 +235,11 @@ def save_resources_as_artifact(
 
 def save_tags_as_artifact(
     id: str,
-    tags: Dict[str, str],
+    tags: dict[str, str],
     type_of_tags: str = "experiment",
 ) -> str:
-    """Write experiment-level tags to a canonical artifact 'experiment_tags.json' under certain/metadata.
+    """Write experiment-level tags to a canonical artifact 'experiment_tags.json'
+    under certain/metadata.
 
     This function will try to (in order):
       1) attach the file to the active MLflow run via mlflow.log_artifacts
@@ -275,7 +272,7 @@ def save_tags_as_artifact(
     return written_path
 
 
-def collect_runtime_environment() -> Dict[str, Any]:
+def collect_runtime_environment() -> dict[str, Any]:
     """Collect a small snapshot of the runtime environment.
 
     Includes Python version, platform, and best-effort docker detection.
@@ -304,7 +301,7 @@ def collect_runtime_environment() -> Dict[str, Any]:
             # Check cgroup for docker indicator
             cgroup = ""
             try:
-                with open("/proc/1/cgroup", "r") as fh:
+                with open("/proc/1/cgroup") as fh:
                     cgroup = fh.read()
             except Exception:
                 cgroup = ""
@@ -317,9 +314,9 @@ def collect_runtime_environment() -> Dict[str, Any]:
 
 
 def save_runtime_env_as_artifact(
-    runtime_record: Dict[str, Any],
-    experiment_id: Optional[str] = None,
-    artifacts_root: Optional[str] = None,
+    runtime_record: dict[str, Any],
+    experiment_id: str | None = None,
+    artifacts_root: str | None = None,
 ) -> str:
     """Write runtime environment record to 'runtime_env.json' under certain/metadata.
 
@@ -411,9 +408,7 @@ def save_runtime_env_as_artifact(
                     experiment_id = active.get("experiment_id")
 
             if experiment_id is not None:
-                folder = os.path.join(
-                    ar, str(experiment_id), "artifacts", "certain", "metadata"
-                )
+                folder = os.path.join(ar, str(experiment_id), "artifacts", "certain", "metadata")
                 os.makedirs(folder, exist_ok=True)
                 path = os.path.join(folder, "runtime_env.json")
                 with open(path, "w", encoding="utf-8") as fh:
@@ -499,10 +494,10 @@ def format_size(size_bytes: int) -> str:
 
 
 def save_dataset_manifest(
-    run_id: Optional[str],
+    run_id: str | None,
     files_or_path,
-    experiment_id: Optional[str] = None,
-    artifacts_root: Optional[str] = None,
+    experiment_id: str | None = None,
+    artifacts_root: str | None = None,
     write_manifest: bool = True,
 ):
     """Write a small dataset manifest into artifacts under certain/dataset.
@@ -557,7 +552,6 @@ def save_dataset_manifest(
     if manifest.get("total_size_bytes", 0) == 0:
         try:
             # Try to detect a DataFrame-like object in the original input
-            import pandas as _pd
 
             if not isinstance(files_or_path, (str, list, tuple)) and hasattr(
                 files_or_path, "to_csv"
@@ -578,9 +572,7 @@ def save_dataset_manifest(
                     if isinstance(it, str) and it.startswith("http"):
                         h = requests.head(it, allow_redirects=True, timeout=5)
                         if h is not None and h.status_code == 200:
-                            cl = h.headers.get("Content-Length") or h.headers.get(
-                                "content-length"
-                            )
+                            cl = h.headers.get("Content-Length") or h.headers.get("content-length")
                             if cl:
                                 try:
                                     manifest["total_size_bytes"] = int(cl)
@@ -596,8 +588,8 @@ def save_dataset_manifest(
     # MlflowClient.log_artifacts API which accepts an explicit run_id. If a
     # run_id wasn't provided, fall back to using the active run context.
     try:
-        from mlflow.tracking import MlflowClient
         import mlflow
+        from mlflow.tracking import MlflowClient
 
         client = MlflowClient()
 
@@ -617,9 +609,7 @@ def save_dataset_manifest(
                     "run_id": run_id,
                     "captured_at": manifest.get("captured_at"),
                     "data_location": (
-                        manifest["files"][0].get("path")
-                        if manifest.get("files")
-                        else ""
+                        manifest["files"][0].get("path") if manifest.get("files") else ""
                     ),
                     "data_size": manifest.get("total_size_bytes", 0),
                     "human_readable": format_size(manifest.get("total_size_bytes", 0)),
@@ -653,17 +643,13 @@ def save_dataset_manifest(
                 if upload_run_id is not None:
                     # upload metadata under certain/metadata (always)
                     try:
-                        client.log_artifacts(
-                            upload_run_id, td, artifact_path="certain/metadata"
-                        )
+                        client.log_artifacts(upload_run_id, td, artifact_path="certain/metadata")
                     except Exception:
                         pass
                     # optionally upload manifest under certain/dataset
                     if write_manifest:
                         try:
-                            client.log_artifacts(
-                                upload_run_id, td, artifact_path="certain/dataset"
-                            )
+                            client.log_artifacts(upload_run_id, td, artifact_path="certain/dataset")
                         except Exception:
                             pass
                 else:
@@ -732,14 +718,10 @@ def save_dataset_manifest(
                         "run_id": run_id,
                         "captured_at": manifest.get("captured_at"),
                         "data_location": (
-                            manifest["files"][0].get("path")
-                            if manifest.get("files")
-                            else ""
+                            manifest["files"][0].get("path") if manifest.get("files") else ""
                         ),
                         "data_size": manifest.get("total_size_bytes", 0),
-                        "human_readable": format_size(
-                            manifest.get("total_size_bytes", 0)
-                        ),
+                        "human_readable": format_size(manifest.get("total_size_bytes", 0)),
                     }
                     with open(meta_path, "w", encoding="utf-8") as mf:
                         json.dump(meta, mf, ensure_ascii=False, indent=2)

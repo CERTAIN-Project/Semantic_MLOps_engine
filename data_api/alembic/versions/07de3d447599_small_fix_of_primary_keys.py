@@ -6,17 +6,16 @@ Create Date: 2025-12-23 13:19:13.640502
 
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
-
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "07de3d447599"
-down_revision: Union[str, None] = "559f69430939"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "559f69430939"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -53,9 +52,7 @@ def upgrade() -> None:
     # === weight_distribution ===
     # Old PK: run_id, layer_name, model_id, step, stage, timestamp, is_NaN, mean, std
     # New PK: run_id, model_id, step, stage
-    op.drop_constraint(
-        "weight_distribution_pkey", "weight_distribution", type_="primary"
-    )
+    op.drop_constraint("weight_distribution_pkey", "weight_distribution", type_="primary")
     op.create_primary_key(
         "weight_distribution_pkey",
         "weight_distribution",
@@ -93,9 +90,7 @@ def downgrade() -> None:
     )
 
     # === weight_distribution ===
-    op.drop_constraint(
-        "weight_distribution_pkey", "weight_distribution", type_="primary"
-    )
+    op.drop_constraint("weight_distribution_pkey", "weight_distribution", type_="primary")
     op.create_primary_key(
         "weight_distribution_pkey",
         "weight_distribution",
@@ -129,9 +124,7 @@ def downgrade() -> None:
     )
 
     # === drift_metrics ===
-    op.alter_column(
-        "drift_metrics", "value", existing_type=sa.INTEGER(), nullable=False
-    )
+    op.alter_column("drift_metrics", "value", existing_type=sa.INTEGER(), nullable=False)
     op.drop_constraint("drift_metrics_pkey", "drift_metrics", type_="primary")
     op.create_primary_key(
         "drift_metrics_pkey",

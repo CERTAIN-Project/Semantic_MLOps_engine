@@ -1,8 +1,8 @@
 import os
-from sqlalchemy import create_engine, MetaData, Table
-from sqlalchemy.dialects.postgresql import insert
+
 from dotenv import load_dotenv
-import psycopg2
+from sqlalchemy import MetaData, Table, create_engine
+from sqlalchemy.dialects.postgresql import insert
 
 load_dotenv()
 TARGET_DB = os.getenv("TARGET_DB")
@@ -31,16 +31,13 @@ def insert_dataframe(df, table_name: str, batch_size: int = 1000):
         for i in range(0, len(df), batch_size):
             # Process the DataFrame in batches
             batch = df.iloc[i : i + batch_size]
-            rows = batch.to_dict(
-                orient="records"
-            )  # Convert batch to list of dictionaries
+            rows = batch.to_dict(orient="records")  # Convert batch to list of dictionaries
             # Normalize values and deduplicate by primary key within the batch
             # (last occurrence wins). This prevents Postgres errors when the
             # same primary key appears multiple times inside a single
             # multi-row INSERT ... ON CONFLICT statement.
             if rows:
                 dedup = {}
-                new_rows = []
                 for idx, r in enumerate(rows):
                     # ensure dict-like
                     if not isinstance(r, dict):
@@ -80,7 +77,6 @@ def insert_dataframe(df, table_name: str, batch_size: int = 1000):
             aliases = {
                 "ai_providers": "ai_provider",
                 "ai_deployers": "ai_deployer",
-                "is_nan": "is_nan",
                 "is_nan": "is_nan",
             }
 
@@ -228,8 +224,8 @@ def bulk_upsert_metrics(engine, rows, chunk_size: int = 500):
     insert_sql = f"""
     INSERT INTO data_metrics ({quoted_cols})
     VALUES %s
-    ON CONFLICT ({', '.join(f'"{c}"' for c in pk_cols)})
-      DO UPDATE SET {', '.join(f'"{c}" = EXCLUDED."{c}"' for c in actual_cols[3:])}
+    ON CONFLICT ({", ".join(f'"{c}"' for c in pk_cols)})
+      DO UPDATE SET {", ".join(f'"{c}" = EXCLUDED."{c}"' for c in actual_cols[3:])}
     """
 
     # Accept DataFrame directly

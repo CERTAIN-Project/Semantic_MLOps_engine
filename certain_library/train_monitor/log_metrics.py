@@ -1,13 +1,11 @@
-from certain_library.tracking.tracker import tracker
 import json
-from typing import Union, Dict
+
+from certain_library.tracking.tracker import tracker
 
 
 # Input: A dictionary of metrics to log
 # metrics = {"accuracy": 0.95, "loss": 0.05, "precision": 0.9, "recall": 0.85}
-def log_metrics(
-    dict_of_metrics: Dict[str, float], step=0, keep_best: bool = False
-) -> None:
+def log_metrics(dict_of_metrics: dict[str, float], step=0, keep_best: bool = False) -> None:
     """
     Validate and log numeric metrics to MLflow.
 
@@ -65,7 +63,7 @@ def log_metrics(
                 tracker.log_metrics({f"best_{key}": float(value)})
 
 
-def log_resources(dict_of_resources: Dict[str, float], step=0) -> None:
+def log_resources(dict_of_resources: dict[str, float], step=0) -> None:
     import math  # Add this import at the top of your file
 
     # Validate all metrics before logging
@@ -99,7 +97,7 @@ def log_resources(dict_of_resources: Dict[str, float], step=0) -> None:
 #     "subsample": {"type": "float", "low": 0.5, "high": 1.0}
 # }
 def log_search_space(
-    search_space: Dict[str, Dict[str, Union[str, float, int, bool, list]]],
+    search_space: dict[str, dict[str, str | float | int | bool | list]],
 ) -> None:
     """
     Log the search space for hyperparameters to MLflow.
@@ -128,9 +126,7 @@ def log_search_space(
 
     for param_name, param_config in search_space.items():
         if not isinstance(param_config, dict):
-            raise ValueError(
-                f"Configuration for parameter '{param_name}' must be a dictionary"
-            )
+            raise ValueError(f"Configuration for parameter '{param_name}' must be a dictionary")
 
         if "type" not in param_config:
             raise ValueError(f"Parameter '{param_name}' is missing required 'type' key")
@@ -140,13 +136,9 @@ def log_search_space(
         if param_type in ["int", "float"]:
             # Numeric parameter validations
             if "low" not in param_config:
-                raise ValueError(
-                    f"Numeric parameter '{param_name}' is missing required 'low' key"
-                )
+                raise ValueError(f"Numeric parameter '{param_name}' is missing required 'low' key")
             if "high" not in param_config:
-                raise ValueError(
-                    f"Numeric parameter '{param_name}' is missing required 'high' key"
-                )
+                raise ValueError(f"Numeric parameter '{param_name}' is missing required 'high' key")
 
             low = param_config["low"]
             high = param_config["high"]
@@ -162,9 +154,7 @@ def log_search_space(
                 )
 
             if "log" in param_config and not isinstance(param_config["log"], bool):
-                raise ValueError(
-                    f"Parameter '{param_name}': 'log' must be a boolean value"
-                )
+                raise ValueError(f"Parameter '{param_name}': 'log' must be a boolean value")
 
         elif param_type == "categorical":
             if "choices" not in param_config:
@@ -172,17 +162,10 @@ def log_search_space(
                     f"Categorical parameter '{param_name}' is missing required 'choices' key"
                 )
 
-            if (
-                not isinstance(param_config["choices"], list)
-                or not param_config["choices"]
-            ):
-                raise ValueError(
-                    f"Parameter '{param_name}': 'choices' must be a non-empty list"
-                )
+            if not isinstance(param_config["choices"], list) or not param_config["choices"]:
+                raise ValueError(f"Parameter '{param_name}': 'choices' must be a non-empty list")
 
         else:
-            raise ValueError(
-                f"Parameter '{param_name}': Unsupported parameter type '{param_type}'"
-            )
+            raise ValueError(f"Parameter '{param_name}': Unsupported parameter type '{param_type}'")
 
     tracker.log_params({"optuna_search_space": json.dumps(search_space)})

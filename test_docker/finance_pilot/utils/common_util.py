@@ -10,8 +10,6 @@ import numpy as np
 import pandas as pd
 import scipy.sparse as sp
 import torch
-from tabulate import tabulate
-
 from finance_pilot.utils.constants import (
     DEFAULT_ITEM_COL,
     DEFAULT_ORDER_COL,
@@ -19,6 +17,7 @@ from finance_pilot.utils.constants import (
     DEFAULT_TIMESTAMP_COL,
     DEFAULT_USER_COL,
 )
+from tabulate import tabulate
 
 
 def normalized_adj_single(adj):
@@ -56,7 +55,8 @@ def update_args(config, args):
 
     Args:
         config (dict): Initial dict of the parameters from JSON config file.
-        args (object): An argparse Argument object with attributes being the parameters to be updated.
+        args (object): An argparse Argument object with attributes being the parameters to be
+            updated.
     """
     args_dic = {}
     for cfg in ["system", "model", "dataset"]:
@@ -163,7 +163,7 @@ def un_zip(file_name, target_dir=None):
     zip_file.close()
 
 
-def print_dict_as_table(dic, tag=None, columns=["keys", "values"]):
+def print_dict_as_table(dic, tag=None, columns=None):
     """Print a dictionary as table.
 
     Args:
@@ -174,6 +174,8 @@ def print_dict_as_table(dic, tag=None, columns=["keys", "values"]):
     Returns:
         None
     """
+    if columns is None:
+        columns = ["keys", "values"]
     print("-" * 80)
     if tag is not None:
         print(tag)
@@ -183,7 +185,7 @@ def print_dict_as_table(dic, tag=None, columns=["keys", "values"]):
     return tabulate(df, headers=columns, tablefmt="psql")
 
 
-class DictToObject(object):
+class DictToObject:
     """Python dict to object."""
 
     def __init__(self, dictionary):
@@ -235,11 +237,7 @@ def timeit(method):
             name = kw.get("log_name", method.__name__.upper())
             kw["log_time"][name] = int((te - ts) * 1000)
         else:
-            print(
-                "Execute [{}] method costing {:2.2f} ms".format(
-                    method.__name__, (te - ts) * 1000
-                )
-            )
+            print(f"Execute [{method.__name__}] method costing {(te - ts) * 1000:2.2f} ms")
         return result
 
     return wrapper
@@ -269,7 +267,7 @@ def set_seed(seed):
     Args:
         seed: A global random seed.
     """
-    if type(seed) != int:
+    if type(seed) is not int:
         raise ValueError("Error: seed is invalid type")
     random.seed(seed)
     np.random.seed(seed)
@@ -278,7 +276,9 @@ def set_seed(seed):
         torch.cuda.manual_seed_all(seed)
 
 
-def stratified_sample_by_group(features_df, target_series, frac, group_col=DEFAULT_ITEM_COL, seed=42):
+def stratified_sample_by_group(
+    features_df, target_series, frac, group_col=DEFAULT_ITEM_COL, seed=42
+):
     """Proportional per-group subsample (min 1 row/group) so a size-reducing
     sample stays diversified across groups instead of a flat random draw
     that could drop low-volume groups entirely."""

@@ -17,23 +17,22 @@ log_monitor_logs     → ``deployment_logs/``             → ``monitor_logs`` t
 log_decommissioning  → ``decommissioning/``             → ``decomissioning`` table
 """
 
-from certain_library.tracking.tracker import tracker
-
-import os
 import json
-import time
+import os
 import tempfile
+import time
 import uuid
-from typing import List, Optional
+
+from certain_library.tracking.tracker import tracker
 
 
 def log_model_packaging(
     deployment_id: str,
     model_id: str,
     packaging_format: str,
-    dependencies: List[str],
-    containerization_details: Optional[dict] = None,
-    packaging_id: Optional[str] = None,
+    dependencies: list[str],
+    containerization_details: dict | None = None,
+    packaging_id: str | None = None,
 ) -> None:
     """
     Log model packaging information for a deployed model.
@@ -79,9 +78,7 @@ def log_model_packaging(
     """
     if not isinstance(dependencies, list):
         raise ValueError("dependencies must be a list of strings")
-    if containerization_details is not None and not isinstance(
-        containerization_details, dict
-    ):
+    if containerization_details is not None and not isinstance(containerization_details, dict):
         raise ValueError("containerization_details must be a dict")
 
     record = {
@@ -106,7 +103,7 @@ def log_build_testing(
     build_logs: str,
     test_type: str,
     test_results: dict,
-    test_id: Optional[str] = None,
+    test_id: str | None = None,
 ) -> None:
     """
     Log build and integration testing results for a deployed model.
@@ -170,7 +167,7 @@ def log_build_testing(
         "test_results": test_results,
     }
     with tempfile.TemporaryDirectory() as tmp_dir:
-        fname = f"build_test.json"
+        fname = "build_test.json"
         path = os.path.join(tmp_dir, fname)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(record, f, indent=2)
@@ -203,7 +200,7 @@ def log_build_testing(
 def log_standards(
     deployment_id: str,
     model_id: str,
-    standards: List[dict],
+    standards: list[dict],
 ) -> None:
     """
     Log one or more applicable standards / regulations for a deployed model.
@@ -257,9 +254,7 @@ def log_standards(
         raise ValueError("standards must be a non-empty list of dicts")
     for i, s in enumerate(standards):
         if not isinstance(s, dict) or "name" not in s:
-            raise ValueError(
-                f"standards[{i}] must be a dict with at least a 'name' key"
-            )
+            raise ValueError(f"standards[{i}] must be a dict with at least a 'name' key")
 
     # Require deployment and model identifiers — only emit standards when
     # tied to a deployment.
@@ -278,7 +273,7 @@ def log_standards(
                 "version": s.get("version") or "",
                 "publication_date": s.get("publication_date"),
             }
-            fname = f"standard.json"
+            fname = "standard.json"
             path = os.path.join(tmp_dir, fname)
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(record, f, indent=2)
@@ -288,7 +283,7 @@ def log_standards(
                 run = mlflow.active_run()
                 if run is not None:
                     # annotate artifact with run_id for downstream mapping
-                    with open(path, "r", encoding="utf-8") as fh:
+                    with open(path, encoding="utf-8") as fh:
                         payload = json.load(fh)
                     payload.setdefault("run_id", run.info.run_id)
                     with open(path, "w", encoding="utf-8") as fh:
@@ -302,10 +297,10 @@ def log_interface(
     deployment_id: str,
     model_id: str,
     interface_type: str,
-    specifications: Optional[str] = None,
-    version: Optional[str] = None,
-    documentation_link: Optional[str] = None,
-    interface_id: Optional[str] = None,
+    specifications: str | None = None,
+    version: str | None = None,
+    documentation_link: str | None = None,
+    interface_id: str | None = None,
 ) -> None:
     """
     Log an interface specification for a deployed model.
@@ -344,7 +339,7 @@ def log_interface(
         "documentation_link": documentation_link or "",
     }
     with tempfile.TemporaryDirectory() as tmp_dir:
-        fname = f"interface.json"
+        fname = "interface.json"
         path = os.path.join(tmp_dir, fname)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(record, f, indent=2)
@@ -354,19 +349,19 @@ def log_interface(
 def log_model_deployed(
     deployment_id: str,
     model_id: str,
-    experiment_id: Optional[str] = None,
-    run_id: Optional[str] = None,
-    model_version: Optional[str] = None,
-    endpoint: Optional[str] = None,
-    model_format: Optional[str] = None,
-    size: Optional[str] = None,
-    description: Optional[str] = None,
-    user_id: Optional[str] = None,
-    current_stage: Optional[str] = None,
-    location: Optional[str] = None,
-    status: Optional[str] = None,
-    model_cateory: Optional[str] = None,
-    deployment_log: Optional[str] = None,
+    experiment_id: str | None = None,
+    run_id: str | None = None,
+    model_version: str | None = None,
+    endpoint: str | None = None,
+    model_format: str | None = None,
+    size: str | None = None,
+    description: str | None = None,
+    user_id: str | None = None,
+    current_stage: str | None = None,
+    location: str | None = None,
+    status: str | None = None,
+    model_cateory: str | None = None,
+    deployment_log: str | None = None,
 ) -> None:
     """Log a structured deployment manifest for the model_deployed table.
 
@@ -418,9 +413,9 @@ def log_monitor_logs(
     deployment_id: str,
     model_id: str,
     message: str,
-    experiment_id: Optional[str] = None,
-    log_id: Optional[str] = None,
-    source: Optional[str] = None,
+    experiment_id: str | None = None,
+    log_id: str | None = None,
+    source: str | None = None,
 ) -> None:
     """Log a deployment monitor message for the monitor_logs table.
 
@@ -460,20 +455,20 @@ def log_monitor_logs(
 def log_decommissioning(
     deployment_id: str,
     model_id: str,
-    decommissioning_actions: List[str],
+    decommissioning_actions: list[str],
     reason: str,
-    procedure_details: Optional[str] = None,
-    decommissioning_date: Optional[float] = None,
-    decommissioning_id: Optional[str] = None,
-    system_name: Optional[str] = None,
-    decommissioning_plan: Optional[str] = None,
-    approvals: Optional[List[str]] = None,
-    data_retention_archive: Optional[str] = None,
-    migration: Optional[str] = None,
-    access_removal: Optional[str] = None,
-    infrastructure_shutdown: Optional[str] = None,
-    evidence_documentation: Optional[List[str]] = None,
-    audit_trail: Optional[str] = None,
+    procedure_details: str | None = None,
+    decommissioning_date: float | None = None,
+    decommissioning_id: str | None = None,
+    system_name: str | None = None,
+    decommissioning_plan: str | None = None,
+    approvals: list[str] | None = None,
+    data_retention_archive: str | None = None,
+    migration: str | None = None,
+    access_removal: str | None = None,
+    infrastructure_shutdown: str | None = None,
+    evidence_documentation: list[str] | None = None,
+    audit_trail: str | None = None,
 ) -> None:
     """
     Log model decommissioning information for a deployed model.

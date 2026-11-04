@@ -10,19 +10,18 @@ log_transparency_measure → ``transparency_measures/``    → ``transparency_me
 log_change               → ``change_logs/``              → ``change_logs`` table
 """
 
-from certain_library.tracking.tracker import tracker
-
-import os
 import json
-import time
+import os
 import tempfile
+import time
 import uuid
-from typing import List
+
+from certain_library.tracking.tracker import tracker
 
 _RISK_ALLOWED_KEYS = {"risk_description", "risk_type", "risk_level", "risk_id"}
 
 
-def log_risk(risks: List[dict]) -> None:
+def log_risk(risks: list[dict]) -> None:
     """
     Log one or more identified risks associated with the current MLflow experiment.
 
@@ -69,7 +68,7 @@ def log_risk(risks: List[dict]) -> None:
             "risk_level": risk_level,
         }
         with tempfile.TemporaryDirectory() as tmp_dir:
-            fname = f"risk.json"
+            fname = "risk.json"
             path = os.path.join(tmp_dir, fname)
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(record, f, indent=2)
@@ -84,7 +83,7 @@ _OVERSIGHT_ALLOWED_KEYS = {
 }
 
 
-def log_human_oversight(oversights: List[dict]) -> None:
+def log_human_oversight(oversights: list[dict]) -> None:
     """
     Log one or more human oversight mechanisms for the current MLflow experiment.
 
@@ -127,7 +126,7 @@ def log_human_oversight(oversights: List[dict]) -> None:
             "implementation_details": item.get("implementation_details") or "",
         }
         with tempfile.TemporaryDirectory() as tmp_dir:
-            fname = f"oversight.json"
+            fname = "oversight.json"
             path = os.path.join(tmp_dir, fname)
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(record, f, indent=2)
@@ -143,7 +142,7 @@ _TRANSPARENCY_ALLOWED_KEYS = {
 }
 
 
-def log_transparency_measure(measures: List[dict]) -> None:
+def log_transparency_measure(measures: list[dict]) -> None:
     """
     Log one or more transparency measures for the current MLflow experiment.
 
@@ -157,7 +156,8 @@ def log_transparency_measure(measures: List[dict]) -> None:
         Each dict describes one measure and must contain:
 
         * ``"measure_type"`` *(list of str)* — categories (e.g. ``["model_card"]``).
-        * ``"measure_value"`` *(list of str)* — corresponding values/links (same length as ``measure_type``).
+        * ``"measure_value"`` *(list of str)* — corresponding values/links
+          (same length as ``measure_type``).
         * ``"description"`` *(str, optional)* — general description.
         * ``"implementation_details"`` *(str, optional)* — technical details.
         * ``"measure_id"`` *(str, optional)* — unique identifier; auto-generated when omitted.
@@ -194,7 +194,7 @@ def log_transparency_measure(measures: List[dict]) -> None:
             "implementation_details": item.get("implementation_details") or "",
         }
         with tempfile.TemporaryDirectory() as tmp_dir:
-            fname = f"transparency.json"
+            fname = "transparency.json"
             path = os.path.join(tmp_dir, fname)
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(record, f, indent=2)
@@ -204,7 +204,7 @@ def log_transparency_measure(measures: List[dict]) -> None:
 _CHANGE_ALLOWED_KEYS = {"change_description", "changed_by", "log_id"}
 
 
-def log_change(changes: List[dict]) -> None:
+def log_change(changes: list[dict]) -> None:
     """
     Log one or more change entries for the current MLflow run.
 
@@ -245,7 +245,7 @@ def log_change(changes: List[dict]) -> None:
             "change_timestamp": int(time.time()),
         }
         with tempfile.TemporaryDirectory() as tmp_dir:
-            fname = f"change.json"
+            fname = "change.json"
             path = os.path.join(tmp_dir, fname)
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(record, f, indent=2)

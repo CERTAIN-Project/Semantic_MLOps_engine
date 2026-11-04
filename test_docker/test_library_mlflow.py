@@ -3,13 +3,12 @@
 Test script to verify certain_library logs data to MLflow PostgreSQL database
 """
 
-from certain_library.tracking.tracker import tracker
-
 import mlflow
 import pandas as pd
+from certain_library.data_analysis.log_dataset import log_dataset
+from certain_library.tracking.tracker import tracker
 from certain_library.train_monitor.log_metrics import log_metrics
 from certain_library.train_monitor.log_model import log_model_info
-from certain_library.data_analysis.log_dataset import log_dataset
 
 print("=" * 60)
 print("Testing certain_library MLflow Integration")

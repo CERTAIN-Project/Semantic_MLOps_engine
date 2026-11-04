@@ -1,10 +1,10 @@
+import hashlib
 import json
-import os
 import logging
+from typing import Any
+
 import pandas as pd
 from scipy.stats import ks_2samp
-import hashlib
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,8 @@ def map_runs(run):
 
 
 def map_experiments(experiments):
-    """Map an experiment record from the artifact-first get_experiments_data() into an experiments table row.
+    """Map an experiment record from the artifact-first get_experiments_data() into an
+    experiments table row.
 
     get_experiments_data() already reads from the artifact store (certain/metadata or
     directory listing) — this mapper just normalises the field names for the DB schema.
@@ -62,7 +63,8 @@ def map_experiments(experiments):
         "experiment_stage": r.get("experiment_stage") or lifecycle,
         "description": r.get("description"),
         "creation_time": r.get("creation_time") or int(pd.Timestamp.now(tz="UTC").timestamp()),
-        "last_update_time": r.get("last_update_time") or int(pd.Timestamp.now(tz="UTC").timestamp()),
+        "last_update_time": r.get("last_update_time")
+        or int(pd.Timestamp.now(tz="UTC").timestamp()),
     }
 
 
@@ -80,6 +82,7 @@ def map_datasets(datasets, run_id, id_mapping):
     # Prefer the canonical artifact manifest written by save_dataset_manifest
     try:
         from data_api.app.mlflow_connector import get_dataset_manifest_for_run
+
         manifest = get_dataset_manifest_for_run(str(run_id))
     except Exception:
         manifest = None
@@ -117,7 +120,6 @@ def map_datasets(datasets, run_id, id_mapping):
 
 
 def map_data_metrics(metrics, id_mapping):
-
     if isinstance(metrics, pd.Series):
         metrics = metrics.to_frame().T
 
@@ -438,12 +440,8 @@ def map_data_drift(dataset, id_mapping):
         test_subset = testing_data[testing_data["run_id"] == run_id]
 
         # Get common columns between training and testing datasets
-        common_columns = set(train_subset.columns).intersection(
-            set(test_subset.columns)
-        )
-        common_columns = [
-            col for col in common_columns if col not in ["run_id", "stage"]
-        ]
+        common_columns = set(train_subset.columns).intersection(set(test_subset.columns))
+        common_columns = [col for col in common_columns if col not in ["run_id", "stage"]]
 
         logger.debug("run_id=%s common_columns=%s", run_id, common_columns)
 
@@ -484,9 +482,7 @@ def map_data_drift(dataset, id_mapping):
                     }
                 )
             except Exception:
-                logger.exception(
-                    "Error analyzing drift for column %s (run %s)", column, run_id
-                )
+                logger.exception("Error analyzing drift for column %s (run %s)", column, run_id)
 
     # Convert the list of dictionaries to a pandas DataFrame
     if not drift_results:
@@ -506,7 +502,10 @@ def map_data_duration_leakage(dataset, id_mapping):
             return pd.DataFrame()
 
     if "stage" not in dataset.columns:
-        logger.warning("map_data_duration_leakage: dataset missing 'stage' column; skipping duration/leakage analysis")
+        logger.warning(
+            "map_data_duration_leakage: dataset missing 'stage' column; "
+            "skipping duration/leakage analysis"
+        )
         return pd.DataFrame()
 
     # Split the dataframe into two parts based on the 'stage' column
@@ -563,15 +562,11 @@ def map_data_duration_leakage(dataset, id_mapping):
 
                     # Calculate future leakage in the same loop
                     test_first_timestamp = test_min
-                    future_timestamps_count = (
-                        train_timestamps > test_first_timestamp
-                    ).sum()
+                    future_timestamps_count = (train_timestamps > test_first_timestamp).sum()
 
                     if future_timestamps_count > 0:
                         # Calculate percentage of training data that leaks into the future
-                        leakage_percentage = (
-                            future_timestamps_count / len(train_timestamps)
-                        ) * 100
+                        leakage_percentage = (future_timestamps_count / len(train_timestamps)) * 100
 
                         results.append(
                             {
@@ -579,9 +574,7 @@ def map_data_duration_leakage(dataset, id_mapping):
                                 "data_id": id_mapping.get(run_id, {}).get("data_id"),
                                 "key": "train_future_leakage_percentage",
                                 "value": leakage_percentage,
-                                "timestamp": int(
-                                    pd.Timestamp.now(tz="UTC").timestamp()
-                                ),
+                                "timestamp": int(pd.Timestamp.now(tz="UTC").timestamp()),
                             }
                         )
             except (ValueError, TypeError) as e:
@@ -595,9 +588,7 @@ def map_data_duration_leakage(dataset, id_mapping):
 # ---------------------------------------------------------------------------
 
 
-def map_run_code(
-    tags_df: "pd.DataFrame", run_id: str, artifact_git_record: dict = None
-) -> dict:
+def map_run_code(tags_df: "pd.DataFrame", run_id: str, artifact_git_record: dict = None) -> dict:
     """
     Build a runs_code row only for parent runs.
 
@@ -701,9 +692,7 @@ def map_checkpoints(row: "pd.Series", id_mapping: dict) -> dict:
         "model_id": id_mapping.get(run_id, {}).get("model_id", ""),
         "checkpoint_name": row.get("checkpoint_name", ""),
         "checkpoint_location": row.get("checkpoint_location", ""),
-        "creation_time": row.get(
-            "creation_time", int(pd.Timestamp.now(tz="UTC").timestamp())
-        ),
+        "creation_time": row.get("creation_time", int(pd.Timestamp.now(tz="UTC").timestamp())),
     }
 
 
@@ -911,9 +900,7 @@ def map_labeling_procedures(record: dict, experiment_id: str) -> dict:
         "labeling_id": record.get("labeling_id", ""),
         "experiment_id": experiment_id,
         "description": record.get("description", ""),
-        "quality_assurance_methods": (
-            qa_methods if isinstance(qa_methods, list) else [qa_methods]
-        ),
+        "quality_assurance_methods": (qa_methods if isinstance(qa_methods, list) else [qa_methods]),
         "annotators": annotators if isinstance(annotators, list) else [annotators],
         "annotation_tool": annotation_tool,
         "link": record.get("link", ""),
@@ -987,9 +974,7 @@ def map_declaration_of_conformity(record: dict, run_id: str) -> dict:
         "valid_from": record.get("valid_from"),
         "valid_until": record.get("valid_until"),
         "standard_references": record.get("standard_references", []),
-        "creation_time": record.get(
-            "creation_time", int(pd.Timestamp.now(tz="UTC").timestamp())
-        ),
+        "creation_time": record.get("creation_time", int(pd.Timestamp.now(tz="UTC").timestamp())),
         "link_to_artifacts": record.get("link_to_artifacts", ""),
     }
 
@@ -1007,9 +992,7 @@ def map_visual_documentation(record: dict, run_id: str) -> dict:
         "generated_by": record.get("generated_by", ""),
         "model_version": record.get("model_version", ""),
         "tags": record.get("tags", []),
-        "creation_time": record.get(
-            "creation_time", int(pd.Timestamp.now(tz="UTC").timestamp())
-        ),
+        "creation_time": record.get("creation_time", int(pd.Timestamp.now(tz="UTC").timestamp())),
         "link_to_artifacts": record.get("link_to_artifacts", ""),
     }
 
@@ -1083,9 +1066,7 @@ def map_standard(record: dict, run_id: str) -> dict:
         "description": record.get("description", ""),
         "version": record.get("version", ""),
         "publication_date": record.get("publication_date"),
-        "creation_time": record.get(
-            "creation_time", int(pd.Timestamp.now(tz="UTC").timestamp())
-        ),
+        "creation_time": record.get("creation_time", int(pd.Timestamp.now(tz="UTC").timestamp())),
     }
 
 
@@ -1149,9 +1130,7 @@ def map_tokenizer_config(record: dict, run_id: str) -> dict:
         "model_name_or_path": record.get("model_name_or_path"),
         "vocab_size": record.get("vocab_size"),
         "max_length": record.get("max_length"),
-        "padding": (
-            str(record["padding"]) if record.get("padding") is not None else None
-        ),
+        "padding": (str(record["padding"]) if record.get("padding") is not None else None),
         "truncation": (
             bool(record["truncation"]) if record.get("truncation") is not None else None
         ),
@@ -1263,8 +1242,14 @@ def map_demographic_bias_report(record: dict, run_id: str) -> list[dict]:
         )
 
     clean = record.get("clean", {}) if isinstance(record.get("clean"), dict) else {}
-    clean_snapshot = clean.get("bias_snapshot", {}) if isinstance(clean.get("bias_snapshot"), dict) else {}
-    signals = clean_snapshot.get("cluster_bias_signals", {}) if isinstance(clean_snapshot.get("cluster_bias_signals"), dict) else {}
+    clean_snapshot = (
+        clean.get("bias_snapshot", {}) if isinstance(clean.get("bias_snapshot"), dict) else {}
+    )
+    signals = (
+        clean_snapshot.get("cluster_bias_signals", {})
+        if isinstance(clean_snapshot.get("cluster_bias_signals"), dict)
+        else {}
+    )
 
     add_metric("records", clean_snapshot.get("records"))
     add_metric("cluster_count", clean_snapshot.get("cluster_count"))
@@ -1278,7 +1263,11 @@ def map_demographic_bias_report(record: dict, run_id: str) -> list[dict]:
 
     if record.get("comparison") and isinstance(record["comparison"], dict):
         comparison = record["comparison"]
-        add_metric("delta_anonymous_rate", comparison.get("comparison", {}).get("delta_anonymous_rate"), stage="bias_comparison")
+        add_metric(
+            "delta_anonymous_rate",
+            comparison.get("comparison", {}).get("delta_anonymous_rate"),
+            stage="bias_comparison",
+        )
         add_metric(
             "delta_metadata_missing_rate",
             comparison.get("comparison", {}).get("delta_metadata_missing_rate"),
@@ -1317,7 +1306,15 @@ def _map_metric_artifact(
         payload = record
 
     for key, value in payload.items():
-        if key in {"data_id", "quality_scores", "privacy_metrics", "counterfactual_metrics", "consistency_ranges", "consistency_range_details", "protected_columns"}:
+        if key in {
+            "data_id",
+            "quality_scores",
+            "privacy_metrics",
+            "counterfactual_metrics",
+            "consistency_ranges",
+            "consistency_range_details",
+            "protected_columns",
+        }:
             continue
         rows.append(
             {
@@ -1349,7 +1346,13 @@ def map_quality_report(record: dict, run_id: str) -> list[dict]:
         details = record.get("quality_scores") or {}
         if isinstance(details, dict):
             for key, value in details.items():
-                if key in {"completeness", "accuracy", "consistency", "timeliness", "composite_score"}:
+                if key in {
+                    "completeness",
+                    "accuracy",
+                    "consistency",
+                    "timeliness",
+                    "composite_score",
+                }:
                     continue
                 rows.append(
                     {
@@ -1449,8 +1452,7 @@ def map_run_metrics(record: dict, run_id: str, id_mapping: dict) -> list:
                     "value": entry.get("value", 0),
                     "step": int(entry.get("step", 0)),
                     "timestamp": int(
-                        entry.get("timestamp")
-                        or pd.Timestamp.now(tz="UTC").timestamp()
+                        entry.get("timestamp") or pd.Timestamp.now(tz="UTC").timestamp()
                     ),
                     "stage": "train",
                     "is_NaN": False,
@@ -1487,8 +1489,7 @@ def map_run_resources(record: dict, run_id: str, id_mapping: dict) -> list:
                     "stage": "train",
                     "value": entry.get("value", 0),
                     "timestamp": int(
-                        entry.get("timestamp")
-                        or pd.Timestamp.now(tz="UTC").timestamp()
+                        entry.get("timestamp") or pd.Timestamp.now(tz="UTC").timestamp()
                     ),
                 }
             )
@@ -1622,6 +1623,7 @@ def map_dataset_manifest(record: dict, run_id: str, id_mapping: dict) -> dict:
 
         key = "|".join(parts)
         return hashlib.sha256(key.encode("utf-8")).hexdigest()
+
     now_ts = int(pd.Timestamp.now(tz="UTC").timestamp())
     # If the record is lightweight (data.json) prefer computing from its
     # canonical fields. Likewise for a full manifest (data_manifest.json)

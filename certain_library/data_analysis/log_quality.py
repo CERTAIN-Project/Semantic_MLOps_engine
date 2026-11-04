@@ -2,18 +2,19 @@
 
 from __future__ import annotations
 
-import os
 import json
-import tempfile
 import math
-from typing import Any, Optional, Sequence
+import os
+import tempfile
+from collections.abc import Sequence
+from typing import Any
 
 import pandas as pd
 
-from certain_library.tracking.tracker import tracker
 from certain_library.data_analysis.log_dataset import log_dataset, log_train_test_dataset
 from certain_library.data_analysis.log_timeseries import timestamp_analysis
 from certain_library.data_analysis.log_whylogs import log_whylogs_profile
+from certain_library.tracking.tracker import tracker
 
 
 def _resolve_logger(logger):
@@ -39,7 +40,7 @@ def _bounded_score(value: float) -> float:
     return max(0.0, min(1.0, float(value)))
 
 
-def _normalize_range_spec(range_spec: Any) -> tuple[Optional[float], Optional[float]]:
+def _normalize_range_spec(range_spec: Any) -> tuple[float | None, float | None]:
     """Normalize a range specification into (lower, upper) bounds."""
 
     if isinstance(range_spec, dict):
@@ -176,7 +177,9 @@ def compute_4d_quality_index(profile_data: dict) -> dict:
                 timeliness_score = 1.0
             else:
                 lambda_value = _safe_float(profile_data.get("timeliness_lambda"), 1.0)
-                timeliness_score = math.exp(-max(0.0, lambda_value) * max(0.0, _safe_float(ingest_latency)))
+                timeliness_score = math.exp(
+                    -max(0.0, lambda_value) * max(0.0, _safe_float(ingest_latency))
+                )
                 timeliness_score = _bounded_score(timeliness_score)
 
     scores = {
@@ -192,19 +195,19 @@ def compute_4d_quality_index(profile_data: dict) -> dict:
 def log_quality_from_data(
     logger,
     data: pd.DataFrame,
-    train_data: Optional[pd.DataFrame] = None,
-    test_data: Optional[pd.DataFrame] = None,
-    train_timestamps: Optional[pd.Series] = None,
-    test_timestamps: Optional[pd.Series] = None,
+    train_data: pd.DataFrame | None = None,
+    test_data: pd.DataFrame | None = None,
+    train_timestamps: pd.Series | None = None,
+    test_timestamps: pd.Series | None = None,
     name: str = "quality",
     output_dir: str = "data_quality",
     log_whylogs: bool = True,
     log_dataset_artifacts: bool = True,
     save_full_dataset: bool = False,
-    columns: Optional[Sequence[str]] = None,
+    columns: Sequence[str] | None = None,
     non_nan: bool = False,
-    consistency_ranges: Optional[dict[str, Any]] = None,
-    data_id: Optional[str] = None,
+    consistency_ranges: dict[str, Any] | None = None,
+    data_id: str | None = None,
 ) -> dict[str, float]:
     """Log quality artifacts and compute the 4D quality index from raw data.
 
@@ -272,7 +275,9 @@ def log_quality_from_data(
 
         timeliness = None
         timestamp_columns = [
-            col for col in data.columns if "timestamp" in str(col).lower() or "time" in str(col).lower()
+            col
+            for col in data.columns
+            if "timestamp" in str(col).lower() or "time" in str(col).lower()
         ]
         if timestamp_columns:
             ts_series = pd.to_datetime(data[timestamp_columns[0]], errors="coerce").dropna()
@@ -317,7 +322,7 @@ def log_quality_from_data(
 def log_4d_quality_metrics(
     logger,
     quality_scores: dict,
-    data_id: Optional[str] = None,
+    data_id: str | None = None,
 ) -> dict[str, float]:
     """Log 4D quality scores using the existing MLflow-backed logger."""
 
@@ -326,19 +331,11 @@ def log_4d_quality_metrics(
         "quality_completeness": _bounded_score(
             _safe_float(quality_scores.get("completeness"), 0.0)
         ),
-        "quality_accuracy": _bounded_score(
-            _safe_float(quality_scores.get("accuracy"), 0.0)
-        ),
-        "quality_consistency": _bounded_score(
-            _safe_float(quality_scores.get("consistency"), 0.0)
-        ),
-        "quality_timeliness": _bounded_score(
-            _safe_float(quality_scores.get("timeliness"), 0.0)
-        ),
+        "quality_accuracy": _bounded_score(_safe_float(quality_scores.get("accuracy"), 0.0)),
+        "quality_consistency": _bounded_score(_safe_float(quality_scores.get("consistency"), 0.0)),
+        "quality_timeliness": _bounded_score(_safe_float(quality_scores.get("timeliness"), 0.0)),
     }
-    scores["quality_composite_score"] = _bounded_score(
-        sum(scores.values()) / 4.0
-    )
+    scores["quality_composite_score"] = _bounded_score(sum(scores.values()) / 4.0)
 
     try:
         active_logger.log_metrics(scores)

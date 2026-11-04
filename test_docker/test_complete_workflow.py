@@ -4,86 +4,77 @@ Complete ML workflow example using certain_library
 Demonstrates end-to-end logging to PostgreSQL database
 """
 
-import io
 import os
-import time
-import json
 import queue
 import threading
-import psutil
-import mlflow
-import pandas as pd
-import numpy as np
+import time
 from pathlib import Path
 
-from typing import Dict, Union
-from sklearn.metrics import mean_squared_error, r2_score
-
+import numpy as np
+import pandas as pd
+import psutil
+from certain_library.compliance.log_deployment import (
+    log_build_testing,
+    log_decommissioning,
+    log_interface,
+    log_model_deployed,
+    log_model_packaging,
+    log_monitor_logs,
+    log_standards,
+)
+from certain_library.compliance.log_documentation import (
+    log_declarations_of_conformity,
+    log_explainable_ai,
+    log_visual_documentations,
+)
+from certain_library.compliance.log_experiment_governance import (
+    log_ai_actors,
+    log_labeling_procedures,
+)
+from certain_library.compliance.log_governance import (
+    log_change,
+    log_human_oversight,
+    log_risk,
+    log_transparency_measure,
+)
+from certain_library.data_analysis.log_counterfactuals import (
+    generate_price_counterfactual,
+    log_counterfactual_from_data,
+)
+from certain_library.data_analysis.log_data_techniques import log_data_techniques
+from certain_library.data_analysis.log_dataset import (
+    log_dataset,
+)
+from certain_library.data_analysis.log_demographic_bias import log_demographic_bias_from_data
+from certain_library.data_analysis.log_drift_metrics import (
+    log_drift_metrics,
+)
+from certain_library.data_analysis.log_privacy import log_privacy_from_data
+from certain_library.data_analysis.log_quality import log_quality_from_data
+from certain_library.data_analysis.log_timeseries import timestamp_analysis
+from certain_library.data_analysis.log_whylogs import log_whylogs_profile
+from certain_library.git_tracking import log_git_metadata
+from certain_library.log_basic.log_params import log_params
+from certain_library.metadata.artifact_metadata import (
+    collect_runtime_environment,
+    save_dataset_manifest,
+    save_runtime_env_as_artifact,
+)
+from certain_library.resource_monitor.resource import start_tracker, stop_tracker
 from certain_library.tracking.tracker import tracker
+from certain_library.train_monitor.log_checkpoints import log_checkpoint
+from certain_library.train_monitor.log_examples import log_examples
 from certain_library.train_monitor.log_metrics import (
     log_metrics,
     log_resources,
     log_search_space,
 )
 from certain_library.train_monitor.log_model import (
-    log_model_info,
     log_model_architecture,
-    log_model_hyperparameters,
+    log_model_info,
     log_model_signature,
 )
-from certain_library.train_monitor.log_checkpoints import log_checkpoint
-from certain_library.train_monitor.log_examples import log_examples
-from certain_library.data_analysis.log_whylogs import log_whylogs_profile
-from certain_library.data_analysis.log_quality import log_quality_from_data
-from certain_library.data_analysis.log_privacy import log_privacy_from_data
-from certain_library.data_analysis.log_demographic_bias import log_demographic_bias_from_data
-from certain_library.data_analysis.log_counterfactuals import (
-    generate_price_counterfactual,
-    log_counterfactual_from_data,
-)
-from certain_library.log_basic.log_params import log_params
-from certain_library.data_analysis.log_dataset import (
-    log_dataset,
-    log_train_test_dataset,
-)
-from certain_library.data_analysis.log_timeseries import timestamp_analysis
-from certain_library.resource_monitor.resource import start_tracker, stop_tracker
-from certain_library.compliance.log_governance import (
-    log_risk,
-    log_human_oversight,
-    log_transparency_measure,
-    log_change,
-)
-from certain_library.compliance.log_experiment_governance import (
-    log_ai_actors,
-    log_labeling_procedures,
-)
-from certain_library.compliance.log_documentation import (
-    log_declarations_of_conformity,
-    log_visual_documentations,
-    log_explainable_ai,
-)
-from certain_library.compliance.log_deployment import (
-    log_model_packaging,
-    log_build_testing,
-    log_standards,
-    log_interface,
-    log_model_deployed,
-    log_monitor_logs,
-    log_decommissioning,
-)
-
-from certain_library.data_analysis.log_drift_metrics import (
-    log_drift_metrics,
-)
-
-from certain_library.git_tracking import log_git_metadata
-from certain_library.metadata.artifact_metadata import (
-    collect_runtime_environment,
-    save_runtime_env_as_artifact,
-    save_dataset_manifest,
-)
-from certain_library.data_analysis.log_data_techniques import log_data_techniques
+from sklearn.metrics import mean_squared_error, r2_score
 
 # ---------------------------------------------------------------------------
 # Set USE_DUMMY_DATA = True to run fully offline with synthetic energy data.
@@ -154,9 +145,7 @@ def remove_outliers_iqr(
     Q1 = data[column].quantile(0.25)
     Q3 = data[column].quantile(0.75)
     IQR = Q3 - Q1
-    return data[
-        ~((data[column] < (Q1 - 1.5 * IQR)) | (data[column] > (Q3 + 1.5 * IQR)))
-    ]
+    return data[~((data[column] < (Q1 - 1.5 * IQR)) | (data[column] > (Q3 + 1.5 * IQR)))]
 
 
 def augment_with_noise(
@@ -166,9 +155,7 @@ def augment_with_noise(
 ) -> pd.DataFrame:
     """Augment the DataFrame by injecting noise into the specified column."""
     df_aug = input_df.copy()
-    df_aug[f"{column}_aug"] = df_aug[column] + noise_factor * np.random.normal(
-        size=len(df_aug)
-    )
+    df_aug[f"{column}_aug"] = df_aug[column] + noise_factor * np.random.normal(size=len(df_aug))
     return df_aug
 
 
@@ -255,12 +242,18 @@ with tracker.start_run(
         [
             {
                 "risk_type": "data_bias",
-                "risk_description": "Energy load data may reflect historical consumption patterns that are biased towards certain seasons or regions.",
+                "risk_description": (
+                    "Energy load data may reflect historical consumption patterns that are biased "
+                    "towards certain seasons or regions."
+                ),
                 "risk_level": 0.4,
             },
             {
                 "risk_type": "data_drift",
-                "risk_description": "Energy consumption patterns may shift significantly due to climate change or policy changes post training.",
+                "risk_description": (
+                    "Energy consumption patterns may shift significantly due to climate change or "
+                    "policy changes post training."
+                ),
                 "risk_level": 0.6,
             },
         ]
@@ -270,13 +263,24 @@ with tracker.start_run(
         [
             {
                 "oversight_type": "human-in-the-loop",
-                "description": "Domain experts review model predictions before they are used in operational energy dispatch decisions.",
-                "implementation_details": "Weekly review meetings with the energy operations team; model output is advisory only.",
+                "description": (
+                    "Domain experts review model predictions before they are used in operational "
+                    "energy dispatch decisions."
+                ),
+                "implementation_details": (
+                    "Weekly review meetings with the energy operations team; model output is "
+                    "advisory only."
+                ),
             },
             {
                 "oversight_type": "periodic-audit",
-                "description": "Quarterly audit of model performance metrics and dataset freshness.",
-                "implementation_details": "Automated report generated from MLflow tracking server and reviewed by the AI governance team.",
+                "description": (
+                    "Quarterly audit of model performance metrics and dataset freshness."
+                ),
+                "implementation_details": (
+                    "Automated report generated from MLflow tracking server and reviewed by the "
+                    "AI governance team."
+                ),
             },
         ]
     )
@@ -289,12 +293,18 @@ with tracker.start_run(
                     "https://wiki.example.com/model-card/energy-xgb",
                     "https://wiki.example.com/data-sheet/opsd",
                 ],
-                "description": "Public-facing documentation for the energy load forecasting model and the OPSD dataset.",
+                "description": (
+                    "Public-facing documentation for the energy load forecasting model and the "
+                    "OPSD dataset."
+                ),
             },
             {
                 "measure_type": ["feature_importance_report"],
                 "measure_value": ["mlflow://artifacts/feature_importance"],
-                "description": "XGBoost feature importance logged as an MLflow artifact after each training run.",
+                "description": (
+                    "XGBoost feature importance logged as an MLflow artifact after each "
+                    "training run."
+                ),
             },
         ]
     )
@@ -302,7 +312,10 @@ with tracker.start_run(
     log_change(
         [
             {
-                "change_description": "Initial training run using OPSD 60-minute time series data with XGBoost regressor and Optuna hyperparameter search.",
+                "change_description": (
+                    "Initial training run using OPSD 60-minute time series data with XGBoost "
+                    "regressor and Optuna hyperparameter search."
+                ),
                 "changed_by": "data_science_team",
             },
         ]
@@ -346,9 +359,7 @@ with tracker.start_run(
     log_dataset(df_cleaned, name="df_cleaned", output_dir="data_cleaning")
     log_whylogs_profile(df_cleaned, name="cleaned")
 
-    df_filtered = remove_outliers_iqr(
-        df_cleaned, column="DE_load_actual_entsoe_transparency"
-    )
+    df_filtered = remove_outliers_iqr(df_cleaned, column="DE_load_actual_entsoe_transparency")
     log_dataset(df_filtered, name="df_filtered", output_dir="data_cleaning")
     log_whylogs_profile(df_cleaned, name="filtered")
 
@@ -387,9 +398,7 @@ with tracker.start_run(
     )
 
     # Split data without shuffling to preserve temporal order
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, shuffle=False
-    )
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
 
     # Combine features and target into DataFrames before logging
     train_combined = pd.concat(
@@ -499,9 +508,7 @@ with tracker.start_run(
         train_data=train_combined,
         test_data=test_combined,
         train_timestamps=df_sorted["utc_timestamp"].iloc[: len(X_train)],
-        test_timestamps=df_sorted["utc_timestamp"].iloc[
-            len(X_train) : len(X_train) + len(X_test)
-        ],
+        test_timestamps=df_sorted["utc_timestamp"].iloc[len(X_train) : len(X_train) + len(X_test)],
         consistency_ranges={
             "DE_price_day_ahead": {"min": 0.0, "max": 100.0},
         },
@@ -535,9 +542,7 @@ with tracker.start_run(
         bias_demo_df["Opinion"] = rng.choice(
             ["Neutral", "Positive", "Concerned"], size=len(bias_demo_df)
         )
-        bias_demo_df["AnswerQuality"] = rng.choice(
-            ["High", "Medium"], size=len(bias_demo_df)
-        )
+        bias_demo_df["AnswerQuality"] = rng.choice(["High", "Medium"], size=len(bias_demo_df))
         bias_demo_df["BiasGroup"] = rng.choice(
             ["Group A", "Group B", "Group C"], size=len(bias_demo_df)
         )
@@ -571,20 +576,16 @@ with tracker.start_run(
 
     timestamp_analysis(
         train_timestamps=df_sorted["utc_timestamp"].iloc[: len(X_train)],
-        test_timestamps=df_sorted["utc_timestamp"].iloc[
-            len(X_train) : len(X_train) + len(X_test)
-        ],
+        test_timestamps=df_sorted["utc_timestamp"].iloc[len(X_train) : len(X_train) + len(X_test)],
         output_dir="timestamps",
     )
 
     # ---------------- Model Training with Hyperparameter Tuning ----------------
+    import optuna
     import xgboost as xgb
     from sklearn.metrics import mean_squared_error
-    import optuna
 
-    tracker_data, output_location = start_tracker(
-        output_file_name="emissions_hyperparams"
-    )
+    tracker_data, output_location = start_tracker(output_file_name="emissions_hyperparams")
     print("⚡ Resource monitoring started for model training")
     print()
 
@@ -642,9 +643,7 @@ with tracker.start_run(
             # Log system resource usage for this trial
             process = psutil.Process(os.getpid())
             mem_info = process.memory_info()
-            log_resources(
-                {"trial_memory_usage_mb": mem_info.rss / 1024 / 1024}, step=trial.number
-            )
+            log_resources({"trial_memory_usage_mb": mem_info.rss / 1024 / 1024}, step=trial.number)
             log_resources(
                 {"trial_cpu_usage_percent": psutil.cpu_percent(interval=1)},
                 step=trial.number,
@@ -659,7 +658,8 @@ with tracker.start_run(
     log_params({"best_max_depth": best_trial.params["max_depth"]})
     log_params({"best_learning_rate": best_trial.params["learning_rate"]})
     best_mse = best_trial.value if best_trial.value is not None else 0.0
-    # log_metrics expects a mapping of metric names to values; pass a dict to avoid positional type mismatch
+    # log_metrics expects a mapping of metric names to values; pass a dict to avoid
+    # positional type mismatch
     log_metrics({"mse": best_mse}, step=best_trial.number, keep_best=True)
 
     tracker_data, output_location = start_tracker(output_file_name="emissions_train")
@@ -694,9 +694,7 @@ with tracker.start_run(
         process = psutil.Process(os.getpid())
         mem_info = process.memory_info()
         log_resources({"trial_memory_usage_mb": mem_info.rss / 1024 / 1024}, step=step)
-        log_resources(
-            {"trial_cpu_usage_percent": psutil.cpu_percent(interval=1)}, step=step
-        )
+        log_resources({"trial_cpu_usage_percent": psutil.cpu_percent(interval=1)}, step=step)
         # Log a small sample of examples every 5 steps
         try:
             if step % 5 == 0:
@@ -750,7 +748,8 @@ with tracker.start_run(
     # Train a separate price model so we can generate a model-based
     # counterfactual for the electricity-price target.
     price_feature_columns = [
-        col for col in df_sorted.select_dtypes(include=[np.number]).columns
+        col
+        for col in df_sorted.select_dtypes(include=[np.number]).columns
         if col != "DE_price_day_ahead"
     ]
     split_index = len(X_train)
@@ -771,7 +770,13 @@ with tracker.start_run(
     # model searches for the smallest realistic change that brings the
     # predicted price below the threshold.
     try:
-        original_counterfactual, counterfactual_counterfactual, original_prediction, counterfactual_prediction, counterfactual_metadata = generate_price_counterfactual(
+        (
+            original_counterfactual,
+            counterfactual_counterfactual,
+            original_prediction,
+            counterfactual_prediction,
+            counterfactual_metadata,
+        ) = generate_price_counterfactual(
             original_row=test_combined.iloc[[0]].copy(),
             price_model=price_model,
             feature_columns=price_feature_columns,
@@ -824,7 +829,9 @@ with tracker.start_run(
                 "filename": "DoC_energy_xgb_v1.pdf",
                 "file_type": "pdf",
                 "mime_type": "application/pdf",
-                "description": "Declaration of conformity for the energy load forecasting XGBoost model.",
+                "description": (
+                    "Declaration of conformity for the energy load forecasting XGBoost model."
+                ),
             },
         ],
     )
@@ -854,18 +861,18 @@ with tracker.start_run(
     # Log XGBoost feature importances as explainability record
     importance_scores = final_model.get_booster().get_score(importance_type="gain")
     if importance_scores:
-        top_features = sorted(
-            importance_scores.items(), key=lambda x: x[1], reverse=True
-        )[:10]
+        top_features = sorted(importance_scores.items(), key=lambda x: x[1], reverse=True)[:10]
         log_explainable_ai(
             feature_names=[f for f, _ in top_features],
             feature_values=[f"{v:.4f}" for _, v in top_features],
-            implementation_details="XGBoost built-in feature importance (gain). Top-10 features by gain score.",
+            implementation_details=(
+                "XGBoost built-in feature importance (gain). Top-10 features by gain score."
+            ),
         )
 
     # ---------------- Deployment: local FastAPI inference server ----------------
-    import uvicorn
     import requests as http_requests
+    import uvicorn
     from fastapi import FastAPI
     from pydantic import BaseModel
 
@@ -901,9 +908,7 @@ with tracker.start_run(
         return {"status": "ok", "model": MODEL_ID}
 
     # --- Start server in a background thread ---------------------------------
-    server_config = uvicorn.Config(
-        serve_app, host="0.0.0.0", port=SERVE_PORT, log_level="warning"
-    )
+    server_config = uvicorn.Config(serve_app, host="0.0.0.0", port=SERVE_PORT, log_level="warning")
     server = uvicorn.Server(server_config)
     server_thread = threading.Thread(target=server.run, daemon=True)
     server_thread.start()
@@ -964,7 +969,9 @@ with tracker.start_run(
         standards=[
             {
                 "name": "EU AI Act",
-                "description": "Regulation on artificial intelligence – risk-based compliance framework.",
+                "description": (
+                    "Regulation on artificial intelligence – risk-based compliance framework."
+                ),
                 "version": "2024/1689",
             },
             {
@@ -995,9 +1002,7 @@ with tracker.start_run(
         timeout=10,
     )
     preds_result = resp.json()
-    print(
-        f"📡 Sample predictions: {[round(p, 1) for p in preds_result['predictions']]}"
-    )
+    print(f"📡 Sample predictions: {[round(p, 1) for p in preds_result['predictions']]}")
     _enqueue(f"Deployment smoke-test predictions: {preds_result['predictions'][:3]}")
 
     # Health-check for the log

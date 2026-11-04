@@ -6,7 +6,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import mlflow
 import numpy as np
@@ -18,49 +18,38 @@ try:
 except ImportError:
     TabPFNRegressor = None
 
-from certain_library.tracking.tracker import tracker
-from certain_library.log_basic.log_params import log_params
-from certain_library.train_monitor.log_metrics import log_metrics, log_resources
-from certain_library.git_tracking import log_git_metadata
-from certain_library.metadata.artifact_metadata import (
-    collect_runtime_environment,
-    save_runtime_env_as_artifact,
-    save_dataset_manifest,
-)
-from certain_library.train_monitor.log_model import (
-    log_model_info,
-    log_model_hyperparameters,
-)
 from certain_library.data_analysis.log_dataset import (
     log_dataset,
     log_train_test_dataset,
 )
-from certain_library.data_analysis.log_whylogs import log_whylogs_profile
 from certain_library.data_analysis.log_timeseries import timestamp_analysis
-from certain_library.resource_monitor.resource import start_tracker, stop_tracker
-
-from finance_pilot.utils.constants import (
-    DEFAULT_TIMESTAMP_COL,
-    DEFAULT_ITEM_COL,
-    DEFAULT_RATING_COL,
-    DEFAULT_USER_COL,
+from certain_library.data_analysis.log_whylogs import log_whylogs_profile
+from certain_library.git_tracking import log_git_metadata
+from certain_library.log_basic.log_params import log_params
+from certain_library.metadata.artifact_metadata import (
+    collect_runtime_environment,
+    save_dataset_manifest,
+    save_runtime_env_as_artifact,
 )
-
+from certain_library.resource_monitor.resource import start_tracker, stop_tracker
+from certain_library.tracking.tracker import tracker
+from certain_library.train_monitor.log_metrics import log_metrics, log_resources
+from certain_library.train_monitor.log_model import (
+    log_model_hyperparameters,
+    log_model_info,
+)
 from finance_pilot.algorithms.kpi_gen.load_kpi_generator import LoadKPIGenerator
 from finance_pilot.algorithms.kpi_gen.ma_kpi_generator import MAKPIGenerator
 from finance_pilot.algorithms.profitability_prediction import ProfitabilityPrediction
 from finance_pilot.algorithms.rfr_kpi_model import RFRKPIModel
-
 from finance_pilot.data.filter.asset.asset_with_test_price import AssetWithTestPrice
 from finance_pilot.data.filter.customer.customer_in_train import CustomerInTrain
 from finance_pilot.data.filter.data_filter import DataFilter
 from finance_pilot.data.filter.rating.ratings_not_in_train import RatingsNotInTrain
 from finance_pilot.data.filter.timeseries.no_filter import NoFilter
-
 from finance_pilot.data.financial_asset_time_series import FinancialAssetTimeSeries
 from finance_pilot.data.financial_data_continuous import FinancialContinuousData
 from finance_pilot.data.financial_interaction_data import FinancialInteractionData
-
 from finance_pilot.metrics.kpi_ann_evaluation_metric import (
     AnnualizedKPIEvaluationMetric,
 )
@@ -69,6 +58,12 @@ from finance_pilot.metrics.kpi_monthly_evaluation_metric import (
     MonthlyKPIEvaluationMetric,
 )
 from finance_pilot.metrics.pure_ndcg import PureNDCG
+from finance_pilot.utils.constants import (
+    DEFAULT_ITEM_COL,
+    DEFAULT_RATING_COL,
+    DEFAULT_TIMESTAMP_COL,
+    DEFAULT_USER_COL,
+)
 
 pd.options.mode.chained_assignment = None
 
@@ -87,15 +82,15 @@ COUNTERFACTUALS_SCRIPT = FINANCE_PILOT_DIR / "generate_counterfactuals.py"
 DATASET_ANALYSIS_MODE = "dataset-analysis"
 DATASET_ANALYSIS_PERIODS = (
     # start_date, end_date, num_splits, num_future, summary_suffix
-    ("2019-08-01", "2021-02-26", 28, 13, 1), 
+    ("2019-08-01", "2021-02-26", 28, 13, 1),
 )
 
 
 def run_basic_dataset_analysis(
     dataset_path: str,
     output_directory: str,
-    dataset_analysis_script: Optional[str] = None,
-    customer_analysis_script: Optional[str] = None,
+    dataset_analysis_script: str | None = None,
+    customer_analysis_script: str | None = None,
 ) -> None:
     """Run the FAR-Trans asset/customer analysis over the two configured periods.
 
@@ -127,16 +122,12 @@ def run_basic_dataset_analysis(
     missing_inputs = [path for path in required_inputs if not os.path.isfile(path)]
     if missing_inputs:
         raise FileNotFoundError(
-            "Missing required FAR-Trans input file(s): {}".format(
-                ", ".join(missing_inputs)
-            )
+            "Missing required FAR-Trans input file(s): {}".format(", ".join(missing_inputs))
         )
 
     for script_path in (dataset_analysis_script, customer_analysis_script):
         if not os.path.isfile(script_path):
-            raise FileNotFoundError(
-                "Required analysis script not found: {}".format(script_path)
-            )
+            raise FileNotFoundError(f"Required analysis script not found: {script_path}")
 
     with tracker.start_run(
         run_name="dataset_analysis_subrun",
@@ -150,11 +141,7 @@ def run_basic_dataset_analysis(
         log_params({"dataset_analysis_script": dataset_analysis_script})
 
         for start_date, end_date, num_splits, num_future, suffix in DATASET_ANALYSIS_PERIODS:
-            print(
-                "Starting analysis for period: {} to {}".format(
-                    start_date, end_date
-                )
-            )
+            print(f"Starting analysis for period: {start_date} to {end_date}")
 
             child_env["MLFLOW_RUN_ID"] = run_id
 
@@ -170,7 +157,7 @@ def run_basic_dataset_analysis(
                 str(num_splits),
                 str(num_future),
                 output_directory,
-                "assets_{}.csv".format(suffix),
+                f"assets_{suffix}.csv",
             ]
 
             log_params({"start_subprocess_dataset_analysis": True})
@@ -178,9 +165,8 @@ def run_basic_dataset_analysis(
                 subprocess.run(asset_command, check=True, env=child_env)
             except subprocess.CalledProcessError as exc:
                 raise RuntimeError(
-                    "Asset analysis failed for period {} to {} (exit code {}).".format(
-                        start_date, end_date, exc.returncode
-                    )
+                    f"Asset analysis failed for period {start_date} to {end_date} "
+                    f"(exit code {exc.returncode})."
                 ) from exc
 
             log_params({"finish_subprocess_dataset_analysis": True})
@@ -197,11 +183,7 @@ def run_basic_dataset_analysis(
         log_params({"customer_analysis_script": customer_analysis_script})
 
         for start_date, end_date, num_splits, num_future, suffix in DATASET_ANALYSIS_PERIODS:
-            print(
-                "Starting analysis for period: {} to {}".format(
-                    start_date, end_date
-                )
-            )
+            print(f"Starting analysis for period: {start_date} to {end_date}")
 
             child_env["MLFLOW_RUN_ID"] = run_id
 
@@ -218,7 +200,7 @@ def run_basic_dataset_analysis(
                 str(num_splits),
                 str(num_future),
                 output_directory,
-                "customers_{}.csv".format(suffix),
+                f"customers_{suffix}.csv",
             ]
 
             log_params({"start_subprocess_customer_analysis": True})
@@ -226,13 +208,12 @@ def run_basic_dataset_analysis(
                 subprocess.run(customer_command, check=True, env=child_env)
             except subprocess.CalledProcessError as exc:
                 raise RuntimeError(
-                    "Customer analysis failed for period {} to {} (exit code {}).".format(
-                        start_date, end_date, exc.returncode
-                    )
+                    f"Customer analysis failed for period {start_date} to {end_date} "
+                    f"(exit code {exc.returncode})."
                 ) from exc
 
             log_params({"finish_subprocess_customer_analysis": True})
-            print("End analysis for period: {} to {}".format(start_date, end_date))
+            print(f"End analysis for period: {start_date} to {end_date}")
 
 
 def run_dataset_analysis_mode_if_requested() -> bool:
@@ -244,7 +225,7 @@ def run_dataset_analysis_mode_if_requested() -> bool:
         return False
 
     parser = argparse.ArgumentParser(
-        prog="{} {}".format(os.path.basename(sys.argv[0]), DATASET_ANALYSIS_MODE),
+        prog=f"{os.path.basename(sys.argv[0])} {DATASET_ANALYSIS_MODE}",
         description=(
             "Run FAR-Trans basic asset/customer dataset analysis over the two "
             "configured evaluation periods."
@@ -252,10 +233,7 @@ def run_dataset_analysis_mode_if_requested() -> bool:
     )
     parser.add_argument(
         "dataset_path",
-        help=(
-            "Directory containing transactions.csv, close_prices.csv, "
-            "and limit_prices.csv."
-        ),
+        help=("Directory containing transactions.csv, close_prices.csv, and limit_prices.csv."),
     )
     parser.add_argument(
         "output_dir",
@@ -292,6 +270,7 @@ def run_dataset_analysis_mode_if_requested() -> bool:
         customer_analysis_script=analysis_args.customer_analysis_script,
     )
     return True
+
 
 basic_kpis = [
     "past_profitability_63d",
@@ -384,13 +363,13 @@ full_short_kpis = [
 ]
 
 
-def log_run_metadata(run_tags: Dict[str, str]) -> None:
+def log_run_metadata(run_tags: dict[str, str]) -> None:
     """Write git, tag and runtime-environment metadata for the active parent run."""
     try:
         git_meta = log_git_metadata()
-        print("Logged git metadata: {}".format(git_meta))
+        print(f"Logged git metadata: {git_meta}")
     except Exception as exc:
-        print("[WARN] Could not log git metadata: {}".format(exc))
+        print(f"[WARN] Could not log git metadata: {exc}")
 
     tracker.set_tags(run_tags)
 
@@ -399,24 +378,24 @@ def log_run_metadata(run_tags: Dict[str, str]) -> None:
         save_runtime_env_as_artifact(env)
         print("Wrote runtime_env.json artifact")
     except Exception as exc:
-        print("[WARN] Could not write runtime_env.json: {}".format(exc))
+        print(f"[WARN] Could not write runtime_env.json: {exc}")
 
 
 def safe_log_dataset(df: pd.DataFrame, name: str, output_dir: str) -> None:
     try:
         log_dataset(df, name=name, output_dir=output_dir)
     except Exception as exc:
-        print("[WARN] Could not log dataset {}: {}".format(name, exc))
+        print(f"[WARN] Could not log dataset {name}: {exc}")
 
 
 def safe_log_whylogs(df: pd.DataFrame, name: str) -> None:
     try:
         log_whylogs_profile(df, name=name)
     except Exception as exc:
-        print("[WARN] Could not log whylogs profile {}: {}".format(name, exc))
+        print(f"[WARN] Could not log whylogs profile {name}: {exc}")
 
 
-def get_feature_list(feature_set: str) -> List[str]:
+def get_feature_list(feature_set: str) -> list[str]:
     if feature_set == "basic":
         return basic_kpis
     if feature_set == "full":
@@ -426,12 +405,10 @@ def get_feature_list(feature_set: str) -> List[str]:
     if feature_set == "full_short":
         return full_short_kpis
 
-    raise ValueError(
-        "Invalid feature_set. Use one of: basic, full, basic_short, full_short"
-    )
+    raise ValueError("Invalid feature_set. Use one of: basic, full, basic_short, full_short")
 
 
-def get_name(rec_model: str, params: List[str]) -> Optional[str]:
+def get_name(rec_model: str, params: list[str]) -> str | None:
     """Build a stable run/model name from the model-specific parameters."""
     if rec_model in (RFR, LGBM):
         if len(params) < 2:
@@ -444,7 +421,7 @@ def get_name(rec_model: str, params: List[str]) -> Optional[str]:
 
         feature_set = params[1]
         get_feature_list(feature_set)  # validate early
-        return "{}_{}_{}".format(rec_model, n_estimators, feature_set)
+        return f"{rec_model}_{n_estimators}_{feature_set}"
 
     if rec_model == TABPFN:
         if len(params) < 1:
@@ -460,9 +437,9 @@ def get_name(rec_model: str, params: List[str]) -> Optional[str]:
                 return None
             if not 0.0 < sample_fraction <= 1.0:
                 return None
-            return "{}_{}_sample-{}".format(TABPFN, feature_set, sample_fraction)
+            return f"{TABPFN}_{feature_set}_sample-{sample_fraction}"
 
-        return "{}_{}".format(TABPFN, feature_set)
+        return f"{TABPFN}_{feature_set}"
 
     return None
 
@@ -471,8 +448,8 @@ def compute_profitability(
     time_series: pd.DataFrame,
     recommendation_date: Any,
     evaluation_date: Any,
-    min_values: Optional[pd.DataFrame] = None,
-) -> Dict[Any, float]:
+    min_values: pd.DataFrame | None = None,
+) -> dict[Any, float]:
     rec_series = time_series[time_series[DEFAULT_TIMESTAMP_COL] == recommendation_date]
 
     future_series = time_series[time_series[DEFAULT_TIMESTAMP_COL] == evaluation_date]
@@ -484,8 +461,7 @@ def compute_profitability(
     )
 
     aux_series["profitability"] = (
-        aux_series[DEFAULT_RATING_COL + "_future"]
-        - aux_series[DEFAULT_RATING_COL + "_present"]
+        aux_series[DEFAULT_RATING_COL + "_future"] - aux_series[DEFAULT_RATING_COL + "_present"]
     ) / aux_series[DEFAULT_RATING_COL + "_present"]
 
     prof_dict = {}
@@ -511,7 +487,7 @@ def compute_volatility(
     time_series: pd.DataFrame,
     recommendation_date: Any,
     evaluation_date: Any,
-) -> Dict[Any, float]:
+) -> dict[Any, float]:
     series = time_series[
         time_series[DEFAULT_TIMESTAMP_COL].between(
             recommendation_date,
@@ -540,22 +516,23 @@ def compute_volatility(
 
 def test_algorithm(
     algorithm: Any,
-    eval_metrics: List[Any],
+    eval_metrics: list[Any],
     file_prefix: str,
     recommendation_date: Any,
     customers: Any,
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     if os.path.exists(file_prefix + "_metrics.csv"):
-        print("Skipping {}; metrics already exist.".format(file_prefix))
+        print(f"Skipping {file_prefix}; metrics already exist.")
         return None
 
     local_start = dt.datetime.now()
-    print("Started {}".format(file_prefix))
+    print(f"Started {file_prefix}")
 
     algorithm.train(recommendation_date)
-    print("Algorithm trained in {}".format(dt.datetime.now() - local_start))
+    print(f"Algorithm trained in {dt.datetime.now() - local_start}")
 
-    # finance_pilot.recommend signature changed to (rec_time, target_custs, repeated, only_test_customers)
+    # finance_pilot.recommend signature changed to
+    # (rec_time, target_custs, repeated, only_test_customers)
     recs = algorithm.recommend(recommendation_date, customers, False, True)
     recs = recs.sort_values(
         by=[DEFAULT_USER_COL, DEFAULT_RATING_COL],
@@ -572,7 +549,7 @@ def test_algorithm(
     metric_res = {}
 
     for metric_name, metric_obj in eval_metrics:
-        print("Started metric {}".format(metric_name))
+        print(f"Started metric {metric_name}")
 
         metric_dict = metric_obj.evaluate_cutoffs(
             recs,
@@ -583,16 +560,14 @@ def test_algorithm(
 
         for cutoff in cutoffs:
             # Use colon separator for metric names to comply with MLflow naming rules
-            full_metric_name = "{}:{}".format(metric_name, cutoff)
+            full_metric_name = f"{metric_name}:{cutoff}"
             metric_res[full_metric_name] = metric_dict[cutoff]
             aggregate_value = metric_dict[cutoff][1]
 
             try:
                 log_metrics({full_metric_name: float(aggregate_value)})
             except Exception as exc:
-                print(
-                    "[WARN] Could not log metric {}: {}".format(full_metric_name, exc)
-                )
+                print(f"[WARN] Could not log metric {full_metric_name}: {exc}")
 
     metrics_file = file_prefix + "_metrics.csv"
     with open(metrics_file, "w") as f:
@@ -619,23 +594,23 @@ def test_algorithm(
         mlflow.log_artifact(metrics_file, artifact_path="metrics")
         mlflow.log_artifact(customers_file, artifact_path="customer_metrics")
     except Exception as exc:
-        print("[WARN] Could not log artifacts: {}".format(exc))
+        print(f"[WARN] Could not log artifacts: {exc}")
 
-    print("Finished {} in {}".format(file_prefix, dt.datetime.now() - local_start))
+    print(f"Finished {file_prefix} in {dt.datetime.now() - local_start}")
 
     return metric_res
 
 
 def run_regressor(
     model_id: str,
-    params: List[str],
+    params: list[str],
     financial_data: Any,
     recommendation_date: Any,
-    eval_metrics: List[Any],
+    eval_metrics: list[Any],
     output_dir: str,
     file_name: str,
     num_months: str,
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Instantiate the requested model and run the common profitability pipeline."""
 
     sample_fraction = None
@@ -643,9 +618,7 @@ def run_regressor(
 
     if model_id in (RFR, LGBM):
         if len(params) < 2:
-            raise ValueError(
-                "{} requires: <n_estimators> <feature_set>".format(model_id)
-            )
+            raise ValueError(f"{model_id} requires: <n_estimators> <feature_set>")
         model_n_estimators = int(params[0])
         feature_set = params[1]
 
@@ -659,7 +632,7 @@ def run_regressor(
             if not 0.0 < sample_fraction <= 1.0:
                 raise ValueError("TabPFN sample_fraction must be in (0, 1].")
     else:
-        raise ValueError("Unsupported model: {}".format(model_id))
+        raise ValueError(f"Unsupported model: {model_id}")
 
     feats = get_feature_list(feature_set)
 
@@ -698,9 +671,7 @@ def run_regressor(
 
     else:  # TABPFN
         if TabPFNRegressor is None:
-            raise ImportError(
-                "TabPFN is not installed. Install it with: pip install tabpfn"
-            )
+            raise ImportError("TabPFN is not installed. Install it with: pip install tabpfn")
         model = TabPFNRegressor()
         model_display_name = "TabPFNRegressor"
         framework = "tabpfn"
@@ -713,10 +684,9 @@ def run_regressor(
         # faithfully at this point without modifying ProfitabilityPrediction.
         if sample_fraction is not None:
             print(
-                "[WARN] TabPFN sample_fraction={} was supplied, but proportional "
+                f"[WARN] TabPFN sample_fraction={sample_fraction} was supplied, but proportional "
                 "per-asset sampling is not implemented in this tracked "
                 "recommendation.py. The value will be logged only."
-                .format(sample_fraction)
             )
 
     algorithm = ProfitabilityPrediction(
@@ -739,7 +709,7 @@ def run_regressor(
         }
     )
 
-    hyperparams: Dict[str, Any] = {
+    hyperparams: dict[str, Any] = {
         "feature_set": feature_set,
         "num_months": num_months,
         "features": ",".join(feats),
@@ -803,7 +773,7 @@ def load_or_compute_kpis(
     kpi_type: str = "full_short",
 ) -> pd.DataFrame:
     kpi_file = os.path.join(output_dir, "kpis.csv")
-    print("KPI file: {}".format(kpi_file))
+    print(f"KPI file: {kpi_file}")
 
     if os.path.exists(kpi_file):
         kpi_gen = LoadKPIGenerator(kpi_file)
@@ -826,7 +796,7 @@ def get_dates_from_args(args: argparse.Namespace, data: Any):
         min_date = dt.datetime.strptime(args.min_date, "%Y-%m-%d")
         max_date = dt.datetime.strptime(args.max_date, "%Y-%m-%d")
 
-        print("Num splits: {} Num future: {}".format(args.num_splits, args.num_future))
+        print(f"Num splits: {args.num_splits} Num future: {args.num_future}")
 
         dates, future_dates = data.get_dates(
             min_date,
@@ -844,16 +814,12 @@ def get_dates_from_args(args: argparse.Namespace, data: Any):
 
     print("Selected dates:")
     for i in range(len(dates)):
-        print(
-            "\t{} Training date: {}\tFuture date: {}".format(
-                i, dates[i], future_dates[i]
-            )
-        )
+        print(f"\t{i} Training date: {dates[i]}\tFuture date: {future_dates[i]}")
 
     return dates, future_dates
 
 
-def build_metrics(splitted_data: Any, rec_date: Any, future_date: Any) -> List[Any]:
+def build_metrics(splitted_data: Any, rec_date: Any, future_date: Any) -> list[Any]:
     profitability_dict = compute_profitability(
         splitted_data.time_series,
         rec_date,
@@ -901,58 +867,49 @@ def build_metrics(splitted_data: Any, rec_date: Any, future_date: Any) -> List[A
     return metrics
 
 
-def _build_counterfactual_model_param_tag(model_name: str, params: List[str]) -> str:
+def _build_counterfactual_model_param_tag(model_name: str, params: list[str]) -> str:
     if len(params) < 2:
         raise ValueError(
-            "{} requires <n_estimators> <feature_set> to generate counterfactuals".format(
-                model_name
-            )
+            f"{model_name} requires <n_estimators> <feature_set> to generate counterfactuals"
         )
 
-    return "n-{}_kpi-{}_internal_kpis".format(int(params[0]), params[1])
+    return f"n-{int(params[0])}_kpi-{params[1]}_internal_kpis"
 
 
 def _run_counterfactual_generation(
     model_name: str,
-    params: List[str],
+    params: list[str],
     recommendation_date: Any,
 ) -> None:
     if model_name not in (RFR, LGBM):
         return
 
     if not COUNTERFACTUALS_SCRIPT.is_file():
-        raise FileNotFoundError(
-            "Counterfactual generator not found: {}".format(COUNTERFACTUALS_SCRIPT)
-        )
+        raise FileNotFoundError(f"Counterfactual generator not found: {COUNTERFACTUALS_SCRIPT}")
 
     with tracker.start_run(
         run_name="counterfactual_generation_sudrun",
         nested=True,
         tags={"run_stage": "counterfactual_generation"},
-    ) as run:
+    ):
         if importlib.util.find_spec("dice_ml") is None:
             print("[WARN] dice_ml is not installed; skipping counterfactual generation.")
             return
 
-        artifact_dir = Path("artifacts_for_counterfactuals") / "{}_{}".format(
-            model_name,
-            _build_counterfactual_model_param_tag(model_name, params),
+        artifact_dir = (
+            Path("artifacts_for_counterfactuals")
+            / f"{model_name}_{_build_counterfactual_model_param_tag(model_name, params)}"
         )
         if not artifact_dir.is_dir():
-            raise FileNotFoundError(
-                "Counterfactual artifact directory not found: {}".format(artifact_dir)
-            )
+            raise FileNotFoundError(f"Counterfactual artifact directory not found: {artifact_dir}")
 
         date_tag = pd.to_datetime(recommendation_date).strftime("%Y-%m-%d")
         pkl_candidates = sorted(
-            artifact_dir.glob("profitability_recommendation_pipeline_{}_*.pkl".format(date_tag))
+            artifact_dir.glob(f"profitability_recommendation_pipeline_{date_tag}_*.pkl")
         )
         if not pkl_candidates:
             raise FileNotFoundError(
-                "No counterfactual pipeline PKL found in {} for date {}".format(
-                    artifact_dir,
-                    date_tag,
-                )
+                f"No counterfactual pipeline PKL found in {artifact_dir} for date {date_tag}"
             )
 
         env = os.environ.copy()
@@ -969,7 +926,7 @@ def _run_counterfactual_generation(
             str(pkl_candidates[0]),
         ]
 
-        print("Generating counterfactuals from {}".format(pkl_candidates[0]))
+        print(f"Generating counterfactuals from {pkl_candidates[0]}")
         subprocess.run(command, cwd=str(SCRIPT_DIR.parent), env=env, check=True)
 
 
@@ -982,8 +939,8 @@ def run_single_experiment(
     rec_date: Any,
     future_date: Any,
     model_name: str,
-    params: List[str],
-) -> Optional[Dict[str, Any]]:
+    params: list[str],
+) -> dict[str, Any] | None:
     output_dir = args.output_dir
     months_term = args.months
 
@@ -993,7 +950,7 @@ def run_single_experiment(
     alg_name = model_name + "_" + rec_date.strftime("%Y-%m-%d")
 
     if os.path.exists(os.path.join(output_dir, alg_name + "_metrics.csv")):
-        print("Skipped {}; metrics already exist.".format(alg_name))
+        print(f"Skipped {alg_name}; metrics already exist.")
         return None
 
     with tracker.start_run(
@@ -1004,7 +961,7 @@ def run_single_experiment(
             "recommendation_date": rec_date.strftime("%Y-%m-%d"),
         },
     ) as run:
-        print("Run started: {}".format(run.info.run_id))
+        print(f"Run started: {run.info.run_id}")
 
         # Dataset size/location metadata (certain/metadata/data.json)
         try:
@@ -1014,7 +971,7 @@ def run_single_experiment(
                 write_manifest=False,
             )
         except Exception as exc:
-            print("[WARN] Could not write dataset manifest: {}".format(exc))
+            print(f"[WARN] Could not write dataset manifest: {exc}")
 
         log_params({"algorithm_name": alg_name})
         log_params({"model": args.model})
@@ -1054,12 +1011,12 @@ def run_single_experiment(
             ),
         )
 
-        print("Dataset split completed: {}".format(dt.datetime.now() - START_TIME))
+        print(f"Dataset split completed: {dt.datetime.now() - START_TIME}")
 
         try:
             log_train_test_dataset(splitted_data.train, splitted_data.test)
         except Exception as exc:
-            print("[WARN] Could not log train/test dataset: {}".format(exc))
+            print(f"[WARN] Could not log train/test dataset: {exc}")
 
         safe_log_whylogs(
             splitted_data.train,
@@ -1081,7 +1038,7 @@ def run_single_experiment(
                     output_dir="timestamps",
                 )
             except Exception as exc:
-                print("[WARN] Could not log timestamp analysis: {}".format(exc))
+                print(f"[WARN] Could not log timestamp analysis: {exc}")
 
         log_params({"num_train_rows": splitted_data.train.shape[0]})
         log_params({"num_test_rows": splitted_data.test.shape[0]})
@@ -1090,9 +1047,7 @@ def run_single_experiment(
 
         metrics = build_metrics(splitted_data, rec_date, future_date)
 
-        tracker_data, output_location = start_tracker(
-            output_file_name="emissions_{}".format(alg_name)
-        )
+        tracker_data, output_location = start_tracker(output_file_name=f"emissions_{alg_name}")
         print("Resource monitoring started")
 
         try:
@@ -1166,7 +1121,7 @@ def main() -> None:
         experiment_name=experiment_name,
         tags={"team": "finance", "project": "far_trans_demo", "owner": "dimitrios"},
     )
-    print("Experiment: {}".format(experiment_name))
+    print(f"Experiment: {experiment_name}")
 
     if len(sys.argv) > 1 and sys.argv[1] == DATASET_ANALYSIS_MODE:
         with tracker.start_run(
@@ -1192,7 +1147,7 @@ def main() -> None:
         args.time_series,
     )
 
-    print("Dataset loaded: {}".format(dt.datetime.now() - START_TIME))
+    print(f"Dataset loaded: {dt.datetime.now() - START_TIME}")
 
     # CHANGED: derive KPI/feature set from the model-specific parameter layout.
     if args.model in (RFR, LGBM):
@@ -1206,33 +1161,25 @@ def main() -> None:
         kpi_type=kpi_type,
     )
 
-    print("Technical indicators computed: {}".format(dt.datetime.now() - START_TIME))
+    print(f"Technical indicators computed: {dt.datetime.now() - START_TIME}")
 
     dates, future_dates = get_dates_from_args(args, data)
 
     with tracker.start_run(
         run_name=model_name,
         tags={"project": "far_trans_demo", "model": args.model},
-    ) as parent_run:
+    ):
         log_run_metadata({"run_stage": "recommendation", "run_type": "demo"})
 
         if args.model in (RFR, LGBM):
             if len(args.params) < 2:
-                sys.stderr.write(
-                    "ERROR: {} requires <n_estimators> <feature_set>\n".format(args.model)
-                )
-                sys.stderr.write(
-                    "feature_set: basic, full, basic_short, full_short\n"
-                )
+                sys.stderr.write(f"ERROR: {args.model} requires <n_estimators> <feature_set>\n")
+                sys.stderr.write("feature_set: basic, full, basic_short, full_short\n")
                 sys.exit(1)
         elif args.model == TABPFN:
             if len(args.params) < 1:
-                sys.stderr.write(
-                    "ERROR: tabpfn requires <feature_set> [sample_fraction]\n"
-                )
-                sys.stderr.write(
-                    "feature_set: basic, full, basic_short, full_short\n"
-                )
+                sys.stderr.write("ERROR: tabpfn requires <feature_set> [sample_fraction]\n")
+                sys.stderr.write("feature_set: basic, full, basic_short, full_short\n")
                 sys.exit(1)
 
             if len(args.params) >= 2:
@@ -1243,9 +1190,7 @@ def main() -> None:
                     sys.exit(1)
 
                 if not 0.0 < sample_fraction <= 1.0:
-                    sys.stderr.write(
-                        "ERROR: TabPFN sample_fraction must be in (0, 1].\n"
-                    )
+                    sys.stderr.write("ERROR: TabPFN sample_fraction must be in (0, 1].\n")
                     sys.exit(1)
 
         log_params({"model": args.model})
@@ -1275,7 +1220,6 @@ def main() -> None:
             )
 
     print("Workflow complete.")
-
 
 
 if __name__ == "__main__":

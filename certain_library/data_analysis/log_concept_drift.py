@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import json
 import math
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable, Optional
+from typing import Any
 
 from certain_library.tracking.tracker import tracker
 
@@ -19,7 +20,7 @@ def _accuracy(y_true: Iterable[Any], y_pred: Iterable[Any]) -> float:
     y_pred_list = list(y_pred)
     if len(y_true_list) == 0:
         return 0.0
-    correct = sum(1 for t, p in zip(y_true_list, y_pred_list) if t == p)
+    correct = sum(1 for t, p in zip(y_true_list, y_pred_list, strict=False) if t == p)
     return float(correct) / float(len(y_true_list))
 
 
@@ -35,7 +36,6 @@ def _two_proportion_z_test(success_a: int, n_a: int, success_b: int, n_b: int) -
         return {"z": 0.0, "p_value": 1.0}
     z = (p_b - p_a) / se
     # two-sided p-value from normal approx
-    from math import erf
 
     p_value = 1.0 - 0.5 * (1.0 + math.erf(abs(z) / math.sqrt(2.0)))
     p_value = min(max(0.0, p_value * 2.0), 1.0)
@@ -48,7 +48,7 @@ def log_concept_drift_from_labels(
     y_pred_ref: Iterable[Any],
     y_true_new: Iterable[Any],
     y_pred_new: Iterable[Any],
-    output_dir: Optional[Path] = None,
+    output_dir: Path | None = None,
     dataset_name: str = "concept_drift",
 ) -> dict[str, Any]:
     """Simple concept-drift check using accuracy change and two-proportion z-test.

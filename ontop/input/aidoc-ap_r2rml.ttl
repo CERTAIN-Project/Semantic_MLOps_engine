@@ -1436,9 +1436,10 @@
 
     rr:logicalTable [
         rr:sqlQuery """
-            SELECT DISTINCT ai_actors_id, experiment_id, ai_provider, organization
-            FROM ai_actors
-            WHERE ai_provider IS NOT NULL
+            SELECT DISTINCT a.ai_actors_id, r.experiment_id, a.ai_provider, a.organization
+            FROM ai_actors a
+            JOIN runs r ON a.run_id = r.run_id
+            WHERE a.ai_provider IS NOT NULL
         """
     ] ;
 
@@ -1477,9 +1478,10 @@
 
     rr:logicalTable [
         rr:sqlQuery """
-            SELECT DISTINCT ai_actors_id, experiment_id, ai_deployer, organization
-            FROM ai_actors
-            WHERE ai_deployer IS NOT NULL
+            SELECT DISTINCT a.ai_actors_id, r.experiment_id, a.ai_deployer, a.organization
+            FROM ai_actors a
+            JOIN runs r ON a.run_id = r.run_id
+            WHERE a.ai_deployer IS NOT NULL
         """
     ] ;
 
@@ -1518,9 +1520,10 @@
 
     rr:logicalTable [
         rr:sqlQuery """
-            SELECT DISTINCT ai_actors_id, experiment_id, auditor, organization
-            FROM ai_actors
-            WHERE auditor IS NOT NULL
+            SELECT DISTINCT a.ai_actors_id, r.experiment_id, a.auditor, a.organization
+            FROM ai_actors a
+            JOIN runs r ON a.run_id = r.run_id
+            WHERE a.auditor IS NOT NULL
         """
     ] ;
 
@@ -2301,10 +2304,11 @@
 
     rr:logicalTable [
         rr:sqlQuery """
-            SELECT experiment_id, deployment_id, model_id, standard_id,
-                   name, description, version,
-                   to_timestamp(CASE WHEN publication_date > 10000000000 THEN publication_date / 1000.0 ELSE publication_date END) AS publication_ts
-            FROM standards
+            SELECT r.experiment_id, s.deployment_id, s.model_id, s.standard_id,
+                   s.name, s.description, s.version,
+                   to_timestamp(CASE WHEN s.publication_date > 10000000000 THEN s.publication_date / 1000.0 ELSE s.publication_date END) AS publication_ts
+            FROM standards s
+            JOIN runs r ON s.run_id = r.run_id
         """
     ] ;
 

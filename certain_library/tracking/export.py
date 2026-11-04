@@ -3,14 +3,14 @@
 import argparse
 import json
 import os
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Dict, Iterable, List, Tuple
 
 from .metadata_writer import EVENT_FILES
 from .tracker import mirror_root
 
 
-def read_events(root: Path, filename: str) -> List[dict]:
+def read_events(root: Path, filename: str) -> list[dict]:
     """Read all valid events from one JSONL file."""
     path = root / "events" / filename
 
@@ -30,10 +30,10 @@ def read_events(root: Path, filename: str) -> List[dict]:
 
 def latest_by(
     events: Iterable[dict],
-    fields: Tuple[str, ...],
-) -> List[dict]:
+    fields: tuple[str, ...],
+) -> list[dict]:
     """Return the last event for each compound key."""
-    latest: Dict[tuple, dict] = {}
+    latest: dict[tuple, dict] = {}
 
     for event in events:
         key = tuple(event.get(field) for field in fields)
@@ -44,10 +44,10 @@ def latest_by(
 
 def unique_by(
     events: Iterable[dict],
-    fields: Tuple[str, ...],
-) -> List[dict]:
+    fields: tuple[str, ...],
+) -> list[dict]:
     """Deduplicate events while preserving their first occurrence."""
-    unique: Dict[tuple, dict] = {}
+    unique: dict[tuple, dict] = {}
 
     for event in events:
         key = tuple(event.get(field) for field in fields)
@@ -56,19 +56,18 @@ def unique_by(
     return list(unique.values())
 
 
-def compact(root: Path, output: Path) -> Dict[str, int]:
+def compact(root: Path, output: Path) -> dict[str, int]:
     """Create compact JSON files from the mirrored event stream."""
     root = Path(root)
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
 
     events = {
-        event_type: read_events(root, filename)
-        for event_type, filename in EVENT_FILES.items()
+        event_type: read_events(root, filename) for event_type, filename in EVENT_FILES.items()
     }
 
-    runs_by_id: Dict[str, dict] = {}
-    experiments_by_id: Dict[str, dict] = {}
+    runs_by_id: dict[str, dict] = {}
+    experiments_by_id: dict[str, dict] = {}
 
     for event in events["run"]:
         run_id = event["run_id"]
@@ -85,8 +84,7 @@ def compact(root: Path, output: Path) -> Dict[str, int]:
                     "lifecycle_stage": "active",
                     "artifact_location": event.get("artifact_uri"),
                     "creation_time": event.get("start_time"),
-                    "last_update_time": event.get("end_time")
-                    or event.get("start_time"),
+                    "last_update_time": event.get("end_time") or event.get("start_time"),
                 },
             )
 
@@ -116,7 +114,7 @@ def compact(root: Path, output: Path) -> Dict[str, int]:
     }
 
     for name, records in exports.items():
-        destination = output / "{}.json".format(name)
+        destination = output / f"{name}.json"
 
         with destination.open("w", encoding="utf-8") as handle:
             json.dump(records, handle, indent=2, sort_keys=True)
@@ -134,7 +132,12 @@ def compact(root: Path, output: Path) -> Dict[str, int]:
             with sidecar.open("w", encoding="utf-8") as sf:
                 sf.write(h.hexdigest() + "\n")
 
-            if os.getenv("CERTAIN_PROTECT_ARTIFACTS", "").strip().lower() in {"1","true","yes","on"}:
+            if os.getenv("CERTAIN_PROTECT_ARTIFACTS", "").strip().lower() in {
+                "1",
+                "true",
+                "yes",
+                "on",
+            }:
                 try:
                     os.chmod(destination, 0o444)
                     os.chmod(sidecar, 0o444)

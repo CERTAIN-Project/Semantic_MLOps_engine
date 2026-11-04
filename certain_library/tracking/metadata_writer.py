@@ -5,7 +5,7 @@ import os
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 try:
     import fcntl
@@ -41,11 +41,11 @@ class MetadataWriter:
     def append(
         self,
         event_type: str,
-        payload: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
         """Append an event and return the complete stored record."""
         if event_type not in EVENT_FILES:
-            raise ValueError("Unsupported event type: {!r}".format(event_type))
+            raise ValueError(f"Unsupported event type: {event_type!r}")
 
         with self._thread_lock:
             self.events_dir.mkdir(parents=True, exist_ok=True)

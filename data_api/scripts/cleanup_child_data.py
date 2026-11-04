@@ -12,6 +12,7 @@ Usage:
 """
 
 import argparse
+
 from app.target_connector import target_engine
 from sqlalchemy import MetaData, Table, select
 
@@ -24,7 +25,7 @@ def main(apply: bool = False):
     with target_engine.connect() as conn:
         # find runs that have a parent_id
         q = select(runs_table.c.run_id, runs_table.c.parent_id).where(
-            runs_table.c.parent_id != None
+            runs_table.c.parent_id.is_not(None)
         )
         child_runs = [r[0] for r in conn.execute(q).fetchall()]
 

@@ -17,17 +17,13 @@ The script reopens the existing MLflow run (no new run is created) and appends:
   • change_log artifact       → change_logs table  (records who retired the model)
 """
 
-from certain_library.tracking.tracker import tracker
-
 import argparse
 import os
 import time
 
-import mlflow
-
 from certain_library.compliance.log_deployment import log_decommissioning
 from certain_library.compliance.log_governance import log_change
-
+from certain_library.tracking.tracker import tracker
 
 # ---------------------------------------------------------------------------
 # Defaults — override via CLI args or environment variables
@@ -88,7 +84,6 @@ def main() -> None:
 
     # Reopen the existing training run — no new run is created
     with tracker.start_run(run_id=args.run_id):
-
         # ------------------------------------------------------------------ #
         # 1. Decommissioning record
         # ------------------------------------------------------------------ #

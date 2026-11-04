@@ -3,8 +3,8 @@
 Debug script to help troubleshoot test issues.
 """
 
-import sys
 import os
+import sys
 import traceback
 
 
@@ -15,8 +15,6 @@ def debug_imports():
     try:
         sys.path.insert(0, os.getcwd())
         print(f"Python path: {sys.path[:3]}...")
-
-        import certain_library as cl
 
         print("✅ certain_library imported successfully")
 

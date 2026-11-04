@@ -1,22 +1,21 @@
-import pytest
 import os
-from unittest.mock import patch, Mock
-from codecarbon import EmissionsTracker
+from unittest.mock import Mock, patch
 
+import pytest
 from certain_library.resource_monitor.resource import start_tracker, stop_tracker
 
 
 class TestResourceMonitoringOPSDPatterns:
     """Test resource monitoring following OPSD three-phase structure."""
 
-    def test_opsd_data_processing_emissions_tracking(
-        self, temp_directory, opsd_emissions_files
-    ):
+    def test_opsd_data_processing_emissions_tracking(self, temp_directory, opsd_emissions_files):
         """Test emissions tracking during OPSD data processing phase."""
-        with patch(
-            "certain_library.resource_monitor.resource.EmissionsTracker"
-        ) as mock_tracker_class, patch("mlflow.log_artifact") as mock_log_artifact:
-
+        with (
+            patch(
+                "certain_library.resource_monitor.resource.EmissionsTracker"
+            ) as mock_tracker_class,
+            patch("mlflow.log_artifact") as mock_log_artifact,
+        ):
             # Create mock tracker instance
             mock_tracker = Mock()
             mock_tracker_class.return_value = mock_tracker
@@ -48,10 +47,10 @@ class TestResourceMonitoringOPSDPatterns:
 
     def test_opsd_hyperparameter_optimization_emissions(self, temp_directory):
         """Test emissions tracking during OPSD hyperparameter optimization phase."""
-        with patch("codecarbon.EmissionsTracker") as mock_tracker_class, patch(
-            "mlflow.log_artifact"
+        with (
+            patch("codecarbon.EmissionsTracker") as mock_tracker_class,
+            patch("mlflow.log_artifact"),
         ):
-
             mock_tracker = Mock()
             mock_tracker_class.return_value = mock_tracker
 
@@ -67,9 +66,7 @@ class TestResourceMonitoringOPSDPatterns:
             emissions_file = os.path.join(temp_directory, "emissions_hyperparams.csv")
             with open(emissions_file, "w") as f:
                 f.write("timestamp,duration,emissions_kg,energy_consumed_kwh\n")
-                f.write(
-                    "2023-01-01 01:00:00,20.0,0.05,15.0\n"
-                )  # Longer duration for optimization
+                f.write("2023-01-01 01:00:00,20.0,0.05,15.0\n")  # Longer duration for optimization
                 f.write("2023-01-01 01:20:00,20.0,0.048,14.5\n")
 
             stop_tracker(tracker, output_location)
@@ -78,10 +75,10 @@ class TestResourceMonitoringOPSDPatterns:
 
     def test_opsd_model_training_emissions(self, temp_directory):
         """Test emissions tracking during OPSD incremental model training phase."""
-        with patch("codecarbon.EmissionsTracker") as mock_tracker_class, patch(
-            "mlflow.log_artifact"
+        with (
+            patch("codecarbon.EmissionsTracker") as mock_tracker_class,
+            patch("mlflow.log_artifact"),
         ):
-
             mock_tracker = Mock()
             mock_tracker_class.return_value = mock_tracker
 
@@ -104,14 +101,14 @@ class TestResourceMonitoringOPSDPatterns:
 
             assert output_location["output_file_name"] == "emissions_train.csv"
 
-    def test_opsd_complete_emissions_workflow(
-        self, temp_directory, opsd_emissions_files
-    ):
+    def test_opsd_complete_emissions_workflow(self, temp_directory, opsd_emissions_files):
         """Test complete emissions tracking workflow for all OPSD phases."""
-        with patch(
-            "certain_library.resource_monitor.resource.EmissionsTracker"
-        ) as mock_tracker_class, patch("mlflow.log_artifact") as mock_log_artifact:
-
+        with (
+            patch(
+                "certain_library.resource_monitor.resource.EmissionsTracker"
+            ) as mock_tracker_class,
+            patch("mlflow.log_artifact") as mock_log_artifact,
+        ):
             # Create ONE mock tracker that will be reused for ALL instances
             mock_tracker = Mock()
             mock_tracker.stop.return_value = 0.001  # Mock emissions return value
@@ -130,25 +127,17 @@ class TestResourceMonitoringOPSDPatterns:
                 )
 
                 # Verify we got the expected mock tracker
-                assert (
-                    tracker is mock_tracker
-                ), f"Expected same mock tracker, got different instance"
+                assert tracker is mock_tracker, "Expected same mock tracker, got different instance"
 
                 # Create phase-specific emissions file
                 emissions_file = os.path.join(temp_directory, filename)
                 with open(emissions_file, "w") as f:
                     if phase == "data_processing":
-                        f.write(
-                            "timestamp,duration,emissions_kg\n2023-01-01 00:00:00,1.0,0.001\n"
-                        )
+                        f.write("timestamp,duration,emissions_kg\n2023-01-01 00:00:00,1.0,0.001\n")
                     elif phase == "hyperparameter_optimization":
-                        f.write(
-                            "timestamp,duration,emissions_kg\n2023-01-01 01:00:00,20.0,0.05\n"
-                        )
+                        f.write("timestamp,duration,emissions_kg\n2023-01-01 01:00:00,20.0,0.05\n")
                     elif phase == "model_training":
-                        f.write(
-                            "timestamp,duration,emissions_kg\n2023-01-01 02:00:00,10.0,0.02\n"
-                        )
+                        f.write("timestamp,duration,emissions_kg\n2023-01-01 02:00:00,10.0,0.02\n")
 
                 # Stop tracking
                 stop_tracker(tracker, output_location)
@@ -159,18 +148,18 @@ class TestResourceMonitoringOPSDPatterns:
             print(f"stop() called {mock_tracker.stop.call_count} times")
 
             # Verify all phases tracked
-            assert (
-                mock_tracker_class.call_count == 3
-            ), f"Expected 3 tracker creations, got {mock_tracker_class.call_count}"
-            assert (
-                mock_tracker.start.call_count == 3
-            ), f"Expected 3 start calls, got {mock_tracker.start.call_count}"
-            assert (
-                mock_tracker.stop.call_count == 3
-            ), f"Expected 3 stop calls, got {mock_tracker.stop.call_count}"
-            assert (
-                mock_log_artifact.call_count == 3
-            ), f"Expected 3 artifact logs, got {mock_log_artifact.call_count}"
+            assert mock_tracker_class.call_count == 3, (
+                f"Expected 3 tracker creations, got {mock_tracker_class.call_count}"
+            )
+            assert mock_tracker.start.call_count == 3, (
+                f"Expected 3 start calls, got {mock_tracker.start.call_count}"
+            )
+            assert mock_tracker.stop.call_count == 3, (
+                f"Expected 3 stop calls, got {mock_tracker.stop.call_count}"
+            )
+            assert mock_log_artifact.call_count == 3, (
+                f"Expected 3 artifact logs, got {mock_log_artifact.call_count}"
+            )
 
             # Verify all artifacts logged to code_carbon path
             for call in mock_log_artifact.call_args_list:
@@ -271,9 +260,7 @@ class TestStopTracker:
 
     def test_stop_tracker_invalid_tracker_type(self):
         """Test with invalid tracker type."""
-        with pytest.raises(
-            TypeError, match="tracker must be an instance of EmissionsTracker"
-        ):
+        with pytest.raises(TypeError, match="tracker must be an instance of EmissionsTracker"):
             stop_tracker("invalid_tracker", {})  # type: ignore
 
     def test_stop_tracker_file_not_exists(self, mock_emissions_tracker, temp_directory):

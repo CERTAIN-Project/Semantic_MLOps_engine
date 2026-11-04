@@ -4,14 +4,16 @@
 #  If a copy of the MPL was not distributed with this  file, you can obtain one at
 #  http://mozilla.org/MPL/2.0/.
 
-from pandas import DataFrame
-
 from finance_pilot.data.filter.timeseries.time_series_filter import TimeSeriesFilter
+from pandas import DataFrame
 
 
 class NoFilter(TimeSeriesFilter):
     """
     Filter that leaves the time series as it is.
     """
-    def filter(self, time_series: DataFrame, train: DataFrame, valid: DataFrame, test: DataFrame) -> DataFrame:
+
+    def filter(
+        self, time_series: DataFrame, train: DataFrame, valid: DataFrame, test: DataFrame
+    ) -> DataFrame:
         return time_series.copy()

@@ -1,12 +1,12 @@
 """Utilities for logging LLM tokenizer configuration and tokenization statistics."""
 
-from certain_library.tracking.tracker import tracker
-
 import json
 import os
 import tempfile
 import uuid
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
+
+from certain_library.tracking.tracker import tracker
 
 # ---------------------------------------------------------------------------
 # Allowed keys for each artifact type
@@ -40,14 +40,14 @@ _TOKENIZATION_STATS_ALLOWED_KEYS = {
 
 def log_tokenizer_config(
     tokenizer_type: str,
-    model_name_or_path: Optional[str] = None,
-    vocab_size: Optional[int] = None,
-    max_length: Optional[int] = None,
-    padding: Optional[Union[str, bool]] = None,
-    truncation: Optional[Union[str, bool]] = None,
-    stride: Optional[int] = None,
-    special_tokens: Optional[Dict[str, str]] = None,
-    tokenizer_id: Optional[str] = None,
+    model_name_or_path: str | None = None,
+    vocab_size: int | None = None,
+    max_length: int | None = None,
+    padding: str | bool | None = None,
+    truncation: str | bool | None = None,
+    stride: int | None = None,
+    special_tokens: dict[str, str] | None = None,
+    tokenizer_id: str | None = None,
 ) -> None:
     """Log tokenizer configuration as a JSON artifact to MLflow.
 
@@ -73,7 +73,7 @@ def log_tokenizer_config(
     tokenizer_id:
         Optional unique identifier. A UUID is generated when not provided.
     """
-    record: Dict[str, Any] = {
+    record: dict[str, Any] = {
         "tokenizer_id": tokenizer_id or str(uuid.uuid4()),
         "tokenizer_type": tokenizer_type,
     }
@@ -101,13 +101,13 @@ def log_tokenizer_config(
         )
 
     with tempfile.TemporaryDirectory() as tmp_dir:
-        file_path = os.path.join(tmp_dir, f"tokenizer_config.json")
+        file_path = os.path.join(tmp_dir, "tokenizer_config.json")
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(record, f, indent=2)
         tracker.log_artifact(file_path, artifact_path="tokenizer_config")
 
 
-def log_tokenization_stats(stats: List[dict]) -> None:
+def log_tokenization_stats(stats: list[dict]) -> None:
     """Log per-split tokenization statistics as JSON artifacts to MLflow.
 
     Each element of *stats* represents one data split (e.g. ``"train"``,
@@ -151,7 +151,7 @@ def log_tokenization_stats(stats: List[dict]) -> None:
                 record["stats_id"] = str(uuid.uuid4())
 
             split_label = record.get("split", record["stats_id"])
-            file_path = os.path.join(tmp_dir, f"tokenization_stats.json")
+            file_path = os.path.join(tmp_dir, f"tokenization_stats_{split_label}.json")
             with open(file_path, "w", encoding="utf-8") as f:
                 json.dump(record, f, indent=2)
             tracker.log_artifact(file_path, artifact_path="tokenization_stats")

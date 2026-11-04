@@ -12,7 +12,8 @@ class AliasTable:
         """Initialize an AliasTable.
 
         Args:
-          obj_freq: A list of indices of tokens in the vocab following a power law distribution, used to draw negative samples.
+          obj_freq: A list of indices of tokens in the vocab following a power law distribution,
+            used to draw negative samples.
 
         Returns:
           None.
@@ -23,22 +24,22 @@ class AliasTable:
         vocab_size = len(obj_freq)
         self.vocab_size = vocab_size
 
-        if type(obj_freq) == list:  # obj_freq can be a list
+        if type(obj_freq) is list:  # obj_freq can be a list
             if len(np.array(obj_freq).shape) != 1:
                 raise ValueError("Error: obj_freq is not 1-dim")
             total = np.sum(obj_freq)
-        elif type(obj_freq) == dict:  # obj_freq can be a dict
+        elif type(obj_freq) is dict:  # obj_freq can be a dict
             total = np.sum(list(obj_freq.values()))
         else:
             raise ValueError("Error: obj_freq is invalid")
 
         probs = []
         index2Label = []  # used to transform an index to label in dict
-        if type(obj_freq) == list:
+        if type(obj_freq) is list:
             for i in range(len(obj_freq)):
                 probs.append(obj_freq[i] / total)
                 index2Label.append(i)
-        elif type(obj_freq) == dict:
+        elif type(obj_freq) is dict:
             i = 0
             for obj, freq in obj_freq.items():
                 i += 1
@@ -104,9 +105,7 @@ class AliasTable:
                     samples.append(self.index2Label[self.alias_arr[i]])
             if no_repeat:
                 if count > self.vocab_size:
-                    raise ValueError(
-                        "Error: count>vocab_size!! Skip no_repeat parameter"
-                    )
+                    raise ValueError("Error: count>vocab_size!! Skip no_repeat parameter")
                 samples = set(samples)
                 while len(samples) < count:
                     index = np.random.randint(low=0, high=len(self.prob_arr))

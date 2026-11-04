@@ -3,12 +3,11 @@ import os
 import numpy as np
 import pandas as pd
 import torch
+from finance_pilot.algorithms.rfr_kpi_model import KPIFeatureTransformer
+from finance_pilot.utils.common_util import stratified_sample_by_group
+from finance_pilot.utils.constants import DEFAULT_ITEM_COL, DEFAULT_TIMESTAMP_COL
 from sklearn.pipeline import Pipeline
 from tabpfn import TabPFNRegressor
-
-from finance_pilot.utils.constants import DEFAULT_ITEM_COL, DEFAULT_TIMESTAMP_COL
-from finance_pilot.utils.common_util import stratified_sample_by_group
-from finance_pilot.algorithms.rfr_kpi_model import KPIFeatureTransformer
 
 
 class TabPFNKPIModel:
@@ -63,11 +62,14 @@ class TabPFNKPIModel:
         self.pipeline = Pipeline(
             steps=[
                 ("kpi", self.transformer),
-                ("tabpfn", TabPFNRegressor(
-                    device=self._resolved_device,
-                    random_state=self.random_state,
-                    ignore_pretraining_limits=self.ignore_pretraining_limits,
-                )),
+                (
+                    "tabpfn",
+                    TabPFNRegressor(
+                        device=self._resolved_device,
+                        random_state=self.random_state,
+                        ignore_pretraining_limits=self.ignore_pretraining_limits,
+                    ),
+                ),
             ]
         )
         self.model = self.pipeline.named_steps["tabpfn"]
@@ -117,7 +119,11 @@ class TabPFNKPIModel:
                 on=[DEFAULT_ITEM_COL, DEFAULT_TIMESTAMP_COL],
                 how="inner",
             )
-            train_columns = list(self.kpi_features) + [DEFAULT_ITEM_COL, DEFAULT_TIMESTAMP_COL, "target"]
+            train_columns = list(self.kpi_features) + [
+                DEFAULT_ITEM_COL,
+                DEFAULT_TIMESTAMP_COL,
+                "target",
+            ]
             merged = merged[train_columns].dropna()
 
             if self.sample_pct is not None:
@@ -173,5 +179,5 @@ class TabPFNKPIModel:
         batch_size = self.predict_batch_size
         if batch_size is None or len(X) <= batch_size:
             return self.model.predict(X)
-        chunks = [self.model.predict(X[i:i + batch_size]) for i in range(0, len(X), batch_size)]
+        chunks = [self.model.predict(X[i : i + batch_size]) for i in range(0, len(X), batch_size)]
         return np.concatenate(chunks)

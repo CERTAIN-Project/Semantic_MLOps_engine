@@ -1,10 +1,12 @@
-from certain_library.tracking.tracker import tracker
-import tempfile
-import os
 import json
+import os
+import tempfile
+from typing import Any
+
 import pandas as pd
 from scipy.stats import ks_2samp
-from typing import Optional, Dict, Any
+
+from certain_library.tracking.tracker import tracker
 
 
 def _safe_py(v):
@@ -25,9 +27,9 @@ def _safe_py(v):
 def log_drift_metrics(
     train_df: pd.DataFrame,
     test_df: pd.DataFrame,
-    run_id: Optional[str] = None,
-    model_info: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
+    run_id: str | None = None,
+    model_info: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Compute drift (KS test) per numeric column and write artifact under certain/drift_metrics.
 
     Args:

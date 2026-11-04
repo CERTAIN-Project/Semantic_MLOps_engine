@@ -31,12 +31,12 @@ import subprocess
 import sys
 import tempfile
 import time
+import types
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse, urlunparse
-import types
 
 import pandas as pd
 
@@ -47,7 +47,8 @@ if str(REPO_ROOT) not in sys.path:
 
 
 def _load_env_file(path: Path) -> None:
-    """Load settings from a .env file without overriding variables already set in the environment."""
+    """Load settings from a .env file without overriding variables already set in the
+    environment."""
     if not path.exists():
         return
     try:
@@ -59,21 +60,18 @@ def _load_env_file(path: Path) -> None:
 
 _load_env_file(REPO_ROOT / ".env")
 
-from certain_library.data_analysis.log_dataset import log_dataset
-from certain_library.git_tracking import log_git_metadata
-from certain_library.log_basic.log_params import log_params
-from certain_library.train_monitor.log_metrics import (
-    log_metrics,
-    log_resources,
-    log_search_space,
-)
-from certain_library.metadata.artifact_metadata import (
+# These imports need REPO_ROOT on sys.path and the .env settings loaded above.
+from certain_library.data_analysis.log_dataset import log_dataset  # noqa: E402
+from certain_library.git_tracking import log_git_metadata  # noqa: E402
+from certain_library.log_basic.log_params import log_params  # noqa: E402
+from certain_library.metadata.artifact_metadata import (  # noqa: E402
     collect_runtime_environment,
-    save_runtime_env_as_artifact,
 )
-from certain_library.resource_monitor.resource import start_tracker, stop_tracker
-from certain_library.tracking.tracker import tracker
-
+from certain_library.resource_monitor.resource import start_tracker, stop_tracker  # noqa: E402
+from certain_library.tracking.tracker import tracker  # noqa: E402
+from certain_library.train_monitor.log_metrics import (  # noqa: E402
+    log_metrics,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 NVCR_REPO_CANDIDATES = [
@@ -83,14 +81,19 @@ NVCR_REPO_CANDIDATES = [
 CERTAIN_MODULE_CANDIDATES = [
     Path("/app/certain_library/data_analysis/log_demographic_bias.py"),
     PROJECT_ROOT.parent / "certain_library" / "data_analysis" / "log_demographic_bias.py",
-    PROJECT_ROOT.parent.parent / "Semantic_MLOps_engine" / "certain_library" / "data_analysis" / "log_demographic_bias.py",
+    PROJECT_ROOT.parent.parent
+    / "Semantic_MLOps_engine"
+    / "certain_library"
+    / "data_analysis"
+    / "log_demographic_bias.py",
 ]
 
 # Empty DATASPACE_SOURCE means "no data sink"; anything else is read from the data sink.
 DATASET_SOURCE = os.getenv("DATASPACE_SOURCE", "").strip()
 DATASET_BATCH_ID = int(os.getenv("DATASPACE_BATCH_ID", "7"))
 
-# Without a data sink: "ui" (default) opens the NVCR scenario UI, "offline" regenerates fixed batch 7.
+# Without a data sink: "ui" (default) opens the NVCR scenario UI, "offline" regenerates
+# fixed batch 7.
 PHASE1_MODE = os.getenv("IT_PHASE1_MODE", "ui").strip().lower()
 IN_DOCKER = Path("/.dockerenv").exists()
 # Inside a container the UI must listen on all interfaces for a published port to reach it.
@@ -98,7 +101,9 @@ UI_HOST = os.getenv("IT_UI_HOST", "").strip() or ("0.0.0.0" if IN_DOCKER else "1
 UI_PORT = int(os.getenv("IT_UI_PORT", "8769"))
 UI_TIMEOUT_SECONDS = int(os.getenv("IT_UI_TIMEOUT_SECONDS", "1800"))
 # test_docker/ is bind-mounted into the container, so batches saved here also appear on the host.
-UI_OUTPUT_DIR = Path(os.getenv("IT_UI_OUTPUT_DIR", "").strip() or PROJECT_ROOT / "generated_batches")
+UI_OUTPUT_DIR = Path(
+    os.getenv("IT_UI_OUTPUT_DIR", "").strip() or PROJECT_ROOT / "generated_batches"
+)
 
 
 @dataclass(frozen=True)
@@ -137,7 +142,9 @@ def _find_nvcr_repo() -> Path:
 
 
 def _load_demographic_bias_module():
-    module_path = next((candidate for candidate in CERTAIN_MODULE_CANDIDATES if candidate.exists()), None)
+    module_path = next(
+        (candidate for candidate in CERTAIN_MODULE_CANDIDATES if candidate.exists()), None
+    )
     if module_path is None:
         raise FileNotFoundError(
             "Could not locate CERTAIN's data_analysis/log_demographic_bias.py module."
@@ -156,7 +163,7 @@ def _load_demographic_bias_module():
             return None
 
     tracker_mod = types.ModuleType("certain_library.tracking.tracker")
-    setattr(tracker_mod, "tracker", _StubTracker())
+    tracker_mod.tracker = _StubTracker()
 
     sys.modules.setdefault("certain_library", certain_pkg)
     sys.modules.setdefault("certain_library.tracking", tracking_pkg)
@@ -263,17 +270,22 @@ def _wait_for_port(host: str, port: int, proc: subprocess.Popen, timeout: float 
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if proc.poll() is not None:
-            raise RuntimeError(f"Scenario UI exited early with code {proc.returncode}; see its output above.")
+            raise RuntimeError(
+                f"Scenario UI exited early with code {proc.returncode}; see its output above."
+            )
         try:
             with socket.create_connection((connect_host, port), timeout=1):
                 return
         except OSError:
             time.sleep(0.5)
-    raise TimeoutError(f"Scenario UI did not start listening on {host}:{port} within {timeout:.0f}s.")
+    raise TimeoutError(
+        f"Scenario UI did not start listening on {host}:{port} within {timeout:.0f}s."
+    )
 
 
 def _find_ui_batch(session_dir: Path, started_at: float) -> int | None:
-    """Newest batch whose scenario config (the UI writes it after the data files) appeared after started_at."""
+    """Newest batch whose scenario config (the UI writes it after the data files) appeared
+    after started_at."""
     newest: tuple[float, int] | None = None
     for config_path in session_dir.glob("scenario_config_batch_*.json"):
         try:
@@ -289,8 +301,11 @@ def _find_ui_batch(session_dir: Path, started_at: float) -> int | None:
     return newest[1] if newest else None
 
 
-def _wait_for_ui_children(proc: subprocess.Popen, settle_seconds: float = 3.0, timeout: float = 300.0) -> None:
-    """Let the UI finish post-generation clustering (a child process) before the server is stopped."""
+def _wait_for_ui_children(
+    proc: subprocess.Popen, settle_seconds: float = 3.0, timeout: float = 300.0
+) -> None:
+    """Let the UI finish post-generation clustering (a child process) before the server is
+    stopped."""
     try:
         import psutil
     except ImportError:
@@ -341,7 +356,8 @@ def _collect_batch_from_ui() -> DemoBatch:
     if IN_DOCKER:
         print(
             f"Running in Docker: the UI listens on {UI_HOST}:{UI_PORT} inside the container; "
-            f"the host can only open it if that port is published (docker-compose publishes 127.0.0.1:{UI_PORT})."
+            "the host can only open it if that port is published "
+            f"(docker-compose publishes 127.0.0.1:{UI_PORT})."
         )
     elif UI_HOST not in {"127.0.0.1", "localhost", "::1"}:
         print(
@@ -350,12 +366,17 @@ def _collect_batch_from_ui() -> DemoBatch:
         )
     print(
         "OpenAI credentials for 'LLM natural text': "
-        + ("OPENAI_API_KEY is set" if os.getenv("OPENAI_API_KEY") else "OPENAI_API_KEY is NOT set (choose 'Fast fallback' in the UI)")
+        + (
+            "OPENAI_API_KEY is set"
+            if os.getenv("OPENAI_API_KEY")
+            else "OPENAI_API_KEY is NOT set (choose 'Fast fallback' in the UI)"
+        )
     )
 
     with tempfile.TemporaryDirectory(prefix="it_complete_ui_") as workspace_root:
         workspace = Path(workspace_root)
-        # The UI writes into <repo>/session; use a writable copy because the NVCR repo may be mounted read-only.
+        # The UI writes into <repo>/session; use a writable copy because the NVCR repo may be
+        # mounted read-only.
         shutil.copytree(
             nvcr_repo / "src",
             workspace / "src",
@@ -379,7 +400,10 @@ def _collect_batch_from_ui() -> DemoBatch:
             _wait_for_port(UI_HOST, UI_PORT, proc)
             print("=" * 72)
             print(f"Scenario UI ready: open http://127.0.0.1:{UI_PORT} in your browser")
-            print("Set the generation parameters, click 'Generate datasets', and this script continues.")
+            print(
+                "Set the generation parameters, click 'Generate datasets', "
+                "and this script continues."
+            )
             print(f"Waiting up to {UI_TIMEOUT_SECONDS}s for a generated batch...")
             print("=" * 72)
 
@@ -387,13 +411,18 @@ def _collect_batch_from_ui() -> DemoBatch:
             batch_id: int | None = None
             while time.monotonic() < deadline:
                 if proc.poll() is not None:
-                    raise RuntimeError(f"Scenario UI exited with code {proc.returncode} before a batch was generated.")
+                    raise RuntimeError(
+                        f"Scenario UI exited with code {proc.returncode} "
+                        "before a batch was generated."
+                    )
                 batch_id = _find_ui_batch(session_dir, started_at)
                 if batch_id is not None:
                     break
                 time.sleep(1.0)
             if batch_id is None:
-                raise TimeoutError(f"No batch was generated in the scenario UI within {UI_TIMEOUT_SECONDS}s.")
+                raise TimeoutError(
+                    f"No batch was generated in the scenario UI within {UI_TIMEOUT_SECONDS}s."
+                )
 
             print(f"Batch {batch_id} generated in the UI; finishing post-processing...")
             _wait_for_ui_children(proc)
@@ -415,10 +444,12 @@ def _collect_batch_from_ui() -> DemoBatch:
                 f"allocation={config.get('allocation_strategy')}, mode_mix={config.get('mode_mix')}"
             )
             if batch_id == DATASET_BATCH_ID:
-                # The browser can restore an old "Batch id" value; flag ids that look like the offline batch.
+                # The browser can restore an old "Batch id" value; flag ids that look like the
+                # offline batch.
                 print(
-                    f"NOTE: batch id {batch_id} is the same id as the offline demo batch, but this data "
-                    "comes from the scenario UI. Change 'Batch id' in the UI to tell runs apart in MLflow."
+                    f"NOTE: batch id {batch_id} is the same id as the offline demo batch, "
+                    "but this data comes from the scenario UI. "
+                    "Change 'Batch id' in the UI to tell runs apart in MLflow."
                 )
 
             # The UI workspace is temporary, so keep the generated batch where the host can see it.
@@ -428,7 +459,9 @@ def _collect_batch_from_ui() -> DemoBatch:
                 shutil.copy2(path, output_dir / path.name)
             cluster_dir = session_dir / "cluster_bias_outputs" / f"batch_{batch_id}"
             if cluster_dir.is_dir():
-                shutil.copytree(cluster_dir, output_dir / "cluster_bias_outputs", dirs_exist_ok=True)
+                shutil.copytree(
+                    cluster_dir, output_dir / "cluster_bias_outputs", dirs_exist_ok=True
+                )
             print(f"Saved the generated batch to {output_dir}")
 
             for path in batch_files:
@@ -449,7 +482,9 @@ def _collect_batch_from_ui() -> DemoBatch:
             _stop_ui(proc)
 
 
-def _build_certain_frame(payload: dict[str, Any], annotations: list[dict[str, Any]]) -> pd.DataFrame:
+def _build_certain_frame(
+    payload: dict[str, Any], annotations: list[dict[str, Any]]
+) -> pd.DataFrame:
     annotation_by_id = {
         str(item.get("Id")): item.get("InternalMetadata") or {}
         for item in annotations
@@ -500,7 +535,8 @@ def _validate_demo_payloads(demo_batch: DemoBatch) -> None:
 
     assert clean_records and dirty_records
     if not demo_batch.expect_batch7_skew:
-        # UI scenarios may add optional internal fields (e.g. WrongAnswerPattern), so require a superset.
+        # UI scenarios may add optional internal fields (e.g. WrongAnswerPattern), so require a
+        # superset.
         assert public_fields <= set(clean_records[0]["Metadata"])
         assert public_fields <= set(dirty_records[0]["Metadata"])
         assert internal_fields <= set(demo_batch.clean_annotations[0]["InternalMetadata"])
@@ -569,7 +605,10 @@ def _validate_pipeline(
         output_dir=output_dir,
         max_clusters=4,
         random_seed=42,
-        dataset_name=f"nvcr_batch_{demo_batch.batch_id}_{'ui' if demo_batch.source == 'scenario-ui' else 'demo'}",
+        dataset_name=(
+            f"nvcr_batch_{demo_batch.batch_id}_"
+            f"{'ui' if demo_batch.source == 'scenario-ui' else 'demo'}"
+        ),
         topic_title=demo_batch.clean_payload["TopicTitle"],
     )
 
@@ -654,7 +693,8 @@ def _validate_pipeline(
 
 
 def main() -> None:
-    # Without a TTY (plain `docker exec`) stdout is block-buffered and progress would stay invisible.
+    # Without a TTY (plain `docker exec`) stdout is block-buffered and progress would stay
+    # invisible.
     try:
         sys.stdout.reconfigure(line_buffering=True)  # type: ignore[attr-defined]
     except (AttributeError, ValueError):
@@ -717,7 +757,9 @@ def main() -> None:
             else:
                 run_tags["nvcr_repo"] = str(_find_nvcr_repo())
                 run_params["nvcr_script"] = (
-                    "src/scenario_ui.py" if mode == "scenario-ui" else "src/create_demo_bias_datasets.py"
+                    "src/scenario_ui.py"
+                    if mode == "scenario-ui"
+                    else "src/create_demo_bias_datasets.py"
                 )
             if mode != "scenario-ui":
                 # In UI mode the batch id is only known after the user generates a batch.
@@ -729,19 +771,24 @@ def main() -> None:
 
             demo_batch: DemoBatch | None = None
             if mode == "scenario-ui":
-                # Collected before the emissions tracker starts so time spent waiting on a human isn't measured.
+                # Collected before the emissions tracker starts so time spent waiting on a human
+                # isn't measured.
                 print("Phase 1: design and generate the batch in the scenario UI")
                 demo_batch = _collect_batch_from_ui()
                 tracker.set_tags({"batch_id": str(demo_batch.batch_id)})
                 log_params({"batch_id": demo_batch.batch_id})
 
-            tracker_data, output_location = start_tracker(output_file_name="emissions_data_it_complete")
+            tracker_data, output_location = start_tracker(
+                output_file_name="emissions_data_it_complete"
+            )
 
             try:
                 if demo_batch is None:
                     if use_sink:
                         print("Phase 1: read demo datasets from the data sink")
-                        demo_batch = _load_demo_batch_from_sink(DATASET_SOURCE, batch_id=DATASET_BATCH_ID)
+                        demo_batch = _load_demo_batch_from_sink(
+                            DATASET_SOURCE, batch_id=DATASET_BATCH_ID
+                        )
                     else:
                         print("Phase 1: generate deterministic demo datasets")
                         demo_batch = _create_demo_batch(

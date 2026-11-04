@@ -6,7 +6,6 @@ from unittest.mock import Mock
 
 import mlflow
 import pytest
-
 from certain_library.tracking.export import compact
 from certain_library.tracking.manifest import (
     ManifestStore,
@@ -86,13 +85,7 @@ def test_param_metric_artifact_and_manifest(
     assert artifact_event["checksum"]
 
     mirrored_artifact = (
-        root
-        / "experiments"
-        / experiment_id
-        / run_id
-        / "artifacts"
-        / "model"
-        / "model.pkl"
+        root / "experiments" / experiment_id / run_id / "artifacts" / "model" / "model.pkl"
     )
     assert mirrored_artifact.read_bytes() == b"model-data"
 

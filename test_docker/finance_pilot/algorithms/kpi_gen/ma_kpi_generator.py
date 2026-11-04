@@ -1,14 +1,22 @@
-import datetime
-
 import pandas as pd
-from joblib import Parallel, delayed
+from finance_pilot.algorithms.kpi_gen.indicators import (
+    avg_price,
+    detrended_close_oscillator,
+    min_max,
+    momentum,
+    moving_average_convergence_divergence,
+    rate_of_change,
+    relative_strength_index,
+    roi,
+    sharpe,
+    volatility,
+)
+from finance_pilot.algorithms.kpi_gen.kpi_generator import KPIGenerator
 from finance_pilot.utils.constants import (
     DEFAULT_ITEM_COL,
     DEFAULT_TIMESTAMP_COL,
 )
-
-from finance_pilot.algorithms.kpi_gen.indicators import *
-from finance_pilot.algorithms.kpi_gen.kpi_generator import KPIGenerator
+from joblib import Parallel, delayed
 
 
 def _compute_asset_kpis(asset_df, k, kpi_type):
@@ -34,8 +42,9 @@ def _compute_asset_kpis(asset_df, k, kpi_type):
 
 class MAKPIGenerator(KPIGenerator):
     """
-    Class for computing the basic technical indicators for the recommendation. This generator applies a moving average
-    over the last days of data to generate the definitive technical indicators.
+    Class for computing the basic technical indicators for the recommendation. This generator
+    applies a moving average over the last days of data to generate the definitive technical
+    indicators.
     """
 
     def __init__(self, data, k, kpi_type):
@@ -49,18 +58,13 @@ class MAKPIGenerator(KPIGenerator):
         Computes the desired KPIs.
         :return: a dataframe containing the KPIs.
         """
-        timea = datetime.datetime.now()
         asset_groups = [grp for _, grp in self.data.groupby(DEFAULT_ITEM_COL, sort=False)]
 
         # prefer='threads': pandas rolling ops release the GIL so threads parallelise
         # without the serialisation overhead of spawning loky worker processes.
-        asset_dfs = Parallel(n_jobs=-1, prefer='threads')(
-            delayed(_compute_asset_kpis)(grp, self.k, self.kpi_type)
-            for grp in asset_groups
+        asset_dfs = Parallel(n_jobs=-1, prefer="threads")(
+            delayed(_compute_asset_kpis)(grp, self.k, self.kpi_type) for grp in asset_groups
         )
-
-        time_elapsed = datetime.datetime.now() - timea
-        # print(f"Generated indicators for {len(asset_dfs)} assets ({time_elapsed})")
 
         full_df = pd.concat(asset_dfs)
         self.kpis = full_df

@@ -8,22 +8,20 @@
 #  If a copy of the MPL was not distributed with this  file, you can obtain one at
 #  http://mozilla.org/MPL/2.0/.
 
+import argparse
 import datetime as dt
 import math
 import os
 
 import mlflow
-import argparse
 import numpy
 import pandas as pd
-from utils.constants import DEFAULT_TIMESTAMP_COL, DEFAULT_ITEM_COL, DEFAULT_RATING_COL
-
+from certain_library.log_basic.log_params import log_params
+from certain_library.train_monitor.log_metrics import log_metrics
 from data.financial_asset_time_series import FinancialAssetTimeSeries
 from data.financial_data_continuous import FinancialContinuousData
 from data.financial_interaction_data import FinancialInteractionData
-
-from certain_library.log_basic.log_params import log_params
-from certain_library.train_monitor.log_metrics import log_metrics
+from utils.constants import DEFAULT_ITEM_COL, DEFAULT_RATING_COL, DEFAULT_TIMESTAMP_COL
 
 from ..test_finance_pitol import safe_log_dataset
 
@@ -31,36 +29,52 @@ pd.options.mode.chained_assignment = None  # default='warn'
 
 if __name__ == "__main__":
     run_id = os.environ["MLFLOW_RUN_ID"]
-    
+
     with mlflow.start_run(run_id=run_id):
         parser = argparse.ArgumentParser(
             prog="dataset_analysis",
             description="Analyzes the dataset from a general asset point of view.",
-            epilog="Developed by University of Glasgow"
+            epilog="Developed by University of Glasgow",
         )
 
         parser.add_argument("interactions", help="Customer-asset transaction data file.")
         parser.add_argument("time_series", help="Asset pricing data file.")
-        parser.add_argument("min_prices", help="File containing the minimum and maximum asset prices.")
-        subparsers = parser.add_subparsers(title='date_format', help='Data choice format.', dest='date_format')
+        parser.add_argument(
+            "min_prices", help="File containing the minimum and maximum asset prices."
+        )
+        subparsers = parser.add_subparsers(
+            title="date_format", help="Data choice format.", dest="date_format"
+        )
 
-        parser_range = subparsers.add_parser('range', help='Range of dates to use. This mode divides the dataset as '
-                                                        'follows:\n'
-                                                        '- First, divide the period between min_date and max_date into'
-                                                        'num_splits + num_future dates\n'
-                                                        '- Second, the first num_split dates are considered the split '
-                                                        'dates (everything before them is the training set).\n'
-                                                        '- The test set contains the data between the split date and '
-                                                        '  num_future dates in the list afterwards.')
-        parser_range.add_argument("min_date", help='Date of the first split. Format: %Y-%m-%d')
-        parser_range.add_argument("max_date", help='End date of the last test set. Format: %Y-%m-%d')
-        parser_range.add_argument("num_splits", help='Number of splits to consider.', type=int)
-        parser_range.add_argument("num_future", help='Number of dates to look formward', type=int)
+        parser_range = subparsers.add_parser(
+            "range",
+            help="Range of dates to use. This mode divides the dataset as "
+            "follows:\n"
+            "- First, divide the period between min_date and max_date into"
+            "num_splits + num_future dates\n"
+            "- Second, the first num_split dates are considered the split "
+            "dates (everything before them is the training set).\n"
+            "- The test set contains the data between the split date and "
+            "  num_future dates in the list afterwards.",
+        )
+        parser_range.add_argument("min_date", help="Date of the first split. Format: %Y-%m-%d")
+        parser_range.add_argument(
+            "max_date", help="End date of the last test set. Format: %Y-%m-%d"
+        )
+        parser_range.add_argument("num_splits", help="Number of splits to consider.", type=int)
+        parser_range.add_argument("num_future", help="Number of dates to look formward", type=int)
 
-        parser_fixed = subparsers.add_parser('fixed_dates', help='List of fixed dates to use. This mode provides fixed '
-                                                                'lists of dates for split and test.')
-        parser_fixed.add_argument('split_dates', help='Comma separated list of split dates. Date format: %Y-%m-%d')
-        parser_fixed.add_argument('future_dates', help='Comma separated list of test end dates. Date format: %Y-%m-%d')
+        parser_fixed = subparsers.add_parser(
+            "fixed_dates",
+            help="List of fixed dates to use. This mode provides fixed "
+            "lists of dates for split and test.",
+        )
+        parser_fixed.add_argument(
+            "split_dates", help="Comma separated list of split dates. Date format: %Y-%m-%d"
+        )
+        parser_fixed.add_argument(
+            "future_dates", help="Comma separated list of test end dates. Date format: %Y-%m-%d"
+        )
         parser.add_argument("output_dir", help="directory on which to store the outputs.")
         parser.add_argument("summary_file", help="name of the summary file.")
 
@@ -86,11 +100,13 @@ if __name__ == "__main__":
             num_future = args.num_future
         elif date_format == "fixed_dates":
             # Split strings into list of date strings
-            dates_args_str = args.split_dates.split(",") # CHANGED
-            future_dates_args_str = args.future_dates.split(",") # CHANGED
+            dates_args_str = args.split_dates.split(",")  # CHANGED
+            future_dates_args_str = args.future_dates.split(",")  # CHANGED
             # Convert to list of datetime objects
-            dates_args = [dt.datetime.strptime(d, "%Y-%m-%d") for d in dates_args_str] # CHANGED
-            future_dates_args = [dt.datetime.strptime(d, "%Y-%m-%d") for d in future_dates_args_str] # CHANGED
+            dates_args = [dt.datetime.strptime(d, "%Y-%m-%d") for d in dates_args_str]  # CHANGED
+            future_dates_args = [
+                dt.datetime.strptime(d, "%Y-%m-%d") for d in future_dates_args_str
+            ]  # CHANGED
             # dates_args = args.split_dates.split(",")
             # future_dates_args = args.future_dates.split(",")
             num_splits = len(dates_args)
@@ -103,13 +119,13 @@ if __name__ == "__main__":
         directory = args.output_dir
         end_file = args.summary_file
 
-        log_params({'date_format': date_format})
-        log_params({'min_date': min_date})
-        log_params({'max_date': max_date})
-        log_params({'num_splits': num_splits})
-        log_params({'num_future': num_future})
-        log_params({'output_dir': directory})
-        log_params({'summary_file': end_file})
+        log_params({"date_format": date_format})
+        log_params({"min_date": min_date})
+        log_params({"max_date": max_date})
+        log_params({"num_splits": num_splits})
+        log_params({"num_future": num_future})
+        log_params({"output_dir": directory})
+        log_params({"summary_file": end_file})
 
         timea = dt.datetime.now()
 
@@ -120,17 +136,17 @@ if __name__ == "__main__":
         data.load()
 
         limit_prices = pd.read_csv(min_prices)
-        limit_prices["minDate"] = pd.to_datetime(limit_prices["minDate"]) # CHANGED
-        limit_prices["maxDate"] = pd.to_datetime(limit_prices["maxDate"]) # CHANGED
+        limit_prices["minDate"] = pd.to_datetime(limit_prices["minDate"])  # CHANGED
+        limit_prices["maxDate"] = pd.to_datetime(limit_prices["maxDate"])  # CHANGED
         # Then, we get the profile data
         profile_df = pd.read_csv(interaction_data_file)
         profile_df["timestamp"] = pd.to_datetime(profile_df["timestamp"])
         profile_df = profile_df.sort_values(by=["customerID", "timestamp"], ascending=[True, True])
         timeb = dt.datetime.now() - timea
-        print("Dataset loaded (" + '{}'.format(timeb) + ")")
+        print("Dataset loaded (" + f"{timeb}" + ")")
 
         timeb = dt.datetime.now() - timea
-        print("Technical indicators computed (" + '{}'.format(timeb) + ")")
+        print("Technical indicators computed (" + f"{timeb}" + ")")
 
         # Now, we select the possible dates:
         dates = []
@@ -148,38 +164,48 @@ if __name__ == "__main__":
 
         print("Selected dates:")
         for i in range(0, len(dates)):
-            print("\t" + str(i) + "Training date: " + str(dates[i]) + "\tFuture date: " + str(future_dates[i]))
+            print(
+                "\t"
+                + str(i)
+                + "Training date: "
+                + str(dates[i])
+                + "\tFuture date: "
+                + str(future_dates[i])
+            )
 
         columns = ["timestamp"]
         fields = ["mean", "total_prof", "q1", "median", "q3", "min", "max", "perc_profit"]
         for x in ["profitability", "month_profit", "ann_profit"]:
             for field in fields:
-                columns.append(x+field)
-        user_profiles: dict[str, dict[str, float]] = {} # CHANGED
+                columns.append(x + field)
+        user_profiles: dict[str, dict[str, float]] = {}  # CHANGED
 
         splits = dict()
-        splits[0] = (profile_df[profile_df["timestamp"] < future_dates[0]],
-                    profile_df[profile_df["timestamp"] < dates[0]],
-                    profile_df[profile_df["timestamp"].between(dates[0], future_dates[0])])
+        splits[0] = (
+            profile_df[profile_df["timestamp"] < future_dates[0]],
+            profile_df[profile_df["timestamp"] < dates[0]],
+            profile_df[profile_df["timestamp"].between(dates[0], future_dates[0])],
+        )
 
         aux_df = profile_df[profile_df["timestamp"] >= dates[0]]
         for i in range(1, len(dates)):
-            splits[i] = (aux_df[aux_df["timestamp"] < future_dates[i]],
-                        aux_df[aux_df["timestamp"] < dates[i]],
-                        aux_df[aux_df["timestamp"].between(dates[i], future_dates[i])])
+            splits[i] = (
+                aux_df[aux_df["timestamp"] < future_dates[i]],
+                aux_df[aux_df["timestamp"] < dates[i]],
+                aux_df[aux_df["timestamp"].between(dates[i], future_dates[i])],
+            )
             aux_df = aux_df[aux_df["timestamp"] >= dates[i]]
 
         timeb = dt.datetime.now() - timea
-        print("Splits computed (" + '{}'.format(timeb) + ")")
+        print("Splits computed (" + f"{timeb}" + ")")
 
         values = []
         # We run over the complete set of dates:
         for i in range(0, len(dates)):
-
             print(splits[i][1])
 
             timeb = dt.datetime.now() - timea
-            print("Starting " + str(dates[i]) + " (" + '{}'.format(timeb) + ")")
+            print("Starting " + str(dates[i]) + " (" + f"{timeb}" + ")")
             rec_date = dates[i]
             future_date = future_dates[i]
             date_values = dict()
@@ -217,68 +243,81 @@ if __name__ == "__main__":
 
                 # We update its user profile
                 if i == 0:
-                    user_profile: dict[str, float] = {} # CHANGED
+                    user_profile: dict[str, float] = {}  # CHANGED
                 else:
                     user_profile = user_profiles[customer] if customer in user_profiles else dict()
 
-                for index, row in customer_df.iterrows():
+                for _index, row in customer_df.iterrows():
                     if row["ISIN"] not in user_profile:
                         user_profile[row["ISIN"]] = 0.0
 
                     if row["transactionType"] == "Buy":
-                        user_profile[row["ISIN"]] += abs(row["units"])+0.0
+                        user_profile[row["ISIN"]] += abs(row["units"]) + 0.0
                     else:
-                        user_profile[row["ISIN"]] -= abs(row["units"])+0.0
+                        user_profile[row["ISIN"]] -= abs(row["units"]) + 0.0
 
                     if user_profile[row["ISIN"]] < 1e-8:
                         user_profile[row["ISIN"]] = 0.0
-                prices = time_series_data.data[time_series_data.data[DEFAULT_TIMESTAMP_COL] == rec_date]
+                prices = time_series_data.data[
+                    time_series_data.data[DEFAULT_TIMESTAMP_COL] == rec_date
+                ]
                 prices = prices[prices[DEFAULT_ITEM_COL].isin(user_profile.keys())]
 
                 # We first compute the buying price at the current date.
-                for index, row in prices.iterrows():
-                    buy_price += abs(row[DEFAULT_RATING_COL])*user_profile[row[DEFAULT_ITEM_COL]]
+                for _index, row in prices.iterrows():
+                    buy_price += abs(row[DEFAULT_RATING_COL]) * user_profile[row[DEFAULT_ITEM_COL]]
 
                 not_use = set()
                 for asset in user_profile.keys() - set(prices[DEFAULT_ITEM_COL].unique().flatten()):
                     if rec_date < limit_prices[limit_prices["ISIN"] == asset].iloc[0]["minDate"]:
-                        price = limit_prices[limit_prices["ISIN"] == asset].iloc[0]["priceMinDate"] # CHANGED
-                        buy_price += abs(price)*user_profile[asset]
+                        price = limit_prices[limit_prices["ISIN"] == asset].iloc[0][
+                            "priceMinDate"
+                        ]  # CHANGED
+                        buy_price += abs(price) * user_profile[asset]
                     else:
                         price = 0
                         user_profile.pop(asset)
                         not_use.add(asset)
 
-                # Starting here, we start working on the assets acquired during the corresponding period.
+                # Starting here, we start working on the assets acquired during the corresponding
+                # period.
                 customer_df = splits[i][2][splits[i][2]["customerID"] == customer]
                 user_period_profile = user_profile.copy()
-                for index, row in customer_df.iterrows():
+                for _index, row in customer_df.iterrows():
                     if row["ISIN"] in not_use:
                         continue
 
                     if row["ISIN"] not in user_period_profile:
                         user_period_profile[row["ISIN"]] = 0.0
                     if row["transactionType"] == "Buy":
-                        user_period_profile[row["ISIN"]] += abs(row["units"])+0.0
+                        user_period_profile[row["ISIN"]] += abs(row["units"]) + 0.0
                         if user_period_profile[row["ISIN"]] < 1e-8:
                             user_period_profile[row["ISIN"]] = 0.0
                         buy_price += abs(row["units"])
                     else:
-                        user_period_profile[row["ISIN"]] -= abs(row["units"])+0.0
+                        user_period_profile[row["ISIN"]] -= abs(row["units"]) + 0.0
                         if user_period_profile[row["ISIN"]] < 1e-8:
                             user_period_profile[row["ISIN"]] = 0.0
                         sell_price += abs(row["units"])
 
-                prices = time_series_data.data[time_series_data.data[DEFAULT_TIMESTAMP_COL] == future_date]
+                prices = time_series_data.data[
+                    time_series_data.data[DEFAULT_TIMESTAMP_COL] == future_date
+                ]
                 prices = prices[prices[DEFAULT_ITEM_COL].isin(user_period_profile.keys())]
 
-                for index, row in prices.iterrows():
-                    sell_price += abs(row[DEFAULT_RATING_COL]) * user_period_profile[row[DEFAULT_ITEM_COL]]
-                for asset in user_period_profile.keys() - set(prices[DEFAULT_ITEM_COL].unique().flatten()):
+                for _index, row in prices.iterrows():
+                    sell_price += (
+                        abs(row[DEFAULT_RATING_COL]) * user_period_profile[row[DEFAULT_ITEM_COL]]
+                    )
+                for asset in user_period_profile.keys() - set(
+                    prices[DEFAULT_ITEM_COL].unique().flatten()
+                ):
                     if future_date < limit_prices[limit_prices["ISIN"] == asset].iloc[0]["minDate"]:
                         price = limit_prices[limit_prices["ISIN"] == asset].iloc[0]["priceMinDate"]
                         sell_price += abs(price) * user_period_profile[asset]
-                    elif future_date > limit_prices[limit_prices["ISIN"] == asset].iloc[0]["maxDate"]:
+                    elif (
+                        future_date > limit_prices[limit_prices["ISIN"] == asset].iloc[0]["maxDate"]
+                    ):
                         price = limit_prices[limit_prices["ISIN"] == asset].iloc[0]["priceMaxDate"]
                         sell_price += abs(price) * user_period_profile[asset]
                     else:
@@ -291,10 +330,10 @@ if __name__ == "__main__":
                     buy_prices.append(buy_price)
                     sell_prices.append(sell_price)
                     power = 365.0 / (future_date - rec_date).days
-                    profita = pow(sell_price/buy_price, power) - 1.0
-                    profitability.append(sell_price/buy_price - 1.0)
+                    profita = pow(sell_price / buy_price, power) - 1.0
+                    profitability.append(sell_price / buy_price - 1.0)
                     power = 30.0 / (future_date - rec_date).days
-                    profitm = pow(sell_price/buy_price, power) - 1.0
+                    profitm = pow(sell_price / buy_price, power) - 1.0
                     monthly_profit.append(profitm)
                     ann_profit.append(profita)
 
@@ -306,20 +345,29 @@ if __name__ == "__main__":
                 user_count += 1
                 if user_count % 100 == 0:
                     timeb = dt.datetime.now() - timea
-                    print("Processed " + str(user_count) + " customers (" + '{}'.format(timeb) + ")")
+                    print("Processed " + str(user_count) + " customers (" + f"{timeb}" + ")")
 
             customer_analysis_df = pd.DataFrame(
-                {"customer": customers, "buy_price": buy_prices, "sell_price": sell_prices, "profitability": profitability,
-                "ann_profit": ann_profit, "month_profit": monthly_profit})
+                {
+                    "customer": customers,
+                    "buy_price": buy_prices,
+                    "sell_price": sell_prices,
+                    "profitability": profitability,
+                    "ann_profit": ann_profit,
+                    "month_profit": monthly_profit,
+                }
+            )
 
-            customer_analysis_df.to_csv(os.path.join(directory, "customers_stats_" +
-                                                    rec_date.strftime("%Y-%m-%d") + ".csv"),
-                                        index=False)
+            customer_analysis_df.to_csv(
+                os.path.join(
+                    directory, "customers_stats_" + rec_date.strftime("%Y-%m-%d") + ".csv"
+                ),
+                index=False,
+            )
 
             value = [rec_date]
 
             for x in ["profitability", "month_profit", "ann_profit"]:
-
                 mean = customer_analysis_df[x].mean()
                 min = customer_analysis_df[x].min()
                 max = customer_analysis_df[x].max()
@@ -328,13 +376,20 @@ if __name__ == "__main__":
                 q3 = customer_analysis_df[x].quantile(0.75)
 
                 quants = numpy.quantile(customer_analysis_df[x], [0, 0.25, 0.5, 0.75, 1.0])
-                total_profit = (total_sell_price - total_buy_price)/total_buy_price
+                total_profit = (total_sell_price - total_buy_price) / total_buy_price
                 if x == "month_profit":
-                    total_profit = math.pow(1+total_profit, 30.0/((future_date-rec_date).days + 0.0))-1
+                    total_profit = (
+                        math.pow(1 + total_profit, 30.0 / ((future_date - rec_date).days + 0.0)) - 1
+                    )
                 elif x == "ann_profit":
-                    total_profit = math.pow(1+total_profit, 365.0 / ((future_date - rec_date).days + 0.0))-1
+                    total_profit = (
+                        math.pow(1 + total_profit, 365.0 / ((future_date - rec_date).days + 0.0))
+                        - 1
+                    )
 
-                perc_prof = (len([x for x in customer_analysis_df[x] if x > 0.0])+0.0)/(len(customer_analysis_df[x]) + 0.0)
+                perc_prof = (len([x for x in customer_analysis_df[x] if x > 0.0]) + 0.0) / (
+                    len(customer_analysis_df[x]) + 0.0
+                )
 
                 value.append(mean)
                 value.append(total_profit)
@@ -344,22 +399,22 @@ if __name__ == "__main__":
                 value.append(min)
                 value.append(max)
                 value.append(perc_prof)
-                log_metrics({'mean': mean}, step=i)
-                log_metrics({'total_profit': total_profit}, step=i)
-                log_metrics({'q1': q1}, step=i)
-                log_metrics({'median': median}, step=i)
-                log_metrics({'q3': q3}, step=i)
-                log_metrics({'min': min}, step=i)
-                log_metrics({'max': max}, step=i)
-                log_metrics({'perc_prof': perc_prof}, step=i)
+                log_metrics({"mean": mean}, step=i)
+                log_metrics({"total_profit": total_profit}, step=i)
+                log_metrics({"q1": q1}, step=i)
+                log_metrics({"median": median}, step=i)
+                log_metrics({"q3": q3}, step=i)
+                log_metrics({"min": min}, step=i)
+                log_metrics({"max": max}, step=i)
+                log_metrics({"perc_prof": perc_prof}, step=i)
 
             print(columns)
             print(value)
 
             values.append(value)
             timeb = dt.datetime.now() - timea
-            print("Finished " + str(dates[i]) + " (" + '{}'.format(timeb) + ")")
-            log_params({'finish_date_{}'.format(i): dates[i]})
+            print("Finished " + str(dates[i]) + " (" + f"{timeb}" + ")")
+            log_params({f"finish_date_{i}": dates[i]})
 
         df = pd.DataFrame(values, columns=columns)
         df.set_index("timestamp")

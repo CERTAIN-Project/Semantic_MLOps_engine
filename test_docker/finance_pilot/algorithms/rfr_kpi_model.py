@@ -2,12 +2,11 @@ import os
 
 import numpy as np
 import pandas as pd
+from finance_pilot.algorithms.kpi_gen.ma_kpi_generator import MAKPIGenerator
+from finance_pilot.utils.constants import DEFAULT_ITEM_COL, DEFAULT_TIMESTAMP_COL
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.pipeline import Pipeline
-
-from finance_pilot.utils.constants import DEFAULT_ITEM_COL, DEFAULT_TIMESTAMP_COL
-from finance_pilot.algorithms.kpi_gen.ma_kpi_generator import MAKPIGenerator
 
 
 class KPIFeatureTransformer(BaseEstimator, TransformerMixin):
@@ -15,8 +14,11 @@ class KPIFeatureTransformer(BaseEstimator, TransformerMixin):
     sklearn-compatible transformer that computes KPI features from raw time-series rows.
     """
 
-    _kpi_cache = None  # class-level default for backward compat with pickles created before this attr existed
-    _fit_keys = None   # class-level default for backward compat with pickles where _fit_keys was not cleared
+    # class-level default for backward compat with pickles created before this attr existed
+    _kpi_cache = None
+    _fit_keys = (
+        None  # class-level default for backward compat with pickles where _fit_keys was not cleared
+    )
 
     def __init__(self, k=5, kpi_type="full_short", kpi_features=None):
         self.k = k
@@ -41,7 +43,9 @@ class KPIFeatureTransformer(BaseEstimator, TransformerMixin):
         required_input_cols = [DEFAULT_ITEM_COL, DEFAULT_TIMESTAMP_COL]
         missing_input_cols = [col for col in required_input_cols if col not in X.columns]
         if missing_input_cols:
-            raise ValueError(f"Missing required input columns for KPI generation: {missing_input_cols}")
+            raise ValueError(
+                f"Missing required input columns for KPI generation: {missing_input_cols}"
+            )
 
         self._fit_keys = None
         if isinstance(target_df, pd.DataFrame):
@@ -106,11 +110,14 @@ class RFRKPIModel:
         self.pipeline = Pipeline(
             steps=[
                 ("kpi", self.transformer),
-                ("rf", RandomForestRegressor(
-                    n_estimators=self.n_estimators,
-                    n_jobs=self.n_jobs,
-                    random_state=self.random_state,
-                )),
+                (
+                    "rf",
+                    RandomForestRegressor(
+                        n_estimators=self.n_estimators,
+                        n_jobs=self.n_jobs,
+                        random_state=self.random_state,
+                    ),
+                ),
             ]
         )
         self.model = self.pipeline.named_steps["rf"]
@@ -163,7 +170,11 @@ class RFRKPIModel:
                 on=[DEFAULT_ITEM_COL, DEFAULT_TIMESTAMP_COL],
                 how="inner",
             )
-            train_columns = list(self.kpi_features) + [DEFAULT_ITEM_COL, DEFAULT_TIMESTAMP_COL, "target"]
+            train_columns = list(self.kpi_features) + [
+                DEFAULT_ITEM_COL,
+                DEFAULT_TIMESTAMP_COL,
+                "target",
+            ]
             merged = merged[train_columns].dropna()
             target_df = merged[[DEFAULT_ITEM_COL, DEFAULT_TIMESTAMP_COL, "target"]].copy()
             target = merged["target"].values

@@ -1,12 +1,11 @@
 import json
-import pytest
-import pandas as pd
-import numpy as np
-import os
-from unittest.mock import patch, Mock, mock_open
+from unittest.mock import Mock, mock_open, patch
 
-from certain_library.data_analysis.log_dataset import log_dataset
+import numpy as np
+import pandas as pd
+import pytest
 from certain_library.data_analysis.log_data_techniques import log_data_techniques
+from certain_library.data_analysis.log_dataset import log_dataset
 from certain_library.data_analysis.log_demographic_bias import (
     build_batch_demographic_bias_artifacts,
     build_demographic_bias_artifacts,
@@ -22,10 +21,10 @@ class TestLogDataset:
         """Test logging datasets with OPSD temporal split structure."""
         X_train, X_test, y_train, y_test, train_ts, test_ts = opsd_train_test_split
 
-        with patch("mlflow.log_input") as mock_log_input, patch(
-            "mlflow.log_artifact"
-        ) as mock_log_artifact:
-
+        with (
+            patch("mlflow.log_input") as mock_log_input,
+            patch("mlflow.log_artifact") as mock_log_artifact,
+        ):
             log_dataset(X_train, X_test, temp_directory)
 
             # Verify MLflow inputs logged with correct context (like OPSD)
@@ -90,12 +89,12 @@ class TestLogWhylogsProfile:
         """Test logging WhyLogs profiles for all OPSD data processing stages."""
         stages = opsd_cleaned_data_pipeline
 
-        with patch("whylogs.log") as mock_whylogs, patch(
-            "mlflow.log_artifact"
-        ) as mock_log_artifact, patch("os.path.exists", return_value=True), patch(
-            "os.remove"
-        ) as mock_remove:
-
+        with (
+            patch("whylogs.log") as mock_whylogs,
+            patch("mlflow.log_artifact") as mock_log_artifact,
+            patch("os.path.exists", return_value=True),
+            patch("os.remove"),
+        ):
             # Setup WhyLogs mock with OPSD column structure
             mock_results = Mock()
             mock_results.profile.view().to_pandas.return_value = pd.DataFrame(
@@ -149,9 +148,7 @@ class TestLogWhylogsProfile:
                     # Use df_augmented as ultimate fallback
                     stage_data = stages.get("df_augmented", list(stages.values())[0])
 
-                print(
-                    f"Logging profile '{profile_name}' with stage data shape: {stage_data.shape}"
-                )
+                print(f"Logging profile '{profile_name}' with stage data shape: {stage_data.shape}")
                 log_whylogs_profile(stage_data, profile_name, temp_directory)
                 profiles_logged += 1
 
@@ -159,17 +156,14 @@ class TestLogWhylogsProfile:
             print(f"mock_whylogs.call_count: {mock_whylogs.call_count}")
 
             # Verify all profiles logged
-            assert mock_whylogs.call_count == len(
-                opsd_whylogs_profiles
-            ), f"Expected {len(opsd_whylogs_profiles)} profiles, got {mock_whylogs.call_count}"
+            assert mock_whylogs.call_count == len(opsd_whylogs_profiles), (
+                f"Expected {len(opsd_whylogs_profiles)} profiles, got {mock_whylogs.call_count}"
+            )
             assert mock_log_artifact.call_count == len(opsd_whylogs_profiles)
 
-    def test_log_whylogs_profile_with_opsd_columns(
-        self, sample_opsd_small_data, temp_directory
-    ):
+    def test_log_whylogs_profile_with_opsd_columns(self, sample_opsd_small_data, temp_directory):
         """Test WhyLogs profile with OPSD-specific columns."""
         with patch("whylogs.log") as mock_whylogs, patch("mlflow.log_artifact"):
-
             # Mock results with OPSD energy columns
             mock_results = Mock()
             mock_results.profile.view().to_pandas.return_value = pd.DataFrame(
@@ -199,18 +193,15 @@ class TestTimestampAnalysis:
 
     def test_log_opsd_timestamps(self, opsd_train_test_split, temp_directory):
         """Test logging timestamps like in OPSD pipeline."""
-        X_train, X_test, y_train, y_test, train_timestamps, test_timestamps = (
-            opsd_train_test_split
-        )
+        X_train, X_test, y_train, y_test, train_timestamps, test_timestamps = opsd_train_test_split
 
-        with patch("mlflow.log_param") as mock_log_param, patch(
-            "mlflow.log_artifact"
-        ) as mock_log_artifact, patch("builtins.open", mock_open()) as mock_file, patch(
-            "os.makedirs"
-        ), patch(
-            "os.remove"
+        with (
+            patch("mlflow.log_param") as mock_log_param,
+            patch("mlflow.log_artifact") as mock_log_artifact,
+            patch("builtins.open", mock_open()),
+            patch("os.makedirs"),
+            patch("os.remove"),
         ):
-
             timestamp_analysis(train_timestamps, test_timestamps, temp_directory)
 
             # Verify timestamp parameters logged (like OPSD)
@@ -236,10 +227,11 @@ class TestTimestampAnalysis:
         """Test timestamp file content matches OPSD structure."""
         _, _, _, _, train_ts, test_ts = opsd_train_test_split
 
-        with patch("mlflow.log_param"), patch("mlflow.log_artifact"), patch(
-            "builtins.open", mock_open()
-        ) as mock_file:
-
+        with (
+            patch("mlflow.log_param"),
+            patch("mlflow.log_artifact"),
+            patch("builtins.open", mock_open()) as mock_file,
+        ):
             timestamp_analysis(train_ts, test_ts, temp_directory)
 
             # Verify file was opened for writing
@@ -291,12 +283,13 @@ class TestLogDataTechniques:
             },
         }
 
-        with patch("mlflow.log_artifact") as mock_log_artifact, patch(
-            "tempfile.mkdtemp", return_value="/tmp/testdir"
-        ), patch("os.path.exists", return_value=True), patch("os.remove"), patch(
-            "os.rmdir"
+        with (
+            patch("mlflow.log_artifact") as mock_log_artifact,
+            patch("tempfile.mkdtemp", return_value="/tmp/testdir"),
+            patch("os.path.exists", return_value=True),
+            patch("os.remove"),
+            patch("os.rmdir"),
         ):
-
             log_data_techniques(opsd_techniques)
 
             mock_log_artifact.assert_called_once()

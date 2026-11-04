@@ -1,10 +1,10 @@
-from certain_library.tracking.tracker import tracker as mlflow_tracker
-from certain_library.tracking.tracker import timestamp_ms, mlflow_artifact_path
 import os
-import inspect
-from typing import Optional, Any
+from typing import Any
 
 import codecarbon
+
+from certain_library.tracking.tracker import mlflow_artifact_path, timestamp_ms
+from certain_library.tracking.tracker import tracker as mlflow_tracker
 
 EmissionsTracker = codecarbon.emissions_tracker.EmissionsTracker
 
@@ -61,9 +61,7 @@ def start_tracker(
     # Check for invalid characters in filename
     invalid_chars = ["/", "\\", ":", "*", "?", '"', "<", ">", "|"]
     if any(char in output_file_name for char in invalid_chars):
-        raise ValueError(
-            f"output_file_name contains invalid characters: {invalid_chars}"
-        )
+        raise ValueError(f"output_file_name contains invalid characters: {invalid_chars}")
 
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -84,9 +82,7 @@ def start_tracker(
     return tracker, output_location
 
 
-def stop_tracker(
-    tracker: Any, output_location: Optional[dict[str, str]] = None
-) -> None:
+def stop_tracker(tracker: Any, output_location: dict[str, str] | None = None) -> None:
     """
     Stop the emissions tracker, log the emissions data to MLflow, and clean up.
 
@@ -141,8 +137,8 @@ def stop_tracker(
     # We'll convert the CSV into a JSON artifact with location columns removed.
     json_path = os.path.splitext(csv_path)[0] + ".json"
     try:
-        import pandas as _pd
         import mlflow
+        import pandas as _pd
 
         if _pd and os.path.exists(csv_path):
             try:
@@ -256,4 +252,7 @@ def stop_tracker(
         try:
             os.rmdir(output_location["output_dir"])
         except Exception as exc:
-            print(f"[WARN] Could not remove emissions directory {output_location['output_dir']}: {exc}")
+            print(
+                f"[WARN] Could not remove emissions directory "
+                f"{output_location['output_dir']}: {exc}"
+            )

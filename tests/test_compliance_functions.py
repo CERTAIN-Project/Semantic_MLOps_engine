@@ -34,12 +34,24 @@ Covers:
 
 import json
 import os
-import shutil
 import sys
 import uuid
+from unittest.mock import patch
 
 import pytest
-from unittest.mock import patch
+from certain_library.compliance.log_deployment import (
+    log_build_testing,
+    log_decommissioning,
+    log_interface,
+    log_model_packaging,
+    log_monitor_logs,
+    log_standards,
+)
+from certain_library.compliance.log_documentation import (
+    log_declarations_of_conformity,
+    log_explainable_ai,
+    log_visual_documentations,
+)
 
 # ── certain_library compliance imports ───────────────────────────────────────
 from certain_library.compliance.log_experiment_governance import (
@@ -51,19 +63,6 @@ from certain_library.compliance.log_governance import (
     log_human_oversight,
     log_risk,
     log_transparency_measure,
-)
-from certain_library.compliance.log_documentation import (
-    log_declarations_of_conformity,
-    log_explainable_ai,
-    log_visual_documentations,
-)
-from certain_library.compliance.log_deployment import (
-    log_build_testing,
-    log_decommissioning,
-    log_interface,
-    log_model_packaging,
-    log_monitor_logs,
-    log_standards,
 )
 
 # ── data_api map-function imports ────────────────────────────────────────────
@@ -145,9 +144,7 @@ class TestLogAiActors:
             assert kwargs.get("artifact_path") == "ai_actors"
 
     def test_json_contains_expected_fields(self):
-        data = _capture_json(
-            log_ai_actors, "AuditFirm", "OrgX", self._providers, self._deployers
-        )
+        data = _capture_json(log_ai_actors, "AuditFirm", "OrgX", self._providers, self._deployers)
         assert data["auditor"] == "AuditFirm"
         assert data["organization"] == "OrgX"
         assert data["ai_providers"] == self._providers
@@ -182,15 +179,11 @@ class TestLogAiActors:
 
     def test_raises_on_unknown_provider_key(self):
         with pytest.raises(ValueError, match="unrecognised keys"):
-            log_ai_actors(
-                "A", "O", [{"name": "P", "organisation": "typo"}], [{"name": "D"}]
-            )
+            log_ai_actors("A", "O", [{"name": "P", "organisation": "typo"}], [{"name": "D"}])
 
     def test_raises_on_unknown_deployer_key(self):
         with pytest.raises(ValueError, match="unrecognised keys"):
-            log_ai_actors(
-                "A", "O", [{"name": "P"}], [{"name": "D", "departement": "typo"}]
-            )
+            log_ai_actors("A", "O", [{"name": "P"}], [{"name": "D", "departement": "typo"}])
 
 
 class TestLogLabelingProcedures:
@@ -304,15 +297,11 @@ class TestLogRisk:
 
     def test_raises_on_risk_level_below_zero(self):
         with pytest.raises(ValueError):
-            log_risk(
-                [{"risk_description": "desc", "risk_type": "type", "risk_level": -0.1}]
-            )
+            log_risk([{"risk_description": "desc", "risk_type": "type", "risk_level": -0.1}])
 
     def test_raises_on_risk_level_above_one(self):
         with pytest.raises(ValueError):
-            log_risk(
-                [{"risk_description": "desc", "risk_type": "type", "risk_level": 1.1}]
-            )
+            log_risk([{"risk_description": "desc", "risk_type": "type", "risk_level": 1.1}])
 
     def test_boundary_values_accepted(self):
         _capture_json(
@@ -390,9 +379,7 @@ class TestLogHumanOversight:
 
     def test_raises_on_unknown_key(self):
         with pytest.raises(ValueError, match="Unknown key"):
-            log_human_oversight(
-                [{"oversight_type": "t", "description": "d", "bad_key": "x"}]
-            )
+            log_human_oversight([{"oversight_type": "t", "description": "d", "bad_key": "x"}])
 
 
 class TestLogTransparencyMeasure:
@@ -419,9 +406,7 @@ class TestLogTransparencyMeasure:
 
     def test_raises_on_length_mismatch(self):
         with pytest.raises(ValueError, match="same length"):
-            log_transparency_measure(
-                [{"measure_type": ["a", "b"], "measure_value": ["x"]}]
-            )
+            log_transparency_measure([{"measure_type": ["a", "b"], "measure_value": ["x"]}])
 
     def test_multiple_measures_logged(self):
         with patch("mlflow.log_artifact") as mock:
@@ -435,17 +420,13 @@ class TestLogTransparencyMeasure:
 
     def test_raises_on_unknown_key(self):
         with pytest.raises(ValueError, match="Unknown key"):
-            log_transparency_measure(
-                [{"measure_type": ["t"], "measure_value": ["v"], "bad": "x"}]
-            )
+            log_transparency_measure([{"measure_type": ["t"], "measure_value": ["v"], "bad": "x"}])
 
 
 class TestLogChange:
     def test_artifact_path(self):
         with patch("mlflow.log_artifact") as mock:
-            log_change(
-                [{"change_description": "Updated threshold", "changed_by": "alice"}]
-            )
+            log_change([{"change_description": "Updated threshold", "changed_by": "alice"}])
             _, kwargs = mock.call_args
             assert kwargs.get("artifact_path") == "change_logs"
 
@@ -517,7 +498,10 @@ class TestLogDeclarationsOfConformity:
                     {
                         "filename": "addendum.docx",
                         "file_type": "docx",
-                        "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        "mime_type": (
+                            "application/vnd.openxmlformats-officedocument."
+                            "wordprocessingml.document"
+                        ),
                         "description": "Addendum",
                     },
                 ],
@@ -551,9 +535,7 @@ class TestLogDeclarationsOfConformity:
         with pytest.raises(ValueError):
             log_declarations_of_conformity(
                 issuer="X",
-                declarations=[
-                    {"filename": "f.pdf", "file_type": "pdf"}
-                ],  # missing mime_type
+                declarations=[{"filename": "f.pdf", "file_type": "pdf"}],  # missing mime_type
             )
 
     def test_raises_on_unknown_key(self):
@@ -728,9 +710,7 @@ class TestLogBuildTesting:
 
     def test_raises_when_test_results_not_dict(self):
         with pytest.raises(ValueError, match="test_results must be a dict"):
-            log_build_testing(
-                DEPLOYMENT_ID, MODEL_ID, "success", "logs", "unit", "42/42 passed"
-            )
+            log_build_testing(DEPLOYMENT_ID, MODEL_ID, "success", "logs", "unit", "42/42 passed")
 
 
 class TestLogStandards:
@@ -809,9 +789,7 @@ class TestLogMonitorLogs:
 class TestLogDecommissioning:
     def test_artifact_path(self):
         with patch("mlflow.log_artifact") as mock:
-            log_decommissioning(
-                DEPLOYMENT_ID, MODEL_ID, ["shutdown", "archive"], "End of life"
-            )
+            log_decommissioning(DEPLOYMENT_ID, MODEL_ID, ["shutdown", "archive"], "End of life")
             _, kwargs = mock.call_args
             assert kwargs.get("artifact_path") == "decommissioning"
 
@@ -828,9 +806,7 @@ class TestLogDecommissioning:
         assert data["infrastructure_shutdown"] == ""
         assert data["evidence_documentation"] == []
         assert data["audit_trail"] == ""
-        assert data["decomissioning_actions"] == [
-            "shutdown"
-        ]  # single-m typo in library
+        assert data["decomissioning_actions"] == ["shutdown"]  # single-m typo in library
         assert data["reason"] == "End of life"
 
     def test_raises_on_empty_actions(self):

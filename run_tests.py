@@ -5,9 +5,8 @@ This script helps run and validate all tests following the OPSD patterns.
 """
 
 import os
-import sys
 import subprocess
-import pytest
+import sys
 
 
 def run_tests():
@@ -137,14 +136,14 @@ def validate_imports():
     print("=" * 30)
 
     try:
-        import certain_library as cl
+        import certain_library  # noqa: F401
 
         print("✅ certain_library import successful")
 
         # Test key imports
-        from certain_library.train_monitor.log_model import log_model_info
-        from certain_library.data_analysis.log_dataset import log_dataset
-        from certain_library.resource_monitor.resource import start_tracker
+        from certain_library.data_analysis.log_dataset import log_dataset  # noqa: F401
+        from certain_library.resource_monitor.resource import start_tracker  # noqa: F401
+        from certain_library.train_monitor.log_model import log_model_info  # noqa: F401
 
         print("✅ All key function imports successful")
 

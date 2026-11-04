@@ -1,10 +1,11 @@
-from certain_library.tracking.tracker import tracker
 import os
 import tempfile
 import time
 from typing import Any
 
 import pandas as pd
+
+from certain_library.tracking.tracker import tracker
 
 
 def log_weight_distribution(
