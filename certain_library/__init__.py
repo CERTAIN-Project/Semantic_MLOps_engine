@@ -10,13 +10,11 @@ __author__ = "dimitrioschristodoulou"
 __email__ = "dimitrios.christodoulou@digital4planet.org"
 
 # Import main modules for easy access
-from . import data_analysis
-from . import resource_monitor
-from . import train_monitor
+from . import data_analysis, resource_monitor, train_monitor
+from .data_analysis.log_data_techniques import log_data_techniques
 
 # Import commonly used functions
 from .data_analysis.log_dataset import log_dataset
-from .data_analysis.log_data_techniques import log_data_techniques
 from .data_analysis.log_timeseries import timestamp_analysis
 
 # Optional whylogs support (requires whylogs package)
@@ -26,16 +24,19 @@ except ImportError:
     log_whylogs_profile = None
 
 from .resource_monitor.resource import start_tracker, stop_tracker
-
 from .train_monitor.log_metrics import log_metrics, log_search_space
 from .train_monitor.log_model import (
-    log_model_info,
     log_model_architecture,
     log_model_hyperparameters,
+    log_model_info,
     log_model_signature,
 )
 
 __all__ = [
+    # Submodules
+    "data_analysis",
+    "resource_monitor",
+    "train_monitor",
     # Data Analysis
     "log_dataset",
     "log_data_techniques",

@@ -3,28 +3,29 @@ Log run-level documentation and explainability metadata to MLflow artifacts.
 
 Functions
 ---------
-log_declarations_of_conformity → ``declaration_of_conformity/``  → ``declaration_of_conformity`` table
+log_declarations_of_conformity → ``declaration_of_conformity/``
+                                 → ``declaration_of_conformity`` table
 log_visual_documentations      → ``visual_documentation/``        → ``visual_documentation`` table
-log_explainable_ai             → ``explainable_ai/``              → ``explainable_ai_features`` table
+log_explainable_ai             → ``explainable_ai/``
+                                 → ``explainable_ai_features`` table
 """
 
-from certain_library.tracking.tracker import tracker
-
-import os
 import json
-import time
+import os
 import tempfile
+import time
 import uuid
-from typing import List, Optional
+
+from certain_library.tracking.tracker import tracker
 
 
 def log_declarations_of_conformity(
     issuer: str,
-    declarations: List[dict],
-    version: Optional[str] = None,
-    valid_from: Optional[float] = None,
-    valid_until: Optional[float] = None,
-    standard_references: Optional[List[str]] = None,
+    declarations: list[dict],
+    version: str | None = None,
+    valid_from: float | None = None,
+    valid_until: float | None = None,
+    standard_references: list[str] | None = None,
 ) -> None:
     """
     Log one or more declaration-of-conformity document references for the
@@ -114,9 +115,7 @@ def log_declarations_of_conformity(
     for i, d in enumerate(declarations):
         for required in ("filename", "file_type", "mime_type"):
             if not isinstance(d, dict) or required not in d:
-                raise ValueError(
-                    f"declarations[{i}] must be a dict with '{required}' key"
-                )
+                raise ValueError(f"declarations[{i}] must be a dict with '{required}' key")
         unknown = set(d.keys()) - _DECLARATION_ALLOWED_KEYS
         if unknown:
             raise ValueError(
@@ -147,7 +146,9 @@ def log_declarations_of_conformity(
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(record, f, indent=2)
             record["file_size"] = d.get("file_size") or os.path.getsize(path)
-            record["link_to_artifacts"] = d.get("link_to_artifacts") or f"mlflow://artifacts/{artifact_rel_path}"
+            record["link_to_artifacts"] = (
+                d.get("link_to_artifacts") or f"mlflow://artifacts/{artifact_rel_path}"
+            )
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(record, f, indent=2)
             tracker.log_artifact(path, artifact_path="declaration_of_conformity")
@@ -155,9 +156,9 @@ def log_declarations_of_conformity(
 
 def log_visual_documentations(
     stage: str,
-    documents: List[dict],
-    generated_by: Optional[str] = None,
-    model_version: Optional[str] = None,
+    documents: list[dict],
+    generated_by: str | None = None,
+    model_version: str | None = None,
 ) -> None:
     """
     Log one or more visual documentation artifact references for the current
@@ -267,7 +268,7 @@ def log_visual_documentations(
                 "file_size": d.get("file_size"),
                 "creation_time": int(time.time()),
             }
-            fname = f"visual_doc.json"
+            fname = "visual_doc.json"
             path = os.path.join(tmp_dir, fname)
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(record, f, indent=2)
@@ -275,10 +276,10 @@ def log_visual_documentations(
 
 
 def log_explainable_ai(
-    feature_names: List[str],
-    feature_values: List[str],
-    implementation_details: Optional[str] = None,
-    feature_id: Optional[str] = None,
+    feature_names: list[str],
+    feature_values: list[str],
+    implementation_details: str | None = None,
+    feature_id: str | None = None,
 ) -> None:
     """
     Log explainability information (e.g. SHAP values, feature importances) for
@@ -324,7 +325,7 @@ def log_explainable_ai(
         "implementation_details": implementation_details or "",
     }
     with tempfile.TemporaryDirectory() as tmp_dir:
-        fname = f"xai.json"
+        fname = "xai.json"
         path = os.path.join(tmp_dir, fname)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(record, f, indent=2)

@@ -1,11 +1,11 @@
-from certain_library.tracking.tracker import tracker
-import os
 import json
+import os
 import tempfile
-from typing import Dict
+
+from certain_library.tracking.tracker import tracker
 
 
-def log_data_techniques(data_techniques: Dict[str, Dict[str, str]]) -> None:
+def log_data_techniques(data_techniques: dict[str, dict[str, str]]) -> None:
     """
     Log data techniques to MLflow artifacts.
 
@@ -28,9 +28,7 @@ def log_data_techniques(data_techniques: Dict[str, Dict[str, str]]) -> None:
         raise TypeError("data_techniques must be a dictionary")
 
     # Normalize to canonical form: {"techniques": {...}, "data_technique_stage": ...}
-    if "techniques" in data_techniques and isinstance(
-        data_techniques.get("techniques"), dict
-    ):
+    if "techniques" in data_techniques and isinstance(data_techniques.get("techniques"), dict):
         canonical = dict(data_techniques)
     else:
         # Validate that all values are dict-like for the old shape

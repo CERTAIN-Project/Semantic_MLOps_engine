@@ -1,83 +1,78 @@
-import pytest
-import pandas as pd
 import json
-from unittest.mock import patch
 
+import pandas as pd
+import pytest
+from certain_library.train_monitor.log_metrics import log_metrics, log_search_space
 from certain_library.train_monitor.log_model import (
-    log_model_info,
     log_model_architecture,
     log_model_hyperparameters,
+    log_model_info,
     log_model_signature,
 )
-from certain_library.train_monitor.log_metrics import log_metrics, log_search_space
 
 
 class TestLogModelInfo:
     """Test log_model_info function following OPSD patterns."""
 
-    def test_log_opsd_dataset_parameters(self, opsd_dataset_params):
+    def test_log_opsd_dataset_parameters(self, opsd_dataset_params, mlflow_client, active_run_id):
         """Test logging dataset parameters like in OPSD."""
-        with patch("mlflow.log_param") as mock_log_param:
-            log_model_info(opsd_dataset_params)
+        log_model_info(opsd_dataset_params)
 
-            # Verify all dataset parameters were logged
-            assert mock_log_param.call_count == len(opsd_dataset_params)
-            mock_log_param.assert_any_call(
-                "dataset_name", "Open Power System Data - Time Series"
-            )
-            mock_log_param.assert_any_call(
-                "data_url", "https://data.open-power-system-data.org/time_series/"
-            )
+        # Verify exactly the dataset parameters were logged to the active run
+        params = mlflow_client.get_run(active_run_id).data.params
+        assert params == opsd_dataset_params
+        assert params["dataset_name"] == "Open Power System Data - Time Series"
+        assert params["data_url"] == "https://data.open-power-system-data.org/time_series/"
 
-    def test_log_opsd_model_parameters(self, opsd_model_params):
+    def test_log_opsd_model_parameters(self, opsd_model_params, mlflow_client, active_run_id):
         """Test logging model parameters from OPSD."""
-        with patch("mlflow.log_param") as mock_log_param:
-            # Convert numeric values to strings for log_model_info
-            model_params_str = {k: str(v) for k, v in opsd_model_params.items()}
-            log_model_info(model_params_str)
+        # Convert numeric values to strings for log_model_info
+        model_params_str = {k: str(v) for k, v in opsd_model_params.items()}
+        log_model_info(model_params_str)
 
-            # Verify model parameters logged
-            assert mock_log_param.call_count == len(opsd_model_params)
-            mock_log_param.assert_any_call("model_type", "XGBRegressor")
-            mock_log_param.assert_any_call("max_steps", "75")
-            mock_log_param.assert_any_call("random_state", "42")
+        # Verify model parameters logged
+        params = mlflow_client.get_run(active_run_id).data.params
+        assert len(params) == len(opsd_model_params)
+        assert params["model_type"] == "XGBRegressor"
+        assert params["max_steps"] == "75"
+        assert params["random_state"] == "42"
 
     def test_log_model_info_empty_dict(self):
         """Test with empty dictionary."""
-        with pytest.raises(
-            ValueError, match="Input model_information dictionary cannot be empty"
-        ):
+        with pytest.raises(ValueError, match="Input model_information dictionary cannot be empty"):
             log_model_info({})
 
     def test_log_model_info_non_string_values(self):
         """Test with non-string values."""
         invalid_info = {"model_type": "XGBRegressor", "max_steps": 75}
-        with pytest.raises(
-            ValueError, match="Value for key 'max_steps' must be a string"
-        ):
+        with pytest.raises(ValueError, match="Value for key 'max_steps' must be a string"):
             log_model_info(invalid_info)
 
 
 class TestLogModelHyperparameters:
     """Test log_model_hyperparameters function following OPSD patterns."""
 
-    def test_log_opsd_best_hyperparameters(self, opsd_best_hyperparams):
+    def test_log_opsd_best_hyperparameters(
+        self, opsd_best_hyperparams, mlflow_client, active_run_id
+    ):
         """Test logging best hyperparameters from Optuna optimization."""
-        with patch("mlflow.log_param") as mock_log_param:
-            # Extract and convert best hyperparameters
-            best_params = {
-                "n_estimators": opsd_best_hyperparams["best_n_estimators"],
-                "max_depth": opsd_best_hyperparams["best_max_depth"],
-                "learning_rate": opsd_best_hyperparams["best_learning_rate"],
-            }
-            log_model_hyperparameters(best_params, keep_best=True)
+        # Extract and convert best hyperparameters
+        best_params = {
+            "n_estimators": opsd_best_hyperparams["best_n_estimators"],
+            "max_depth": opsd_best_hyperparams["best_max_depth"],
+            "learning_rate": opsd_best_hyperparams["best_learning_rate"],
+        }
+        log_model_hyperparameters(best_params, keep_best=True)
 
-            # Verify best hyperparameters logged with prefix
-            mock_log_param.assert_any_call("best_n_estimators", 75)
-            mock_log_param.assert_any_call("best_max_depth", 6)
-            mock_log_param.assert_any_call("best_learning_rate", 0.1)
+        # Verify best hyperparameters logged with prefix (MLflow stores params as strings)
+        params = mlflow_client.get_run(active_run_id).data.params
+        assert params == {
+            "best_n_estimators": "75",
+            "best_max_depth": "6",
+            "best_learning_rate": "0.1",
+        }
 
-    def test_log_trial_hyperparameters(self, opsd_trial_metrics):
+    def test_log_trial_hyperparameters(self, opsd_trial_metrics, mlflow_client, active_run_id):
         """Test logging trial hyperparameters from OPSD."""
         trial = opsd_trial_metrics[1]  # Best trial
         trial_params = {
@@ -86,11 +81,11 @@ class TestLogModelHyperparameters:
             "learning_rate": trial["learning_rate"],
         }
 
-        with patch("mlflow.log_param") as mock_log_param:
-            log_model_hyperparameters(trial_params)
-            mock_log_param.assert_any_call("n_estimators", 75)
-            mock_log_param.assert_any_call("max_depth", 6)
-            mock_log_param.assert_any_call("learning_rate", 0.1)
+        log_model_hyperparameters(trial_params)
+        params = mlflow_client.get_run(active_run_id).data.params
+        assert params["n_estimators"] == "75"
+        assert params["max_depth"] == "6"
+        assert params["learning_rate"] == "0.1"
 
     def test_log_hyperparameters_empty_dict(self):
         """Test with empty dictionary."""
@@ -140,18 +135,21 @@ class TestLogModelSignature:
 class TestLogMetrics:
     """Test log_metrics function following OPSD patterns."""
 
-    def test_log_opsd_stepwise_metrics(self, opsd_stepwise_metrics):
+    def test_log_opsd_stepwise_metrics(self, opsd_stepwise_metrics, mlflow_client, active_run_id):
         """Test logging stepwise metrics like incremental XGBoost training."""
-        with patch("mlflow.log_metric") as mock_log_metric:
-            for step_data in opsd_stepwise_metrics:
-                metrics = {"mse": step_data["mse"], "r2_score": step_data["r2_score"]}
-                log_metrics(metrics)
+        for step_data in opsd_stepwise_metrics:
+            metrics = {"mse": step_data["mse"], "r2_score": step_data["r2_score"]}
+            log_metrics(metrics)
 
-            # Verify stepwise metrics were logged
-            expected_calls = len(opsd_stepwise_metrics) * 2  # mse + r2_score
-            assert mock_log_metric.call_count == expected_calls
+        # Verify every stepwise value was logged (one history entry per call)
+        mse_history = mlflow_client.get_metric_history(active_run_id, "mse")
+        r2_history = mlflow_client.get_metric_history(active_run_id, "r2_score")
+        expected_calls = len(opsd_stepwise_metrics) * 2  # mse + r2_score
+        assert len(mse_history) + len(r2_history) == expected_calls
+        assert [m.value for m in mse_history] == [s["mse"] for s in opsd_stepwise_metrics]
+        assert [m.value for m in r2_history] == [s["r2_score"] for s in opsd_stepwise_metrics]
 
-    def test_log_opsd_trial_metrics(self, opsd_trial_metrics):
+    def test_log_opsd_trial_metrics(self, opsd_trial_metrics, mlflow_client, active_run_id):
         """Test logging trial metrics from Optuna optimization."""
         trial = opsd_trial_metrics[0]
         trial_metrics = {
@@ -161,42 +159,39 @@ class TestLogMetrics:
             "trial_number": float(trial["trial_number"]),
         }
 
-        with patch("mlflow.log_metric") as mock_log_metric:
-            log_metrics(trial_metrics)
-            mock_log_metric.assert_any_call("trial_mse", trial["trial_mse"])
-            mock_log_metric.assert_any_call(
-                "trial_memory_usage_mb", trial["trial_memory_usage_mb"]
-            )
+        log_metrics(trial_metrics)
+        metrics = mlflow_client.get_run(active_run_id).data.metrics
+        assert metrics["trial_mse"] == trial["trial_mse"]
+        assert metrics["trial_memory_usage_mb"] == trial["trial_memory_usage_mb"]
 
-    def test_log_best_mse_metric(self, opsd_best_hyperparams):
+    def test_log_best_mse_metric(self, opsd_best_hyperparams, mlflow_client, active_run_id):
         """Test logging best MSE metric with prefix."""
-        with patch("mlflow.log_metric") as mock_log_metric:
-            log_metrics({"mse": opsd_best_hyperparams["best_mse"]}, keep_best=True)
-            mock_log_metric.assert_called_once_with("best_mse", 0.045)
+        log_metrics({"mse": opsd_best_hyperparams["best_mse"]}, keep_best=True)
+        assert mlflow_client.get_run(active_run_id).data.metrics == {"best_mse": 0.045}
+        assert len(mlflow_client.get_metric_history(active_run_id, "best_mse")) == 1
 
-    def test_log_final_metrics(self, opsd_final_metrics):
+    def test_log_final_metrics(self, opsd_final_metrics, mlflow_client, active_run_id):
         """Test logging final evaluation metrics."""
-        with patch("mlflow.log_metric") as mock_log_metric:
-            log_metrics(opsd_final_metrics)
+        log_metrics(opsd_final_metrics)
 
-            # Verify final metrics logged
-            assert mock_log_metric.call_count == len(opsd_final_metrics)
-            mock_log_metric.assert_any_call("final_mse", 0.043)
-            mock_log_metric.assert_any_call("final_r2_score", 0.93)
+        # Verify final metrics logged
+        metrics = mlflow_client.get_run(active_run_id).data.metrics
+        assert len(metrics) == len(opsd_final_metrics)
+        assert metrics["final_mse"] == 0.043
+        assert metrics["final_r2_score"] == 0.93
 
 
 class TestLogSearchSpace:
     """Test log_search_space function following OPSD patterns."""
 
-    def test_log_opsd_search_space(self, opsd_search_space):
+    def test_log_opsd_search_space(self, opsd_search_space, mlflow_client, active_run_id):
         """Test logging Optuna search space from OPSD."""
-        with patch("mlflow.log_param") as mock_log_param:
-            log_search_space(opsd_search_space)
+        log_search_space(opsd_search_space)
 
-            # Verify search space was logged as JSON with correct parameter name
-            mock_log_param.assert_called_once_with(
-                "optuna_search_space", json.dumps(opsd_search_space)
-            )
+        # Verify search space was logged as JSON with correct parameter name
+        assert mlflow_client.get_run(active_run_id).data.params == {
+            "optuna_search_space": json.dumps(opsd_search_space)
+        }
 
     def test_log_search_space_empty(self):
         """Test with empty search space."""
@@ -205,31 +200,29 @@ class TestLogSearchSpace:
 
     def test_log_search_space_missing_type(self):
         """Test with missing type key."""
-        from typing import Dict, Union, List
 
         # Add type annotation to satisfy the type checker
-        invalid_space: Dict[str, Dict[str, Union[str, float, int, bool, List]]] = {
+        invalid_space: dict[str, dict[str, str | float | int | bool | list]] = {
             "param1": {"low": 1, "high": 10}
         }
-        with pytest.raises(
-            ValueError, match="Parameter 'param1' is missing required 'type' key"
-        ):
+        with pytest.raises(ValueError, match="Parameter 'param1' is missing required 'type' key"):
             log_search_space(invalid_space)
 
 
 class TestLogModelArchitecture:
     """Test log_model_architecture function."""
 
-    def test_log_xgboost_architecture(self):
+    def test_log_xgboost_architecture(self, mlflow_client, active_run_id):
         """Test logging XGBoost model architecture like OPSD."""
-        with patch("mlflow.log_param") as mock_log_param:
-            log_model_architecture(
-                losses=["rmse"],
-                optimizer="gbdt",
-                regularization="l2",
-                early_stopping=False,
-            )
+        log_model_architecture(
+            losses=["rmse"],
+            optimizer="gbdt",
+            regularization="l2",
+            early_stopping=False,
+        )
 
-            assert mock_log_param.call_count == 4
-            mock_log_param.assert_any_call("losses", ["rmse"])
-            mock_log_param.assert_any_call("optimizer", "gbdt")
+        # MLflow stores params as strings
+        params = mlflow_client.get_run(active_run_id).data.params
+        assert len(params) == 4
+        assert params["losses"] == str(["rmse"])
+        assert params["optimizer"] == "gbdt"

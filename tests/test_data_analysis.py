@@ -1,15 +1,16 @@
 import json
-import pytest
-import pandas as pd
-import numpy as np
 import os
-from unittest.mock import patch, Mock, mock_open
+from unittest.mock import Mock, mock_open, patch
 
-from certain_library.data_analysis.log_dataset import log_dataset
+import numpy as np
+import pandas as pd
+import pytest
 from certain_library.data_analysis.log_data_techniques import log_data_techniques
+from certain_library.data_analysis.log_dataset import log_dataset
 from certain_library.data_analysis.log_demographic_bias import (
     build_batch_demographic_bias_artifacts,
     build_demographic_bias_artifacts,
+    compute_age_bucket,
 )
 from certain_library.data_analysis.log_timeseries import timestamp_analysis
 from certain_library.data_analysis.log_whylogs import log_whylogs_profile
@@ -22,10 +23,10 @@ class TestLogDataset:
         """Test logging datasets with OPSD temporal split structure."""
         X_train, X_test, y_train, y_test, train_ts, test_ts = opsd_train_test_split
 
-        with patch("mlflow.log_input") as mock_log_input, patch(
-            "mlflow.log_artifact"
-        ) as mock_log_artifact:
-
+        with (
+            patch("mlflow.log_input") as mock_log_input,
+            patch("mlflow.log_artifact") as mock_log_artifact,
+        ):
             log_dataset(X_train, X_test, temp_directory)
 
             # Verify MLflow inputs logged with correct context (like OPSD)
@@ -35,11 +36,18 @@ class TestLogDataset:
             assert any("training" in context for context in contexts)
             assert any("testing" in context for context in contexts)
 
-            # Verify CSV artifacts logged to dataset path
-            assert mock_log_artifact.call_count == 2
-            for call in mock_log_artifact.call_args_list:
-                args, kwargs = call
-                assert kwargs["artifact_path"] == "dataset"
+            # Verify CSV artifacts logged to dataset path (the tracker also
+            # writes certain/metadata/inputs.json after each log_input)
+            dataset_calls = [
+                call
+                for call in mock_log_artifact.call_args_list
+                if call.kwargs["artifact_path"] == "certain/dataset"
+            ]
+            assert len(dataset_calls) == 2
+            assert {os.path.basename(call.args[0]) for call in dataset_calls} == {
+                "X_train.csv",
+                "X_test.csv",
+            }
 
     def test_log_temporal_split_preservation(self, sample_opsd_data, temp_directory):
         """Test that temporal order is preserved in logged datasets."""
@@ -90,12 +98,12 @@ class TestLogWhylogsProfile:
         """Test logging WhyLogs profiles for all OPSD data processing stages."""
         stages = opsd_cleaned_data_pipeline
 
-        with patch("whylogs.log") as mock_whylogs, patch(
-            "mlflow.log_artifact"
-        ) as mock_log_artifact, patch("os.path.exists", return_value=True), patch(
-            "os.remove"
-        ) as mock_remove:
-
+        with (
+            patch("whylogs.log") as mock_whylogs,
+            patch("mlflow.log_artifact") as mock_log_artifact,
+            patch("os.path.exists", return_value=True),
+            patch("os.remove"),
+        ):
             # Setup WhyLogs mock with OPSD column structure
             mock_results = Mock()
             mock_results.profile.view().to_pandas.return_value = pd.DataFrame(
@@ -149,9 +157,7 @@ class TestLogWhylogsProfile:
                     # Use df_augmented as ultimate fallback
                     stage_data = stages.get("df_augmented", list(stages.values())[0])
 
-                print(
-                    f"Logging profile '{profile_name}' with stage data shape: {stage_data.shape}"
-                )
+                print(f"Logging profile '{profile_name}' with stage data shape: {stage_data.shape}")
                 log_whylogs_profile(stage_data, profile_name, temp_directory)
                 profiles_logged += 1
 
@@ -159,17 +165,14 @@ class TestLogWhylogsProfile:
             print(f"mock_whylogs.call_count: {mock_whylogs.call_count}")
 
             # Verify all profiles logged
-            assert mock_whylogs.call_count == len(
-                opsd_whylogs_profiles
-            ), f"Expected {len(opsd_whylogs_profiles)} profiles, got {mock_whylogs.call_count}"
+            assert mock_whylogs.call_count == len(opsd_whylogs_profiles), (
+                f"Expected {len(opsd_whylogs_profiles)} profiles, got {mock_whylogs.call_count}"
+            )
             assert mock_log_artifact.call_count == len(opsd_whylogs_profiles)
 
-    def test_log_whylogs_profile_with_opsd_columns(
-        self, sample_opsd_small_data, temp_directory
-    ):
+    def test_log_whylogs_profile_with_opsd_columns(self, sample_opsd_small_data, temp_directory):
         """Test WhyLogs profile with OPSD-specific columns."""
         with patch("whylogs.log") as mock_whylogs, patch("mlflow.log_artifact"):
-
             # Mock results with OPSD energy columns
             mock_results = Mock()
             mock_results.profile.view().to_pandas.return_value = pd.DataFrame(
@@ -199,18 +202,15 @@ class TestTimestampAnalysis:
 
     def test_log_opsd_timestamps(self, opsd_train_test_split, temp_directory):
         """Test logging timestamps like in OPSD pipeline."""
-        X_train, X_test, y_train, y_test, train_timestamps, test_timestamps = (
-            opsd_train_test_split
-        )
+        X_train, X_test, y_train, y_test, train_timestamps, test_timestamps = opsd_train_test_split
 
-        with patch("mlflow.log_param") as mock_log_param, patch(
-            "mlflow.log_artifact"
-        ) as mock_log_artifact, patch("builtins.open", mock_open()) as mock_file, patch(
-            "os.makedirs"
-        ), patch(
-            "os.remove"
+        with (
+            patch("mlflow.log_params") as mock_log_params,
+            patch("mlflow.log_artifact") as mock_log_artifact,
+            patch("certain_library.data_analysis.log_timeseries.open", mock_open(), create=True),
+            patch("os.makedirs"),
+            patch("os.remove"),
         ):
-
             timestamp_analysis(train_timestamps, test_timestamps, temp_directory)
 
             # Verify timestamp parameters logged (like OPSD)
@@ -223,23 +223,31 @@ class TestTimestampAnalysis:
                 "test_mean_timestamp",
             ]
 
-            logged_params = [call[0][0] for call in mock_log_param.call_args_list]
+            mock_log_params.assert_called_once()
+            logged_params = mock_log_params.call_args[0][0]
             for param in expected_params:
                 assert param in logged_params
 
-            # Verify timestamp file artifact logged to correct path
-            mock_log_artifact.assert_called_once()
-            args, kwargs = mock_log_artifact.call_args
-            assert kwargs["artifact_path"] == "timestamps"
+            # Verify timestamp file artifact logged to correct path (the
+            # tracker also writes certain/metadata/params.json)
+            timestamp_calls = [
+                call
+                for call in mock_log_artifact.call_args_list
+                if call.kwargs["artifact_path"] == "certain/timestamps"
+            ]
+            assert len(timestamp_calls) == 1
 
     def test_timestamp_file_structure(self, opsd_train_test_split, temp_directory):
         """Test timestamp file content matches OPSD structure."""
         _, _, _, _, train_ts, test_ts = opsd_train_test_split
 
-        with patch("mlflow.log_param"), patch("mlflow.log_artifact"), patch(
-            "builtins.open", mock_open()
-        ) as mock_file:
-
+        with (
+            patch("mlflow.log_params"),
+            patch("mlflow.log_artifact"),
+            patch(
+                "certain_library.data_analysis.log_timeseries.open", mock_open(), create=True
+            ) as mock_file,
+        ):
             timestamp_analysis(train_ts, test_ts, temp_directory)
 
             # Verify file was opened for writing
@@ -263,7 +271,7 @@ class TestTimestampAnalysis:
 class TestLogDataTechniques:
     """Test log_data_techniques function."""
 
-    def test_log_opsd_style_data_techniques(self, temp_directory):
+    def test_log_opsd_style_data_techniques(self, tmp_path):
         """Test logging data techniques used in OPSD pipeline."""
         # Data techniques that might be used in OPSD processing
         opsd_techniques = {
@@ -291,22 +299,39 @@ class TestLogDataTechniques:
             },
         }
 
-        with patch("mlflow.log_artifact") as mock_log_artifact, patch(
-            "tempfile.mkdtemp", return_value="/tmp/testdir"
-        ), patch("os.path.exists", return_value=True), patch("os.remove"), patch(
-            "os.rmdir"
+        with (
+            patch("mlflow.log_artifact") as mock_log_artifact,
+            patch("tempfile.mkdtemp", return_value=str(tmp_path)),
+            patch("os.path.exists", return_value=True),
+            patch("os.remove"),
+            patch("os.rmdir"),
         ):
-
             log_data_techniques(opsd_techniques)
 
             mock_log_artifact.assert_called_once()
             args, kwargs = mock_log_artifact.call_args
-            assert kwargs["artifact_path"] == "data_techniques"
+            assert args[0] == str(tmp_path / "data_techniques.json")
+            assert kwargs["artifact_path"] == "certain/data_techniques"
 
     def test_log_data_techniques_invalid_type(self):
         """Test with invalid input type."""
         with pytest.raises(TypeError, match="data_techniques must be a dictionary"):
             log_data_techniques("invalid")
+
+
+def _with_derived_bias_columns(df):
+    """Add the derived columns that DataFrame callers must supply.
+
+    The batch JSON path computes them in ``_flatten_dataset``; DataFrame callers
+    build them the same way (see test_docker/test_it_pipeline.py).
+    """
+    df = df.copy()
+    df["AgeBucket"] = df["Age"].map(compute_age_bucket)
+    df["text_length"] = df["Text"].astype(str).str.len()
+    df["metadata_missing_count"] = 0
+    df["metadata_completeness"] = 1.0
+    df["is_anonymous"] = 0
+    return df
 
 
 class TestDemographicBiasAnalysis:
@@ -331,6 +356,8 @@ class TestDemographicBiasAnalysis:
                 "DateOfBirth": ["1993-01-01", "1987-02-02", "1990-03-03"],
             }
         )
+
+        clean_df = _with_derived_bias_columns(clean_df)
 
         report = build_demographic_bias_artifacts(
             clean_df=clean_df,
@@ -369,6 +396,8 @@ class TestDemographicBiasAnalysis:
                 "DateOfBirth": ["1993-01-01", "1987-02-02", "1990-03-03", "1985-04-04"],
             }
         )
+
+        clean_df = _with_derived_bias_columns(clean_df)
 
         report = build_demographic_bias_artifacts(
             clean_df=clean_df,
@@ -542,5 +571,5 @@ class TestDemographicBiasAnalysis:
         assert report["comparison"]["comparison"]["representation_shift"]["nationality_tvd"] >= 0.0
         assert (output_dir / "batch_1_demographic_bias_report.json").exists()
         assert (output_dir / "batch_1_demographic_bias_report.html").exists()
-        assert (output_dir / "clean_batch_1_cluster_assignments.csv").exists()
-        assert (output_dir / "dirty_batch_1_cluster_assignments.csv").exists()
+        assert (output_dir / "batch_1_clean_cluster_assignments.csv").exists()
+        assert (output_dir / "batch_1_dirty_cluster_assignments.csv").exists()

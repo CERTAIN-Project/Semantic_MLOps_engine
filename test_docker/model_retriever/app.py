@@ -22,12 +22,12 @@ import logging
 import os
 import threading
 import time
-from typing import Any, Optional
+from typing import Any
 
 import mlflow.pyfunc
 import pandas as pd
-from fastapi import FastAPI, HTTPException
 from certain_library.tracking.manifest import recover_unfinished_runs
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 # ---------------------------------------------------------------------------
@@ -35,8 +35,8 @@ from pydantic import BaseModel
 # ---------------------------------------------------------------------------
 MODEL_DIR = os.environ.get("MLFLOW_ARTIFACTS", "/app/mlruns")
 
-_model: Optional[Any] = None  # loaded mlflow.pyfunc model
-_model_uri: Optional[str] = None  # filesystem URI used to load it
+_model: Any | None = None  # loaded mlflow.pyfunc model
+_model_uri: str | None = None  # filesystem URI used to load it
 _model_meta: dict = {}  # extra info (run_id, features …)
 _deploy_logs: list = []
 _lock = threading.Lock()
@@ -103,7 +103,7 @@ def predict(req: PredictRequest):
         return {"predictions": result, "n": len(result)}
     except Exception as exc:
         _log({"event": "predict_error", "error": str(exc)})
-        raise HTTPException(status_code=422, detail=str(exc))
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.get("/logs", summary="In-memory deployment event log")
@@ -191,7 +191,7 @@ def watch_for_model(poll_interval: float = 3.0, timeout: float = 3600.0) -> None
     """
     _log({"event": "watcher_started", "watching": MODEL_DIR})
     start = time.time()
-    last_loaded_dir: Optional[str] = None
+    last_loaded_dir: str | None = None
 
     while True:
         elapsed = time.time() - start

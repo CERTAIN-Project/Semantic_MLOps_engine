@@ -4,9 +4,10 @@ import json
 import os
 import tempfile
 import threading
-from datetime import datetime, timezone
+from collections.abc import Iterable
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional
+from typing import Any
 
 from mlflow.tracking import MlflowClient
 
@@ -15,7 +16,7 @@ FINAL_STATUSES = {"FINISHED", "FAILED", "KILLED"}
 
 def utc_now() -> str:
     """Return the current UTC timestamp in ISO 8601 format."""
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 class ManifestStore:
@@ -27,9 +28,9 @@ class ManifestStore:
         self._thread_lock = threading.RLock()
 
     def path_for(self, run_id: str) -> Path:
-        return self.runs_dir / "{}.json".format(run_id)
+        return self.runs_dir / f"{run_id}.json"
 
-    def load(self, run_id: str) -> Dict[str, Any]:
+    def load(self, run_id: str) -> dict[str, Any]:
         path = self.path_for(run_id)
 
         if not path.exists():
@@ -49,8 +50,8 @@ class ManifestStore:
             return json.load(handle)
 
     def update_for_event(
-        self, run_id: str, event: Dict[str, Any], **changes: Any
-    ) -> Dict[str, Any]:
+        self, run_id: str, event: dict[str, Any], **changes: Any
+    ) -> dict[str, Any]:
         """Update a manifest after an event has been persisted."""
         with self._thread_lock:
             manifest = self.load(run_id)
@@ -65,7 +66,7 @@ class ManifestStore:
             self._write_atomic(run_id, manifest)
             return manifest
 
-    def update(self, run_id: str, **changes: Any) -> Dict[str, Any]:
+    def update(self, run_id: str, **changes: Any) -> dict[str, Any]:
         """Update manifest fields without incrementing an event counter."""
         with self._thread_lock:
             manifest = self.load(run_id)
@@ -74,7 +75,7 @@ class ManifestStore:
             self._write_atomic(run_id, manifest)
             return manifest
 
-    def unfinished(self) -> Iterable[Dict[str, Any]]:
+    def unfinished(self) -> Iterable[dict[str, Any]]:
         """Yield manifests that have not reached a terminal status."""
         if not self.runs_dir.exists():
             return
@@ -92,13 +93,13 @@ class ManifestStore:
     def _write_atomic(
         self,
         run_id: str,
-        manifest: Dict[str, Any],
+        manifest: dict[str, Any],
     ) -> None:
         self.runs_dir.mkdir(parents=True, exist_ok=True)
 
         file_descriptor, temporary_name = tempfile.mkstemp(
             dir=str(self.runs_dir),
-            prefix=".{}.".format(run_id),
+            prefix=f".{run_id}.",
             suffix=".tmp",
         )
 
@@ -126,8 +127,8 @@ class ManifestStore:
 
 def recover_unfinished_runs(
     root: Path = Path("certain"),
-    client: Optional[MlflowClient] = None,
-) -> Dict[str, int]:
+    client: MlflowClient | None = None,
+) -> dict[str, int]:
     """Refresh unfinished manifests using current MLflow run state."""
     manifest_store = ManifestStore(root)
     mlflow_client = client or MlflowClient()
@@ -145,7 +146,8 @@ def recover_unfinished_runs(
 
         # Try to find run_metadata.json under the artifacts tree
         try:
-            # The artifacts layout is <artifacts_root>/<experiment_id>/<run_id>/artifacts/metadata/run_metadata.json
+            # The artifacts layout is
+            # <artifacts_root>/<experiment_id>/<run_id>/artifacts/metadata/run_metadata.json
             experiment_id = manifest.get("experiment_id")
             if experiment_id is not None:
                 metadata_path = (

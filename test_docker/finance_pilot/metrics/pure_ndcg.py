@@ -11,12 +11,11 @@
 import math
 
 import pandas as pd
+from finance_pilot.metrics.metric import Metric
 from finance_pilot.utils.constants import (
     DEFAULT_ITEM_COL,
     DEFAULT_USER_COL,
 )
-
-from finance_pilot.metrics.metric import Metric
 
 
 class PureNDCG(Metric):
@@ -29,7 +28,8 @@ class PureNDCG(Metric):
         Initializes the value of the metric.
         :param data: the complete data.
         :param rec_date: the date the recommendation is produced.
-        :param max_date: the maximum date to consider (here, the future date for computing the profitability).
+        :param max_date: the maximum date to consider (here, the future date for computing the
+            profitability).
         """
         super().__init__(data)
         self.idcgs = dict()
@@ -43,10 +43,13 @@ class PureNDCG(Metric):
         idcg = 0.0
         for i in range(0, aux_cutoffs[0]):
             idcg += 1.0 / math.log(i + 2.0)
-            self.idcgs[i+1] = idcg
+            self.idcgs[i + 1] = idcg
 
-        customers = self.data.users & set(
-            self.data.test[DEFAULT_USER_COL].unique().flatten()) if only_test_customers else self.data.users
+        customers = (
+            self.data.users & set(self.data.test[DEFAULT_USER_COL].unique().flatten())
+            if only_test_customers
+            else self.data.users
+        )
         customers = customers & target_custs
 
         num_customers = len(customers)
@@ -74,7 +77,10 @@ class PureNDCG(Metric):
 
         def_dict = dict()
         for cutoff in cutoffs:
-            def_dict[cutoff] = (pd.DataFrame(cust_evals[cutoff], columns=[DEFAULT_USER_COL, "metric"]), gen_evals[cutoff])
+            def_dict[cutoff] = (
+                pd.DataFrame(cust_evals[cutoff], columns=[DEFAULT_USER_COL, "metric"]),
+                gen_evals[cutoff],
+            )
         return def_dict
 
     def evaluate_indiv_cutoffs(self, customer_df, cutoffs):
@@ -116,12 +122,12 @@ class PureNDCG(Metric):
             current_cutoff = aux_cutoffs[0]
 
             aux_cust_df = customer_df.head(max_cutoff)
-            for index, row in aux_cust_df.iterrows():
+            for _index, row in aux_cust_df.iterrows():
                 val = 1.0 if row[DEFAULT_ITEM_COL] in positive_assets else 0.0
                 dcg += val / math.log(k + 2.0)
                 k += 1
                 if k == current_cutoff:
-                    res_dict[current_cutoff] = dcg/cutoff_idcgs[current_cutoff]
+                    res_dict[current_cutoff] = dcg / cutoff_idcgs[current_cutoff]
 
                     if current_cutoff == max_cutoff:
                         current_cutoff = -1
@@ -138,7 +144,6 @@ class PureNDCG(Metric):
         return res_dict
 
     def evaluate_indiv(self, customer_df, cutoff):
-
         customer = customer_df[DEFAULT_USER_COL].unique()[0]
 
         current_assets = set()
@@ -148,7 +153,7 @@ class PureNDCG(Metric):
                 current_assets = set(current_pf[DEFAULT_ITEM_COL].unique())
 
         positive_assets = self.data.get_positive_assets(customer) - current_assets
-        
+
         k = min(cutoff, len(positive_assets))
         idcg = 0.0
         if k not in self.idcgs:
@@ -163,11 +168,10 @@ class PureNDCG(Metric):
 
         k = 0
         dcg = 0.0
-        for index, row in customer_df.iterrows():
+        for _index, row in customer_df.iterrows():
             asset = row[DEFAULT_ITEM_COL]
             val = 1.0 if asset in positive_assets else 0.0
             dcg += val / math.log(k + 2.0)
             k += 1
 
         return dcg / idcg
-

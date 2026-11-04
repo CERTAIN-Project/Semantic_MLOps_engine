@@ -13,11 +13,11 @@ import importlib.util
 import json
 import subprocess
 import sys
+import types
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-import types
 
 import pandas as pd
 import pytest
@@ -26,12 +26,18 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 CERTAIN_MODULE_CANDIDATES = [
     Path("/app/certain_library/data_analysis/log_demographic_bias.py"),
     PROJECT_ROOT.parent / "certain_library" / "data_analysis" / "log_demographic_bias.py",
-    PROJECT_ROOT.parent.parent / "Semantic_MLOps_engine" / "certain_library" / "data_analysis" / "log_demographic_bias.py",
+    PROJECT_ROOT.parent.parent
+    / "Semantic_MLOps_engine"
+    / "certain_library"
+    / "data_analysis"
+    / "log_demographic_bias.py",
 ]
 
 
 def _load_demographic_bias_module():
-    module_path = next((candidate for candidate in CERTAIN_MODULE_CANDIDATES if candidate.exists()), None)
+    module_path = next(
+        (candidate for candidate in CERTAIN_MODULE_CANDIDATES if candidate.exists()), None
+    )
     if module_path is None:
         raise FileNotFoundError(
             "Could not locate CERTAIN's data_analysis/log_demographic_bias.py module."
@@ -144,7 +150,9 @@ def _create_demo_batch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> DemoB
     )
 
 
-def _build_certain_frame(payload: dict[str, Any], annotations: list[dict[str, Any]]) -> pd.DataFrame:
+def _build_certain_frame(
+    payload: dict[str, Any], annotations: list[dict[str, Any]]
+) -> pd.DataFrame:
     annotation_by_id = {
         str(item.get("Id")): item.get("InternalMetadata") or {}
         for item in annotations
@@ -240,7 +248,8 @@ def test_nvcr_demo_generation_preserves_public_and_internal_payloads(
         f"dirty={dirty_age}"
     )
     assert dirty_age["45-59"] >= clean_age["45-59"], (
-        f"expected older records to be at least preserved or increased in dirty data; clean={clean_age}, "
+        f"expected older records to be at least preserved or increased in dirty data; "
+        f"clean={clean_age}, "
         f"dirty={dirty_age}"
     )
 
@@ -348,8 +357,7 @@ def test_nvcr_to_certain_demographics_pipeline(
         "demographic_bias_delta_metadata_missing_rate",
     }
     assert expected_metrics <= logged_metrics, (
-        f"logged metrics: {sorted(logged_metrics)}\n"
-        f"expected metrics: {sorted(expected_metrics)}"
+        f"logged metrics: {sorted(logged_metrics)}\nexpected metrics: {sorted(expected_metrics)}"
     )
 
     report = json.loads(result["artifacts"]["report_json"].read_text(encoding="utf-8"))

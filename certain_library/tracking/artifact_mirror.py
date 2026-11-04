@@ -4,8 +4,9 @@ import hashlib
 import os
 import shutil
 import tempfile
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional
+from typing import Any
 
 
 def calculate_checksum(path: Path) -> str:
@@ -30,13 +31,13 @@ class ArtifactMirror:
         local_path: str,
         experiment_id: str,
         run_id: str,
-        artifact_path: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        artifact_path: str | None = None,
+    ) -> dict[str, Any]:
         """Copy one artifact and return its mirror metadata."""
         source = Path(local_path)
 
         if not source.is_file():
-            raise FileNotFoundError("Artifact is not a file: {}".format(source))
+            raise FileNotFoundError(f"Artifact is not a file: {source}")
 
         relative_directory = self._safe_artifact_path(artifact_path)
         destination_directory = (
@@ -48,7 +49,7 @@ class ArtifactMirror:
 
         file_descriptor, temporary_name = tempfile.mkstemp(
             dir=str(destination_directory),
-            prefix=".{}.".format(source.name),
+            prefix=f".{source.name}.",
             suffix=".tmp",
         )
         os.close(file_descriptor)
@@ -82,8 +83,8 @@ class ArtifactMirror:
         local_directory: str,
         experiment_id: str,
         run_id: str,
-        artifact_path: Optional[str] = None,
-    ) -> Iterable[Dict[str, Any]]:
+        artifact_path: str | None = None,
+    ) -> Iterable[dict[str, Any]]:
         """Mirror every file below a directory."""
         source_directory = Path(local_directory)
 
@@ -106,7 +107,7 @@ class ArtifactMirror:
 
     @staticmethod
     def _safe_artifact_path(
-        artifact_path: Optional[str],
+        artifact_path: str | None,
     ) -> Path:
         """Reject paths that could escape the run artifact directory."""
         relative_path = Path(artifact_path or "")

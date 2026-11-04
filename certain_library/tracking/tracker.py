@@ -1,37 +1,37 @@
 """MLflow-first tracker with a portable local mirror."""
 
+import collections
+import csv
+import json
 import logging
 import os
-import sys
-import json
+import random
 import shutil
-from pathlib import Path
-from typing import Any, Dict, Optional, List
+import socket
+import sys
+import tempfile
 import threading
+import time
 import urllib.error
 import urllib.request
-import socket
-import random
+import warnings
+from pathlib import Path
+from typing import Any
 
 import mlflow
+from metadata.artifact_metadata import (
+    _extract_run_inputs,
+    save_inputs_as_artifact,
+    save_metrics_as_artifact,
+    save_params_as_artifact,
+    save_resources_as_artifact,
+    save_tags_as_artifact,
+)
 from mlflow.tracking import MlflowClient
-import json
 
 from .artifact_mirror import ArtifactMirror
 from .manifest import FINAL_STATUSES, ManifestStore
 from .metadata_writer import MetadataWriter, timestamp_ms
-import tempfile
-import csv
-import time
-import warnings
-import collections
-
-from metadata.artifact_metadata import save_tags_as_artifact
-from metadata.artifact_metadata import save_params_as_artifact
-from metadata.artifact_metadata import save_metrics_as_artifact
-from metadata.artifact_metadata import save_resources_as_artifact
-from metadata.artifact_metadata import save_inputs_as_artifact
-from metadata.artifact_metadata import _extract_run_inputs
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ def mirror_root() -> Path:
 ARTIFACT_BASE_PATH = "certain"
 
 
-def mlflow_artifact_path(artifact_path: Optional[str] = None) -> str:
+def mlflow_artifact_path(artifact_path: str | None = None) -> str:
     """Return an MLflow artifact path under artifacts/certain/.
 
     Examples:
@@ -60,9 +60,7 @@ def mlflow_artifact_path(artifact_path: Optional[str] = None) -> str:
 
     normalized = str(artifact_path).strip("/")
 
-    if normalized == ARTIFACT_BASE_PATH or normalized.startswith(
-        f"{ARTIFACT_BASE_PATH}/"
-    ):
+    if normalized == ARTIFACT_BASE_PATH or normalized.startswith(f"{ARTIFACT_BASE_PATH}/"):
         return normalized
 
     return f"{ARTIFACT_BASE_PATH}/{normalized}"
@@ -95,13 +93,13 @@ class MirroredRun:
 class Tracker:
     """Write to MLflow first, then update the local mirror."""
 
-    def __init__(self, root: Optional[Path] = None):
+    def __init__(self, root: Path | None = None):
         self.root = Path(root) if root is not None else mirror_root()
         self.writer = MetadataWriter(self.root)
         self.manifests = ManifestStore(self.root)
         self.artifacts = ArtifactMirror(self.root)
         # Console capture state used to mirror terminal output into artifacts
-        self._console_td: Optional[Path] = None
+        self._console_td: Path | None = None
         self._orig_stdout = None
         self._orig_stderr = None
         self._console_csv_fh = None
@@ -161,7 +159,10 @@ class Tracker:
             backoff_base = 1.0
 
         def _is_timeout_error(exc: BaseException) -> bool:
-            return isinstance(exc, (TimeoutError, socket.timeout)) or exc.__class__.__name__ == "TimeoutError"
+            return (
+                isinstance(exc, (TimeoutError, socket.timeout))
+                or exc.__class__.__name__ == "TimeoutError"
+            )
 
         for attempt in range(1, max_retries + 1):
             try:
@@ -194,7 +195,8 @@ class Tracker:
                 if is_last:
                     if _is_timeout_error(exc):
                         logger.warning(
-                            "Automatic sync/all timed out after run %s via %s; continuing without blocking the run",
+                            "Automatic sync/all timed out after run %s via %s; "
+                            "continuing without blocking the run",
                             run_id,
                             sync_url,
                         )
@@ -275,7 +277,7 @@ class Tracker:
         run_id = str(run_info.run_id)
         experiment_id = str(run_info.experiment_id)
 
-        parent_run_id: Optional[str] = None
+        parent_run_id: str | None = None
 
         if is_nested:
             if active_before_start is not None:
@@ -300,7 +302,7 @@ class Tracker:
 
             self._write_console_line(
                 "system",
-                "PARENT_RUN_STARTED run_id={}".format(run_id),
+                f"PARENT_RUN_STARTED run_id={run_id}",
             )
 
         if is_nested:
@@ -308,13 +310,7 @@ class Tracker:
             # redirection. It only adds a lifecycle marker to the parent's logs.
             self._write_console_line(
                 "system",
-                (
-                    "NESTED_RUN_STARTED "
-                    "run_id={} parent_run_id={}"
-                ).format(
-                    run_id,
-                    parent_run_id,
-                ),
+                (f"NESTED_RUN_STARTED run_id={run_id} parent_run_id={parent_run_id}"),
             )
 
         event = self.writer.append(
@@ -343,9 +339,8 @@ class Tracker:
             is_final=False,
         )
 
-        run_tags: Dict[str, str] = {
-            str(key): str(value)
-            for key, value in (kwargs.get("tags") or {}).items()
+        run_tags: dict[str, str] = {
+            str(key): str(value) for key, value in (kwargs.get("tags") or {}).items()
         }
 
         for key, value in run_tags.items():
@@ -368,25 +363,16 @@ class Tracker:
         experiment = client.get_experiment(experiment_id)
 
         if experiment is None:
-            raise RuntimeError(
-                "MLflow experiment {!r} could not be loaded.".format(
-                    experiment_id
-                )
-            )
+            raise RuntimeError(f"MLflow experiment {experiment_id!r} could not be loaded.")
 
         # Create experiment-level metadata only for the parent run.
         if not is_nested:
             if getattr(self, "_experiment_not_exist", False):
                 with tempfile.TemporaryDirectory() as temporary_directory:
-                    experiment_path = (
-                        Path(temporary_directory)
-                        / "experiment.json"
-                    )
+                    experiment_path = Path(temporary_directory) / "experiment.json"
 
                     experiment_record = {
-                        "experiment_id": str(
-                            experiment.experiment_id
-                        ),
+                        "experiment_id": str(experiment.experiment_id),
                         "experiment_name": getattr(
                             experiment,
                             "name",
@@ -417,11 +403,9 @@ class Tracker:
                         artifact_path="metadata",
                     )
 
-                experiment_tags: Dict[str, str] = {
+                experiment_tags: dict[str, str] = {
                     str(key): str(value)
-                    for key, value in (
-                        getattr(experiment, "tags", {}) or {}
-                    ).items()
+                    for key, value in (getattr(experiment, "tags", {}) or {}).items()
                 }
 
                 save_tags_as_artifact(
@@ -434,10 +418,7 @@ class Tracker:
         # run is currently active, self.log_artifact() stores this file under the
         # correct MLflow run.
         with tempfile.TemporaryDirectory() as temporary_directory:
-            run_metadata_path = (
-                Path(temporary_directory)
-                / "run_metadata.json"
-            )
+            run_metadata_path = Path(temporary_directory) / "run_metadata.json"
 
             run_metadata_record = {
                 "run_id": run_id,
@@ -493,7 +474,7 @@ class Tracker:
     def end_run(
         self,
         status: str = "FINISHED",
-        expected_run_id: Optional[str] = None,
+        expected_run_id: str | None = None,
     ) -> None:
         """
         End the active MLflow run and serialize its mirrored metadata.
@@ -521,16 +502,8 @@ class Tracker:
         run_name = getattr(run_info, "run_name", None)
         start_time = getattr(run_info, "start_time", None)
 
-        if (
-            expected_run_id is not None
-            and run_id != str(expected_run_id)
-        ):
-            raise RuntimeError(
-                "Expected active run {!r}, but found {!r}.".format(
-                    expected_run_id,
-                    run_id,
-                )
-            )
+        if expected_run_id is not None and run_id != str(expected_run_id):
+            raise RuntimeError(f"Expected active run {expected_run_id!r}, but found {run_id!r}.")
 
         console_owner_run_id = getattr(
             self,
@@ -538,21 +511,14 @@ class Tracker:
             None,
         )
 
-        is_parent_run = (
-            console_owner_run_id is not None
-            and run_id == str(console_owner_run_id)
-        )
+        is_parent_run = console_owner_run_id is not None and run_id == str(console_owner_run_id)
 
-        parent_run_id: Optional[str]
+        parent_run_id: str | None
 
         if is_parent_run:
             parent_run_id = None
         else:
-            parent_run_id = (
-                str(console_owner_run_id)
-                if console_owner_run_id is not None
-                else None
-            )
+            parent_run_id = str(console_owner_run_id) if console_owner_run_id is not None else None
 
         # Record the run-ending event before collecting local events.
         end_time = timestamp_ms()
@@ -583,10 +549,7 @@ class Tracker:
         if is_parent_run:
             self._write_console_line(
                 "system",
-                "PARENT_RUN_STOPPING run_id={} status={}".format(
-                    run_id,
-                    status,
-                ),
+                f"PARENT_RUN_STOPPING run_id={run_id} status={status}",
             )
 
             # Stop and upload the process-wide console capture while the
@@ -622,7 +585,7 @@ class Tracker:
                 exist_ok=True,
             )
 
-            run_events: List[Dict[str, Any]] = []
+            run_events: list[dict[str, Any]] = []
 
             counts = {
                 "param_count": 0,
@@ -688,7 +651,7 @@ class Tracker:
                         final_end_time,
                     )
 
-            run_metadata: Dict[str, Any] = {
+            run_metadata: dict[str, Any] = {
                 "run_id": run_id,
                 "experiment_id": experiment_id,
                 "parent_run_id": parent_run_id,
@@ -702,22 +665,12 @@ class Tracker:
 
             run_metadata.update(counts)
 
-            temporary_directory = Path(
-                tempfile.mkdtemp(
-                    prefix="certain_{}_".format(run_id)
-                )
-            )
+            temporary_directory = Path(tempfile.mkdtemp(prefix=f"certain_{run_id}_"))
 
             try:
-                metadata_path = (
-                    temporary_directory
-                    / "run_metadata.json"
-                )
+                metadata_path = temporary_directory / "run_metadata.json"
 
-                events_path = (
-                    temporary_directory
-                    / "events.jsonl"
-                )
+                events_path = temporary_directory / "events.jsonl"
 
                 with metadata_path.open(
                     "w",
@@ -753,16 +706,12 @@ class Tracker:
                 client.log_artifacts(
                     run_id,
                     str(temporary_directory),
-                    artifact_path=mlflow_artifact_path(
-                        "metadata"
-                    ),
+                    artifact_path=mlflow_artifact_path("metadata"),
                 )
 
             finally:
                 try:
-                    shutil.rmtree(
-                        str(temporary_directory)
-                    )
+                    shutil.rmtree(str(temporary_directory))
                 except Exception:
                     logger.exception(
                         "Failed to remove metadata temporary directory for run %s",
@@ -806,15 +755,13 @@ class Tracker:
                 self._parent_run_id = None
                 self._parent_experiment_id = None
 
-    def log_params(self, params: Dict[str, Any]) -> None:
+    def log_params(self, params: dict[str, Any]) -> None:
         active = mlflow.active_run()
 
         if active is None:
             raise RuntimeError("No active MLflow run.")
 
-        normalized_params: Dict[str, str] = {
-            str(key): str(value) for key, value in params.items()
-        }
+        normalized_params: dict[str, str] = {str(key): str(value) for key, value in params.items()}
 
         mlflow.log_params(normalized_params)
 
@@ -838,20 +785,20 @@ class Tracker:
 
     def log_metrics(
         self,
-        metrics: Dict[str, float],
-        step: Optional[int] = None,
-        timestamp: Optional[int] = None,
+        metrics: dict[str, float],
+        step: int | None = None,
+        timestamp: int | None = None,
     ) -> None:
         active = mlflow.active_run()
 
         if active is None:
             raise RuntimeError("No active MLflow run.")
 
-        normalized_metrics: Dict[str, float] = {
+        normalized_metrics: dict[str, float] = {
             str(key): float(value) for key, value in metrics.items()
         }
 
-        mlflow_arguments: Dict[str, Any] = {}
+        mlflow_arguments: dict[str, Any] = {}
 
         if timestamp is not None:
             mlflow_arguments["timestamp"] = int(timestamp)
@@ -881,7 +828,7 @@ class Tracker:
 
         client = MlflowClient()
         run = client.get_run(active.info.run_id)
-        all_metric_history: Dict[str, list[Dict[str, Any]]] = {}
+        all_metric_history: dict[str, list[dict[str, Any]]] = {}
 
         for metric_name in run.data.metrics.keys():
             metric_name = str(metric_name)
@@ -907,9 +854,9 @@ class Tracker:
 
     def log_resources(
         self,
-        resources: Dict[str, float],
-        step: Optional[int] = None,
-        timestamp: Optional[int] = None,
+        resources: dict[str, float],
+        step: int | None = None,
+        timestamp: int | None = None,
     ) -> None:
         """
         Log system-resource measurements to MLflow under the
@@ -934,16 +881,15 @@ class Tracker:
         if active is None:
             raise RuntimeError("No active MLflow run.")
 
-        normalized_resources: Dict[str, float] = {
+        normalized_resources: dict[str, float] = {
             str(key): float(value) for key, value in resources.items()
         }
 
-        mlflow_resources: Dict[str, float] = {
-            "system_metrics/{}".format(key): value
-            for key, value in normalized_resources.items()
+        mlflow_resources: dict[str, float] = {
+            f"system_metrics/{key}": value for key, value in normalized_resources.items()
         }
 
-        mlflow_arguments: Dict[str, Any] = {}
+        mlflow_arguments: dict[str, Any] = {}
 
         if timestamp is not None:
             mlflow_arguments["timestamp"] = int(timestamp)
@@ -965,7 +911,7 @@ class Tracker:
                 "resource",
                 {
                     "key": key,
-                    "mlflow_key": "system_metrics/{}".format(key),
+                    "mlflow_key": f"system_metrics/{key}",
                     "value": value,
                     "step": event_step,
                     "timestamp": event_timestamp,
@@ -976,7 +922,7 @@ class Tracker:
         run_id = active.info.run_id
         run = client.get_run(run_id)
 
-        all_resource_history: Dict[str, List[Dict[str, Any]]] = {}
+        all_resource_history: dict[str, list[dict[str, Any]]] = {}
 
         for metric_name in run.data.metrics.keys():
             metric_name = str(metric_name)
@@ -1005,7 +951,7 @@ class Tracker:
             resources=all_resource_history,
         )
 
-    def set_tags(self, tags: Dict[str, Any]) -> None:
+    def set_tags(self, tags: dict[str, Any]) -> None:
         active = mlflow.active_run()
 
         if active is None:
@@ -1032,8 +978,8 @@ class Tracker:
     def log_input(
         self,
         dataset: Any,
-        context: Optional[str] = None,
-        tags: Optional[Dict[str, str]] = None,
+        context: str | None = None,
+        tags: dict[str, str] | None = None,
     ) -> None:
         active = mlflow.active_run()
 
@@ -1066,7 +1012,7 @@ class Tracker:
     def log_artifact(
         self,
         local_path: str,
-        artifact_path: Optional[str] = None,
+        artifact_path: str | None = None,
     ) -> None:
         """Log to MLflow first, then copy and checksum the artifact."""
         destination_path = mlflow_artifact_path(artifact_path)
@@ -1095,7 +1041,7 @@ class Tracker:
     def log_artifacts(
         self,
         local_directory: str,
-        artifact_path: Optional[str] = None,
+        artifact_path: str | None = None,
     ) -> None:
         destination_path = mlflow_artifact_path(artifact_path)
         mlflow.log_artifacts(
@@ -1123,7 +1069,7 @@ class Tracker:
                 recovery_required=True,
             )
 
-    def log_xgboost_model(self, model: Any, artifact_path: Optional[str] = None, **kwargs: Any) -> Any:
+    def log_xgboost_model(self, model: Any, artifact_path: str | None = None, **kwargs: Any) -> Any:
         """Log an XGBoost model and recover its generated artifact files.
 
         To ensure a stable artifact layout (runs/<run>/artifacts/certain/model/),
@@ -1137,7 +1083,9 @@ class Tracker:
 
         # First try the direct log_model API (works for MLflow 2.x and many wrappers)
         try:
-            result = mlflow.xgboost.log_model(xgb_model=model, artifact_path=destination_path, **kwargs)
+            result = mlflow.xgboost.log_model(
+                xgb_model=model, artifact_path=destination_path, **kwargs
+            )
         except Exception:
             # Fallback: save locally then upload as run artifacts to guarantee
             # the `runs/<run>/artifacts/<destination_path>/...` layout even on
@@ -1224,14 +1172,13 @@ class Tracker:
     def _record_active(
         self,
         event_type: str,
-        payload: Dict[str, Any],
+        payload: dict[str, Any],
     ) -> None:
         active_run = mlflow.active_run()
 
         if active_run is None:
             logger.warning(
-                "MLflow write succeeded, but no active run was available "
-                "for local mirroring"
+                "MLflow write succeeded, but no active run was available for local mirroring"
             )
             return
 
@@ -1240,7 +1187,7 @@ class Tracker:
     def _record(
         self,
         event_type: str,
-        payload: Dict[str, Any],
+        payload: dict[str, Any],
         active_run: Any,
     ) -> None:
         event_payload = {
@@ -1262,7 +1209,7 @@ class Tracker:
                 recovery_required=True,
             )
 
-    def _get_console_run_context(self) -> Dict[str, Optional[str]]:
+    def _get_console_run_context(self) -> dict[str, str | None]:
         """
         Return the current MLflow run context.
 
@@ -1271,8 +1218,8 @@ class Tracker:
         """
         active = mlflow.active_run()
 
-        active_run_id: Optional[str] = None
-        active_experiment_id: Optional[str] = None
+        active_run_id: str | None = None
+        active_experiment_id: str | None = None
 
         if active is not None:
             active_run_id = str(active.info.run_id)
@@ -1283,7 +1230,6 @@ class Tracker:
             "parent_run_id": self._console_owner_run_id,
             "active_run_id": active_run_id,
         }
-
 
     def _write_console_line(
         self,
@@ -1333,33 +1279,22 @@ class Tracker:
             )
             csv_fh.flush()
 
-
     def _report_console_capture_error(
         self,
         message: str,
         error: BaseException,
     ) -> None:
         """Write internal capture errors directly to the original stderr."""
-        terminal = (
-            getattr(self, "_orig_stderr", None)
-            or getattr(sys, "__stderr__", None)
-        )
+        terminal = getattr(self, "_orig_stderr", None) or getattr(sys, "__stderr__", None)
 
         if terminal is None:
             return
 
         try:
-            terminal.write(
-                "[console-capture] {}: {}: {}\n".format(
-                    message,
-                    type(error).__name__,
-                    error,
-                )
-            )
+            terminal.write(f"[console-capture] {message}: {type(error).__name__}: {error}\n")
             terminal.flush()
         except Exception:
             pass
-
 
     def _console_pipe_reader(
         self,
@@ -1381,7 +1316,7 @@ class Tracker:
                     chunk = os.read(pipe_fd, 4096)
                 except OSError as exc:
                     self._report_console_capture_error(
-                        "{} reader failed".format(stream_name),
+                        f"{stream_name} reader failed",
                         exc,
                     )
                     break
@@ -1393,7 +1328,7 @@ class Tracker:
                     os.write(saved_terminal_fd, chunk)
                 except OSError as exc:
                     self._report_console_capture_error(
-                        "{} terminal mirror failed".format(stream_name),
+                        f"{stream_name} terminal mirror failed",
                         exc,
                     )
 
@@ -1431,7 +1366,6 @@ class Tracker:
             except OSError:
                 pass
 
-
     def _start_console_capture(
         self,
         experiment_id: str,
@@ -1446,7 +1380,7 @@ class Tracker:
         """
         if nested:
             return
-        
+
         run_id = str(run_id)
         experiment_id = str(experiment_id)
 
@@ -1463,18 +1397,11 @@ class Tracker:
                 return
 
             raise RuntimeError(
-                "Console capture is already owned by parent run {!r}; "
-                "cannot start capture for parent run {!r}.".format(
-                    self._console_owner_run_id,
-                    run_id,
-                )
+                f"Console capture is already owned by parent run {self._console_owner_run_id!r}; "
+                f"cannot start capture for parent run {run_id!r}."
             )
 
-        temporary_directory = Path(
-            tempfile.mkdtemp(
-                prefix="console_{}_".format(run_id)
-            )
-        )
+        temporary_directory = Path(tempfile.mkdtemp(prefix=f"console_{run_id}_"))
 
         csv_path = temporary_directory / "run_logs.csv"
         raw_path = temporary_directory / "run_logs.txt"
@@ -1559,7 +1486,7 @@ class Tracker:
                     "stdout",
                 ),
                 daemon=True,
-                name="console-stdout-{}".format(run_id),
+                name=f"console-stdout-{run_id}",
             )
 
             stderr_thread = threading.Thread(
@@ -1570,7 +1497,7 @@ class Tracker:
                     "stderr",
                 ),
                 daemon=True,
-                name="console-stderr-{}".format(run_id),
+                name=f"console-stderr-{run_id}",
             )
 
             stdout_thread.start()
@@ -1587,9 +1514,7 @@ class Tracker:
 
             self._restore_console_file_descriptors()
 
-            raise RuntimeError(
-                "Could not initialize console capture."
-            ) from exc
+            raise RuntimeError("Could not initialize console capture.") from exc
 
         class ConsoleArtifactHandler(logging.Handler):
             def __init__(self, parent: Any) -> None:
@@ -1615,10 +1540,7 @@ class Tracker:
         handler = ConsoleArtifactHandler(self)
         handler.setLevel(logging.DEBUG)
         handler.setFormatter(
-            logging.Formatter(
-                "%(asctime)s | %(levelname)s | "
-                "%(name)s | %(message)s"
-            )
+            logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s")
         )
 
         root_logger.addHandler(handler)
@@ -1651,8 +1573,8 @@ class Tracker:
             category: Any,
             filename: str,
             lineno: int,
-            file: Optional[Any] = None,
-            line: Optional[str] = None,
+            file: Any | None = None,
+            line: str | None = None,
         ) -> None:
             warning_text = warnings.formatwarning(
                 message,
@@ -1686,12 +1608,8 @@ class Tracker:
 
         self._write_console_line(
             "system",
-            "CAPTURE_READY experiment_id={} parent_run_id={}".format(
-                experiment_id,
-                run_id,
-            ),
+            f"CAPTURE_READY experiment_id={experiment_id} parent_run_id={run_id}",
         )
-
 
     def _mark_nested_run_stopped(
         self,
@@ -1704,12 +1622,8 @@ class Tracker:
 
         self._write_console_line(
             "system",
-            "NESTED_RUN_STOPPED run_id={} status={}".format(
-                run_id,
-                status,
-            ),
+            f"NESTED_RUN_STOPPED run_id={run_id} status={status}",
         )
-
 
     def _remove_console_handlers(self) -> None:
         """Restore warnings and remove the custom logging handlers."""
@@ -1766,7 +1680,6 @@ class Tracker:
             root_logger.setLevel(original_root_level)
 
         self._console_original_root_level = None
-
 
     def _restore_console_file_descriptors(self) -> None:
         """Restore stdout/stderr and close the capture pipe write ends."""
@@ -1837,10 +1750,9 @@ class Tracker:
         self._console_stdout_pipe_w = None
         self._console_stderr_pipe_w = None
 
-
     def _stop_console_capture(
         self,
-        run_id: Optional[str] = None,
+        run_id: str | None = None,
         nested: bool = False,
         status: str = "FINISHED",
     ) -> None:
@@ -1878,16 +1790,9 @@ class Tracker:
             None,
         )
 
-        if (
-            run_id is not None
-            and owner_run_id is not None
-            and str(run_id) != str(owner_run_id)
-        ):
+        if run_id is not None and owner_run_id is not None and str(run_id) != str(owner_run_id):
             raise RuntimeError(
-                "Run {!r} cannot stop console capture owned by parent run {!r}.".format(
-                    run_id,
-                    owner_run_id,
-                )
+                f"Run {run_id!r} cannot stop console capture owned by parent run {owner_run_id!r}."
             )
 
         self._write_console_line(
@@ -1916,9 +1821,7 @@ class Tracker:
             if stdout_thread.is_alive():
                 self._report_console_capture_error(
                     "stdout reader did not stop",
-                    TimeoutError(
-                        "stdout reader thread is still active"
-                    ),
+                    TimeoutError("stdout reader thread is still active"),
                 )
 
         if stderr_thread is not None:
@@ -1927,9 +1830,7 @@ class Tracker:
             if stderr_thread.is_alive():
                 self._report_console_capture_error(
                     "stderr reader did not stop",
-                    TimeoutError(
-                        "stderr reader thread is still active"
-                    ),
+                    TimeoutError("stderr reader thread is still active"),
                 )
 
         self._console_stdout_thread = None
@@ -2009,15 +1910,10 @@ class Tracker:
                 client.log_artifacts(
                     str(owner_run_id),
                     str(temporary_directory),
-                    artifact_path=mlflow_artifact_path(
-                        "run_logs"
-                    ),
+                    artifact_path=mlflow_artifact_path("run_logs"),
                 )
 
-                if (
-                    owner_experiment_id is not None
-                    and getattr(self, "artifacts", None) is not None
-                ):
+                if owner_experiment_id is not None and getattr(self, "artifacts", None) is not None:
                     for artifact in self.artifacts.mirror_directory(
                         str(temporary_directory),
                         str(owner_experiment_id),
@@ -2027,9 +1923,7 @@ class Tracker:
                         artifact["timestamp"] = timestamp_ms()
 
                         try:
-                            owner_run = client.get_run(
-                                str(owner_run_id)
-                            )
+                            owner_run = client.get_run(str(owner_run_id))
 
                             self._record(
                                 "artifact",
@@ -2047,9 +1941,7 @@ class Tracker:
 
         finally:
             try:
-                shutil.rmtree(
-                    str(temporary_directory)
-                )
+                shutil.rmtree(str(temporary_directory))
             except Exception as exc:
                 self._report_console_capture_error(
                     "could not remove console temporary directory",
@@ -2065,5 +1957,6 @@ class Tracker:
 
             self._orig_stdout = None
             self._orig_stderr = None
-            
+
+
 tracker = Tracker()

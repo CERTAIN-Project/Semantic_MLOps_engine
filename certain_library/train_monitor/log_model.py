@@ -1,12 +1,13 @@
-from certain_library.tracking.tracker import tracker
-import pandas as pd
-from typing import Any, Dict, Union
+from typing import Any
 
+import pandas as pd
 from mlflow.models import infer_signature
+
+from certain_library.tracking.tracker import tracker
 
 
 # E.g Save model name, version, and other metadata
-def log_model_info(model_information: Dict[str, str]) -> None:
+def log_model_info(model_information: dict[str, str]) -> None:
     """
     Log model parameters to MLflow.
 
@@ -42,7 +43,7 @@ def log_model_info(model_information: Dict[str, str]) -> None:
 
 def log_model_architecture(
     losses: list,
-    optimizer: Union[str, Dict[str, Any]],
+    optimizer: str | dict[str, Any],
     regularization: str,
     early_stopping: bool,
 ) -> None:
@@ -108,7 +109,7 @@ def log_model_architecture(
     if isinstance(optimizer, str):
         if not optimizer:
             raise ValueError("optimizer cannot be empty")
-        optimizer_dict: Dict[str, Any] = {"name": optimizer}
+        optimizer_dict: dict[str, Any] = {"name": optimizer}
     else:
         if "name" not in optimizer:
             raise ValueError("optimizer dict must contain a 'name' key")
@@ -130,7 +131,7 @@ def log_model_architecture(
 # Input: A dictionary of hyperparameters to log
 # hyperparameters = {"n_estimator": 10, "learning_rate": 0.05, "max_depth": 30}
 def log_model_hyperparameters(
-    dict_of_hyperparameters: Dict[str, Union[float, int, str]], keep_best: bool = False
+    dict_of_hyperparameters: dict[str, float | int | str], keep_best: bool = False
 ) -> None:
     """
     Log hyperparameters to MLflow.
@@ -173,12 +174,9 @@ def log_model_hyperparameters(
 
 
 # model should be generic since the type can vary based on the framework used
-from typing import Optional
 
 
-def log_model_signature(
-    model, train_data: pd.DataFrame, y_train: Optional[pd.Series] = None
-) -> None:
+def log_model_signature(model, train_data: pd.DataFrame, y_train: pd.Series | None = None) -> None:
     """
     Log the model architecture to MLflow.
 
@@ -227,9 +225,7 @@ def log_model_signature(
     try:
         predictions = model.predict(train_data)
     except Exception as e:
-        raise ValueError(
-            f"Model cannot make predictions on the provided data: {str(e)}"
-        ) from e
+        raise ValueError(f"Model cannot make predictions on the provided data: {str(e)}") from e
 
     input_example = train_data.iloc[:5]  # a few example rows
     signature = infer_signature(train_data, predictions)
@@ -292,7 +288,6 @@ def log_model_signature(
         if num_total_parameters is None:
             try:
                 import tensorflow as _tf
-
                 from tensorflow.keras import Model as KerasModel
 
                 if isinstance(model, KerasModel):
@@ -342,7 +337,9 @@ def log_model_signature(
         if num_trainable_parameters is not None:
             tracker.log_params({"number_of_trainable_parameters": int(num_trainable_parameters)})
         if num_non_trainable_parameters is not None:
-            tracker.log_params({"number_of_non_trainable_parameters": int(num_non_trainable_parameters)})
+            tracker.log_params(
+                {"number_of_non_trainable_parameters": int(num_non_trainable_parameters)}
+            )
     except Exception:
         # ignore any errors while logging these optional params
         pass

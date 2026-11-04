@@ -5,69 +5,39 @@ instead of Optuna trials. This is intended as a companion test to
 `test_complete_workflow.py` demonstrating 'steps' during training.
 """
 
-from certain_library.tracking.tracker import tracker
 import os
-import time
-import mlflow
-import pandas as pd
+
 import numpy as np
-
-from typing import Dict, Union
-from sklearn.metrics import mean_squared_error
-
-from certain_library.train_monitor.log_metrics import log_metrics
-from certain_library.train_monitor.log_model import (
-    log_model_info,
-    log_model_architecture,
-    log_model_hyperparameters,
-    log_model_signature,
+import pandas as pd
+from certain_library.compliance.log_governance import (
+    log_change,
+    log_human_oversight,
+    log_risk,
+    log_transparency_measure,
 )
-from certain_library.data_analysis.log_whylogs import log_whylogs_profile
-from Semantic_MLOps_engine.certain_library.log_basic.log_params import (
-    log_param,
-    log_params,
-)
+from certain_library.data_analysis.log_data_techniques import log_data_techniques
 from certain_library.data_analysis.log_dataset import (
-    log_dataset,
     log_train_test_dataset,
 )
-from certain_library.resource_monitor.resource import start_tracker, stop_tracker
 from certain_library.metadata.artifact_metadata import (
-    save_experiment_tags_as_artifact,
     collect_runtime_environment,
-    save_runtime_env_as_artifact,
     save_dataset_manifest,
+    save_experiment_tags_as_artifact,
+    save_runtime_env_as_artifact,
 )
-from certain_library.compliance.log_governance import (
-    log_risk,
-    log_human_oversight,
-    log_transparency_measure,
-    log_change,
-)
-from certain_library.compliance.log_experiment_governance import (
-    log_ai_actors,
-    log_labeling_procedures,
-)
-from certain_library.compliance.log_documentation import (
-    log_declarations_of_conformity,
-    log_visual_documentations,
-    log_explainable_ai,
-)
-from certain_library.compliance.log_deployment import (
-    log_model_packaging,
-    log_build_testing,
-    log_standards,
-    log_interface,
-    log_decommissioning,
-)
+from certain_library.resource_monitor.resource import start_tracker, stop_tracker
+from certain_library.tracking.tracker import tracker
 from certain_library.train_monitor.log_examples import log_examples
-from certain_library.train_monitor.log_weights import log_weight_distribution
-from certain_library.data_analysis.log_tokenizer import (
-    log_tokenizer_config,
-    log_tokenization_stats,
+from certain_library.train_monitor.log_metrics import log_metrics
+from certain_library.train_monitor.log_model import (
+    log_model_hyperparameters,
+    log_model_info,
 )
-from certain_library.data_analysis.log_drift_metrics import log_drift_metrics
-from certain_library.data_analysis.log_data_techniques import log_data_techniques
+from certain_library.train_monitor.log_weights import log_weight_distribution
+from Semantic_MLOps_engine.certain_library.log_basic.log_params import (
+    log_params,
+)
+from sklearn.metrics import mean_squared_error
 
 # Simple dummy data generator (small)
 
@@ -75,9 +45,7 @@ from certain_library.data_analysis.log_data_techniques import log_data_technique
 def _make_dummy_energy_df(n_rows: int = 200, seed: int = 42) -> pd.DataFrame:
     rng = np.random.default_rng(seed)
     timestamps = pd.date_range("2018-01-01", periods=n_rows, freq="h", tz="UTC")
-    load = (
-        50000 + 2000 * np.sin(np.linspace(0, 6.28, n_rows)) + rng.normal(0, 200, n_rows)
-    )
+    load = 50000 + 2000 * np.sin(np.linspace(0, 6.28, n_rows)) + rng.normal(0, 200, n_rows)
     solar = np.clip(8000 * np.sin(np.linspace(0, 3.14, n_rows)), 0, None) + rng.normal(
         0, 50, n_rows
     )
@@ -125,9 +93,7 @@ with tracker.start_run(run_name="rf_steps_training") as run:
         os.makedirs("data", exist_ok=True)
         raw_path = os.path.join("data", "raw_dataset_steps.csv")
         df.to_csv(raw_path, index=False)
-        save_dataset_manifest(
-            run_id=run.info.run_id, files_or_path=raw_path, write_manifest=False
-        )
+        save_dataset_manifest(run_id=run.info.run_id, files_or_path=raw_path, write_manifest=False)
     except Exception:
         pass
 
@@ -141,16 +107,12 @@ with tracker.start_run(run_name="rf_steps_training") as run:
 
     y = df["DE_load_actual_entsoe_transparency"]
     X = (
-        df.select_dtypes(include=[np.number]).drop(
-            columns=["DE_load_actual_entsoe_transparency"]
-        )
+        df.select_dtypes(include=[np.number]).drop(columns=["DE_load_actual_entsoe_transparency"])
         if "DE_load_actual_entsoe_transparency" in df.columns
         else df.select_dtypes(include=[np.number])
     )
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, shuffle=False
-    )
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
     train_combined = pd.concat(
         [X_train.reset_index(drop=True), y_train.reset_index(drop=True)], axis=1
     )
@@ -169,9 +131,7 @@ with tracker.start_run(run_name="rf_steps_training") as run:
         pass
 
     # final resource tracking for training
-    tracker_train, output_location_train = start_tracker(
-        output_file_name="emissions_train"
-    )
+    tracker_train, output_location_train = start_tracker(output_file_name="emissions_train")
     # Instead of Optuna trials, run a step-based training loop
     max_steps = 1000
     for step in range(max_steps):
@@ -186,9 +146,7 @@ with tracker.start_run(run_name="rf_steps_training") as run:
         # Optionally log simple model info at the last step
         if step == max_steps - 1:
             try:
-                log_model_info(
-                    {"model_type": "dummy_rf_steps", "trained_steps": max_steps}
-                )
+                log_model_info({"model_type": "dummy_rf_steps", "trained_steps": max_steps})
             except Exception:
                 pass
 
@@ -197,9 +155,7 @@ with tracker.start_run(run_name="rf_steps_training") as run:
             try:
                 # example predictions logging
                 sample_inputs = X_test.head(3).to_dict(orient="records")
-                log_examples(
-                    sample_inputs, [0, 1, 2], [0, 1, 2], step=step, stage="train"
-                )
+                log_examples(sample_inputs, [0, 1, 2], [0, 1, 2], step=step, stage="train")
             except Exception:
                 pass
 

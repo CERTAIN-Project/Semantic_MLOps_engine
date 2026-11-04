@@ -4,7 +4,6 @@
 #  If a copy of the MPL was not distributed with this  file, you can obtain one at
 #  http://mozilla.org/MPL/2.0/.
 from abc import ABC, abstractmethod
-from typing import Tuple, Optional
 
 from pandas import DataFrame
 
@@ -15,8 +14,9 @@ class RatingFilter(ABC):
     """
 
     @abstractmethod
-    def filter(self, time_series: DataFrame, train: DataFrame, valid: Optional[DataFrame], test: DataFrame) -> \
-            Tuple[DataFrame, Optional[DataFrame], DataFrame]:
+    def filter(
+        self, time_series: DataFrame, train: DataFrame, valid: DataFrame | None, test: DataFrame
+    ) -> tuple[DataFrame, DataFrame | None, DataFrame]:
         """
         Selects the ratings to consider.
         :param time_series: the time series in the dataset.

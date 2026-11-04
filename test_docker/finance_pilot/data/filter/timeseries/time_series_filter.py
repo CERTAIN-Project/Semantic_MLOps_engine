@@ -5,7 +5,6 @@
 #  http://mozilla.org/MPL/2.0/.
 
 from abc import ABC, abstractmethod
-from typing import Optional
 
 from pandas import DataFrame
 
@@ -16,7 +15,9 @@ class TimeSeriesFilter(ABC):
     """
 
     @abstractmethod
-    def filter(self, time_series: DataFrame, train: DataFrame, valid: Optional[DataFrame], test: DataFrame) -> DataFrame:
+    def filter(
+        self, time_series: DataFrame, train: DataFrame, valid: DataFrame | None, test: DataFrame
+    ) -> DataFrame:
         """
         Selects the points in the time series to consider.
         :param time_series: the time series in the dataset.

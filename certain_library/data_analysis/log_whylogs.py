@@ -1,13 +1,16 @@
-from certain_library.tracking.tracker import tracker
 import os
 
 import pandas as pd
 import whylogs as why
 
+from certain_library.tracking.tracker import tracker
+
 
 # TODO: Enable function to log different types of profiles, not only pd.DataFrame
 def log_whylogs_profile(
-    data: pd.DataFrame, name: str = "default", profile_dir: str = "metadata_dir",
+    data: pd.DataFrame,
+    name: str = "default",
+    profile_dir: str = "metadata_dir",
     not_nan: bool = False,
 ) -> None:
     """Log a WhyLogs profile artifact for the provided DataFrame as a CSV file.

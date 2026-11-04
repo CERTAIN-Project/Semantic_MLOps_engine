@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -48,7 +48,9 @@ def _aligned_frames(original_df, counterfactual_df) -> tuple[pd.DataFrame, pd.Da
         counterfactual = counterfactual[shared_columns]
 
     row_count = min(len(original), len(counterfactual))
-    return original.iloc[:row_count].reset_index(drop=True), counterfactual.iloc[:row_count].reset_index(drop=True)
+    return original.iloc[:row_count].reset_index(drop=True), counterfactual.iloc[
+        :row_count
+    ].reset_index(drop=True)
 
 
 def generate_price_counterfactual(
@@ -56,7 +58,7 @@ def generate_price_counterfactual(
     price_model,
     feature_columns: list[str],
     target_price: float = 60.0,
-    intervention_grid: Optional[dict[str, list[float]]] = None,
+    intervention_grid: dict[str, list[float]] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, float, float, dict[str, Any]]:
     """Generate a model-based price counterfactual by searching a discrete grid.
 
@@ -104,13 +106,17 @@ def generate_price_counterfactual(
             if "DE_wind_onshore_generation_actual" in candidate.columns:
                 original_value = float(original.iloc[0]["DE_wind_onshore_generation_actual"])
                 candidate_value = float(candidate.iloc[0]["DE_wind_onshore_generation_actual"])
-                delta_onshore = abs(candidate_value - original_value) / max(abs(original_value), 1.0)
+                delta_onshore = abs(candidate_value - original_value) / max(
+                    abs(original_value), 1.0
+                )
 
             delta_offshore = 0.0
             if "DE_wind_offshore_generation_actual" in candidate.columns:
                 original_value = float(original.iloc[0]["DE_wind_offshore_generation_actual"])
                 candidate_value = float(candidate.iloc[0]["DE_wind_offshore_generation_actual"])
-                delta_offshore = abs(candidate_value - original_value) / max(abs(original_value), 1.0)
+                delta_offshore = abs(candidate_value - original_value) / max(
+                    abs(original_value), 1.0
+                )
 
             distance = delta_onshore + delta_offshore
 
@@ -151,13 +157,17 @@ def generate_price_counterfactual(
                 if "DE_wind_onshore_generation_actual" in candidate.columns:
                     candidate_value = float(candidate.iloc[0]["DE_wind_onshore_generation_actual"])
                     original_value = float(original_values["DE_wind_onshore_generation_actual"])
-                    delta_onshore = abs(candidate_value - original_value) / max(abs(original_value), 1.0)
+                    delta_onshore = abs(candidate_value - original_value) / max(
+                        abs(original_value), 1.0
+                    )
 
                 delta_offshore = 0.0
                 if "DE_wind_offshore_generation_actual" in candidate.columns:
                     candidate_value = float(candidate.iloc[0]["DE_wind_offshore_generation_actual"])
                     original_value = float(original_values["DE_wind_offshore_generation_actual"])
-                    delta_offshore = abs(candidate_value - original_value) / max(abs(original_value), 1.0)
+                    delta_offshore = abs(candidate_value - original_value) / max(
+                        abs(original_value), 1.0
+                    )
 
                 distance = delta_onshore + delta_offshore
                 if distance <= 0.0:
@@ -179,7 +189,8 @@ def generate_price_counterfactual(
 
     if best_candidate is None or best_prediction is None:
         raise ValueError(
-            "No valid counterfactual found: all candidates were no-ops or failed the target constraint."
+            "No valid counterfactual found: all candidates were no-ops or failed the "
+            "target constraint."
         )
 
     original_log = original.copy()
@@ -218,12 +229,18 @@ def evaluate_counterfactuals(
 
     abs_diff = diff.abs().to_numpy(dtype=float)
     avg_l1_distance = float(abs_diff.mean()) if abs_diff.size else 0.0
-    avg_l2_distance = float(np.linalg.norm(diff.to_numpy(dtype=float), axis=1).mean()) if len(diff) else 0.0
+    avg_l2_distance = (
+        float(np.linalg.norm(diff.to_numpy(dtype=float), axis=1).mean()) if len(diff) else 0.0
+    )
     sparsity_l0 = float((abs_diff > 0).sum(axis=1).mean()) if abs_diff.size else 0.0
 
     immutable_violations = 0
     if protected_columns:
-        protected = [col for col in protected_columns if col in original.columns and col in counterfactual.columns]
+        protected = [
+            col
+            for col in protected_columns
+            if col in original.columns and col in counterfactual.columns
+        ]
         if protected:
             orig_protected = original[protected].astype(object)
             cf_protected = counterfactual[protected].astype(object)
@@ -240,22 +257,16 @@ def evaluate_counterfactuals(
 def log_counterfactual_metrics(
     logger,
     metrics: dict,
-    data_id: Optional[str] = None,
+    data_id: str | None = None,
 ) -> dict[str, float]:
     """Log counterfactual evaluation metrics via the existing tracker."""
 
     active_logger = _resolve_logger(logger)
     logged_metrics = {
-        "counterfactual_avg_l1_distance": float(
-            metrics.get("avg_l1_distance", 0.0)
-        ),
-        "counterfactual_avg_l2_distance": float(
-            metrics.get("avg_l2_distance", 0.0)
-        ),
+        "counterfactual_avg_l1_distance": float(metrics.get("avg_l1_distance", 0.0)),
+        "counterfactual_avg_l2_distance": float(metrics.get("avg_l2_distance", 0.0)),
         "counterfactual_sparsity_l0": float(metrics.get("sparsity_l0", 0.0)),
-        "counterfactual_immutable_violations": float(
-            metrics.get("immutable_violations", 0.0)
-        ),
+        "counterfactual_immutable_violations": float(metrics.get("immutable_violations", 0.0)),
     }
 
     try:
@@ -272,7 +283,7 @@ def log_counterfactual_from_data(
     original_df,
     counterfactual_df,
     protected_columns: list[str] | None = None,
-    data_id: Optional[str] = None,
+    data_id: str | None = None,
 ) -> dict[str, float]:
     """Compute, log, and persist counterfactual metrics under CERTAIN artifacts."""
 

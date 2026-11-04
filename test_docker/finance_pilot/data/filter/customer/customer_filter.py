@@ -9,7 +9,6 @@
 #  http://mozilla.org/MPL/2.0/.
 
 from abc import ABC, abstractmethod
-from typing import Set, Optional
 
 from pandas import DataFrame
 
@@ -20,7 +19,14 @@ class CustomerFilter(ABC):
     """
 
     @abstractmethod
-    def filter(self, customers: set, time_series: DataFrame, train: DataFrame, valid: Optional[DataFrame], test: DataFrame) -> Set:
+    def filter(
+        self,
+        customers: set,
+        time_series: DataFrame,
+        train: DataFrame,
+        valid: DataFrame | None,
+        test: DataFrame,
+    ) -> set:
         """
         Selects the customers to consider.
         :param time_series: the time series in the dataset.
@@ -30,4 +36,3 @@ class CustomerFilter(ABC):
         :return: the set of customers to consider.
         """
         pass
-

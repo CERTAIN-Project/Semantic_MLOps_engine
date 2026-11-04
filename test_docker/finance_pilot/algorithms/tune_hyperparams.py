@@ -5,12 +5,16 @@ just the one that wins on a single window) for `recommendation.py`'s "tuned"
 mode to pick up.
 
 Usage (run from anywhere; repo root is added to sys.path below):
-    python3 algorithms/tune_hyperparams.py <dataset_path> rfr [--n-trials 20] [--num-folds 4] [--robustness-lambda 0.5] [--calibration-months 3]
-    python3 algorithms/tune_hyperparams.py <dataset_path> lgbm [--n-trials 20] [--num-folds 4] [--robustness-lambda 0.5] [--calibration-months 3]
+    python3 algorithms/tune_hyperparams.py <dataset_path> rfr [--n-trials 20] [--num-folds 4]
+        [--robustness-lambda 0.5] [--calibration-months 3]
+    python3 algorithms/tune_hyperparams.py <dataset_path> lgbm [--n-trials 20] [--num-folds 4]
+        [--robustness-lambda 0.5] [--calibration-months 3]
 
 Output:
-    results/hyperparam_selection/{model}_full_short_optuna_results.csv        (every trial, incl. per-fold scores)
-    results/hyperparam_selection/{model}_full_short_optuna_results_best.json  (best trial's params + fold metadata)
+    results/hyperparam_selection/{model}_full_short_optuna_results.csv
+        (every trial, incl. per-fold scores)
+    results/hyperparam_selection/{model}_full_short_optuna_results_best.json
+        (best trial's params + fold metadata)
 """
 
 import argparse
@@ -19,28 +23,40 @@ import json
 import os
 import sys
 
-
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, _REPO_ROOT)
-
 import numpy as np
 import optuna
 import pandas as pd
 
-from finance_pilot.algorithms.lgbm_kpi_model import LGBMKPIModel
-from finance_pilot.algorithms.rfr_kpi_model import RFRKPIModel
-from finance_pilot.algorithms.profitability_prediction import ProfitabilityPrediction
-from finance_pilot.data.filter.asset.asset_with_test_price import AssetWithTestPrice
-from finance_pilot.data.filter.customer.customer_in_train import CustomerInTrain
-from finance_pilot.data.filter.data_filter import DataFilter
-from finance_pilot.data.filter.rating.ratings_not_in_train import RatingsNotInTrain
-from finance_pilot.data.filter.timeseries.no_filter import NoFilter
-from finance_pilot.data.financial_asset_time_series import FinancialAssetTimeSeries
-from finance_pilot.data.financial_data_continuous import FinancialContinuousData
-from finance_pilot.data.financial_interaction_data import FinancialInteractionData
-from finance_pilot.metrics.kpi_monthly_evaluation_metric import MonthlyKPIEvaluationMetric
-from finance_pilot.recommendation import compute_profitability, full_short_kpis
-from finance_pilot.utils.constants import DEFAULT_TIMESTAMP_COL
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _REPO_ROOT)
+
+# finance_pilot is importable only after _REPO_ROOT is on sys.path.
+from finance_pilot.algorithms.lgbm_kpi_model import LGBMKPIModel  # noqa: E402
+from finance_pilot.algorithms.profitability_prediction import (  # noqa: E402
+    ProfitabilityPrediction,
+)
+from finance_pilot.algorithms.rfr_kpi_model import RFRKPIModel  # noqa: E402
+from finance_pilot.data.filter.asset.asset_with_test_price import (  # noqa: E402
+    AssetWithTestPrice,
+)
+from finance_pilot.data.filter.customer.customer_in_train import CustomerInTrain  # noqa: E402
+from finance_pilot.data.filter.data_filter import DataFilter  # noqa: E402
+from finance_pilot.data.filter.rating.ratings_not_in_train import (  # noqa: E402
+    RatingsNotInTrain,
+)
+from finance_pilot.data.filter.timeseries.no_filter import NoFilter  # noqa: E402
+from finance_pilot.data.financial_asset_time_series import (  # noqa: E402
+    FinancialAssetTimeSeries,
+)
+from finance_pilot.data.financial_data_continuous import FinancialContinuousData  # noqa: E402
+from finance_pilot.data.financial_interaction_data import (  # noqa: E402
+    FinancialInteractionData,
+)
+from finance_pilot.metrics.kpi_monthly_evaluation_metric import (  # noqa: E402
+    MonthlyKPIEvaluationMetric,
+)
+from finance_pilot.recommendation import compute_profitability, full_short_kpis  # noqa: E402
+from finance_pilot.utils.constants import DEFAULT_TIMESTAMP_COL  # noqa: E402
 
 RFR = "rfr"
 LGBM = "lgbm"
@@ -102,7 +118,8 @@ def _fold_origins(data, kpi_available_from, cutoff_date, months, num_folds, min_
             f"This already accounts for ProfitabilityPrediction.train()'s own "
             f"{exclusion_buffer_days}-day exclusion buffer plus --min-train-days "
             f"({min_train_days}) of real training history on top of it. "
-            "Lower --min-train-days/--num-folds, or CALIBRATION_CUTOFF is too early relative to the data."
+            "Lower --min-train-days/--num-folds, or CALIBRATION_CUTOFF is too early "
+            "relative to the data."
         )
 
     trading_dates = np.sort(pd.to_datetime(data.time_series.data[DEFAULT_TIMESTAMP_COL]).unique())
@@ -121,11 +138,23 @@ def _build_fold(data, rec_date, future_date):
     deployment protocol (see the module docstring for why expanding, not sliding)."""
     min_split_date = rec_date - dt.timedelta(days=36525)
     splitted_data = data.split(
-        min_split_date, rec_date, future_date,
-        DataFilter(CustomerInTrain(), AssetWithTestPrice(), RatingsNotInTrain(), NoFilter(), False, True, False),
+        min_split_date,
+        rec_date,
+        future_date,
+        DataFilter(
+            CustomerInTrain(),
+            AssetWithTestPrice(),
+            RatingsNotInTrain(),
+            NoFilter(),
+            False,
+            True,
+            False,
+        ),
     )
     profitability = compute_profitability(splitted_data.time_series, rec_date, future_date, None)
-    monthly_metric = MonthlyKPIEvaluationMetric(splitted_data, profitability, (future_date - rec_date).days)
+    monthly_metric = MonthlyKPIEvaluationMetric(
+        splitted_data, profitability, (future_date - rec_date).days
+    )
     return splitted_data, rec_date, monthly_metric
 
 
@@ -139,9 +168,14 @@ def _make_objective(model_id, folds, robustness_lambda, calibration_months):
 
             def make_model():
                 return RFRKPIModel(
-                    k=5, kpi_type=KPI_TYPE, kpi_features=full_short_kpis,
-                    n_estimators=n_estimators, min_samples_leaf=min_samples_leaf, max_depth=max_depth,
-                    random_state=42, n_jobs=-1,
+                    k=5,
+                    kpi_type=KPI_TYPE,
+                    kpi_features=full_short_kpis,
+                    n_estimators=n_estimators,
+                    min_samples_leaf=min_samples_leaf,
+                    max_depth=max_depth,
+                    random_state=42,
+                    n_jobs=-1,
                 )
         else:
             n_estimators = trial.suggest_int("n_estimators", 10, 500)
@@ -150,21 +184,32 @@ def _make_objective(model_id, folds, robustness_lambda, calibration_months):
 
             def make_model():
                 return LGBMKPIModel(
-                    k=5, kpi_type=KPI_TYPE, kpi_features=full_short_kpis,
-                    n_estimators=n_estimators, num_leaves=num_leaves, min_child_samples=min_child_samples,
-                    random_state=42, n_jobs=-1,
+                    k=5,
+                    kpi_type=KPI_TYPE,
+                    kpi_features=full_short_kpis,
+                    n_estimators=n_estimators,
+                    num_leaves=num_leaves,
+                    min_child_samples=min_child_samples,
+                    random_state=42,
+                    n_jobs=-1,
                 )
 
         fold_scores = []
         for splitted_data, rec_date, monthly_metric in folds:
             algorithm = ProfitabilityPrediction(
-                make_model(), splitted_data, calibration_months, full_short_kpis, -1, save_for_testing=False,
+                make_model(),
+                splitted_data,
+                calibration_months,
+                full_short_kpis,
+                -1,
+                save_for_testing=False,
             )
             algorithm.train(rec_date)
             if not algorithm.is_fitted:
                 raise RuntimeError(
                     f"Fold with rec_date={rec_date.date()} produced zero usable training rows "
-                    f"(ProfitabilityPrediction never fit a model for it) — increase --min-train-days "
+                    f"(ProfitabilityPrediction never fit a model for it) — increase "
+                    f"--min-train-days "
                     f"or reduce --num-folds so every calibration fold has real training data."
                 )
             recs = algorithm.recommend(rec_date, splitted_data.users, False, True)
@@ -185,31 +230,49 @@ def _make_objective(model_id, folds, robustness_lambda, calibration_months):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument("dataset_path", help="Path to the FAR-Trans dataset directory")
     parser.add_argument("model", choices=[RFR, LGBM], help="Model to tune")
     parser.add_argument("--n-trials", type=int, default=20)
-    parser.add_argument("--num-folds", type=int, default=4,
-                         help="Number of expanding-window calibration folds to average/penalize across.")
-    parser.add_argument("--robustness-lambda", type=float, default=0.5,
-                         help="Weight on across-fold std dev in the objective (mean - lambda*std): "
-                              "higher favors configs that are stable across folds over ones that are "
-                              "merely best on average.")
-    parser.add_argument("--min-train-days", type=int, default=90,
-                         help="Minimum REAL training history (after KPI rows actually start existing, see "
-                              "_kpi_available_from) required for the earliest calibration fold, on top of the "
-                              "months*30-day exclusion buffer. With calibration_months=3 and this dataset's "
-                              "real ~308-day pre-cutoff runway, 90 leaves ~38 days to spread multiple folds "
-                              "across (raising it shrinks that spread further; 180 is already infeasible here). "
-                              "90 was chosen empirically: at 60, the earliest fold (2019-02-24) had zero assets "
-                              "survive AssetWithTestPrice filtering entirely — not a KPI-warmup shortfall but "
-                              "real interaction-data sparsity this early in the dataset's timeline, which "
-                              "calendar arithmetic alone can't predict. 90 pushes past that specific edge.")
-    parser.add_argument("--calibration-months", type=int, default=3,
-                         help="Horizon used for calibration folds only (not the real deployment horizon, "
-                              "DEPLOYMENT_MONTHS=6) — controls both the internal exclusion buffer and the "
-                              "validation window, so a shorter value frees up more usable pre-cutoff history "
-                              "for multiple time-separated folds. See module docstring for the tradeoff.")
+    parser.add_argument(
+        "--num-folds",
+        type=int,
+        default=4,
+        help="Number of expanding-window calibration folds to average/penalize across.",
+    )
+    parser.add_argument(
+        "--robustness-lambda",
+        type=float,
+        default=0.5,
+        help="Weight on across-fold std dev in the objective (mean - lambda*std): "
+        "higher favors configs that are stable across folds over ones that are "
+        "merely best on average.",
+    )
+    parser.add_argument(
+        "--min-train-days",
+        type=int,
+        default=90,
+        help="Minimum REAL training history (after KPI rows actually start existing, see "
+        "_kpi_available_from) required for the earliest calibration fold, on top of the "
+        "months*30-day exclusion buffer. With calibration_months=3 and this dataset's "
+        "real ~308-day pre-cutoff runway, 90 leaves ~38 days to spread multiple folds "
+        "across (raising it shrinks that spread further; 180 is already infeasible here). "
+        "90 was chosen empirically: at 60, the earliest fold (2019-02-24) had zero assets "
+        "survive AssetWithTestPrice filtering entirely — not a KPI-warmup shortfall but "
+        "real interaction-data sparsity this early in the dataset's timeline, which "
+        "calendar arithmetic alone can't predict. 90 pushes past that specific edge.",
+    )
+    parser.add_argument(
+        "--calibration-months",
+        type=int,
+        default=3,
+        help="Horizon used for calibration folds only (not the real deployment horizon, "
+        "DEPLOYMENT_MONTHS=6) — controls both the internal exclusion buffer and the "
+        "validation window, so a shorter value frees up more usable pre-cutoff history "
+        "for multiple time-separated folds. See module docstring for the tradeoff.",
+    )
     args = parser.parse_args()
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -217,11 +280,21 @@ def main():
     data = _load_data(args.dataset_path)
     kpi_available_from = _kpi_available_from(data)
     cutoff_date = dt.datetime.strptime(CALIBRATION_CUTOFF, "%Y-%m-%d")
-    origins = _fold_origins(data, kpi_available_from, cutoff_date, args.calibration_months, args.num_folds, args.min_train_days)
+    origins = _fold_origins(
+        data,
+        kpi_available_from,
+        cutoff_date,
+        args.calibration_months,
+        args.num_folds,
+        args.min_train_days,
+    )
 
     print(f"KPI rows available from {kpi_available_from.date()} onward.")
-    print(f"Calibration folds (all strictly before {CALIBRATION_CUTOFF}, the earliest reported window; "
-          f"calibration_months={args.calibration_months}, deployment_months={DEPLOYMENT_MONTHS}):")
+    print(
+        f"Calibration folds (all strictly before {CALIBRATION_CUTOFF}, "
+        f"the earliest reported window; "
+        f"calibration_months={args.calibration_months}, deployment_months={DEPLOYMENT_MONTHS}):"
+    )
     folds = []
     for origin in origins:
         future_date = origin + pd.DateOffset(months=args.calibration_months)
@@ -253,8 +326,11 @@ def main():
     with open(best_json, "w") as handle:
         json.dump(best_params, handle, indent=2)
 
-    print(f"Best objective (mean - {args.robustness_lambda}*std) = {study.best_value:.6f}, "
-          f"fold scores = {study.best_trial.user_attrs.get('fold_scores')}, params saved to {best_json}")
+    print(
+        f"Best objective (mean - {args.robustness_lambda}*std) = {study.best_value:.6f}, "
+        f"fold scores = {study.best_trial.user_attrs.get('fold_scores')}, "
+        f"params saved to {best_json}"
+    )
 
 
 if __name__ == "__main__":

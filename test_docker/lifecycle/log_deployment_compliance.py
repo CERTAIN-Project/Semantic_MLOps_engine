@@ -22,21 +22,16 @@ deployment-lifecycle artifacts:
   • interface         → interfaces table
 """
 
-from certain_library.tracking.tracker import tracker
-
 import argparse
 import os
-import sys
-
-import mlflow
 
 from certain_library.compliance.log_deployment import (
-    log_model_packaging,
     log_build_testing,
-    log_standards,
     log_interface,
+    log_model_packaging,
+    log_standards,
 )
-
+from certain_library.tracking.tracker import tracker
 
 # ---------------------------------------------------------------------------
 # Defaults — override via CLI args or environment variables
@@ -84,18 +79,10 @@ def parse_args() -> argparse.Namespace:
         default="Build and smoke tests passed.",
         help="Build log summary or path to log file.",
     )
-    p.add_argument(
-        "--tests-total", type=int, default=5, help="Total number of tests run."
-    )
-    p.add_argument(
-        "--tests-passed", type=int, default=5, help="Number of tests that passed."
-    )
-    p.add_argument(
-        "--tests-failed", type=int, default=0, help="Number of tests that failed."
-    )
-    p.add_argument(
-        "--coverage", type=float, default=92.0, help="Test coverage percentage."
-    )
+    p.add_argument("--tests-total", type=int, default=5, help="Total number of tests run.")
+    p.add_argument("--tests-passed", type=int, default=5, help="Number of tests that passed.")
+    p.add_argument("--tests-failed", type=int, default=0, help="Number of tests that failed.")
+    p.add_argument("--coverage", type=float, default=92.0, help="Test coverage percentage.")
     return p.parse_args()
 
 
@@ -111,7 +98,6 @@ def main() -> None:
 
     # Reopen the existing training run — no new run is created
     with tracker.start_run(run_id=args.run_id):
-
         # ------------------------------------------------------------------ #
         # 1. Model packaging
         # ------------------------------------------------------------------ #
@@ -187,8 +173,7 @@ def main() -> None:
             model_id=args.model_id,
             interface_type="REST API",
             specifications=(
-                "POST /predict — accepts JSON with feature array, "
-                "returns predicted load in MW."
+                "POST /predict — accepts JSON with feature array, returns predicted load in MW."
             ),
             version=args.version,
             documentation_link=f"https://wiki.example.com/api/{args.model_id}",

@@ -1,6 +1,7 @@
-import pandas as pd
-import numpy as np
 from datetime import datetime, timedelta
+
+import numpy as np
+import pandas as pd
 
 
 class OPSDTestVariables:
@@ -159,8 +160,7 @@ class OPSDTestVariables:
                 base_load
                 + np.random.normal(0, 5000, n_samples)  # Random variation
                 + 10000 * np.sin(2 * np.pi * np.arange(n_samples) / 24)  # Daily pattern
-                + 5000
-                * np.sin(2 * np.pi * np.arange(n_samples) / (24 * 7))  # Weekly pattern
+                + 5000 * np.sin(2 * np.pi * np.arange(n_samples) / (24 * 7))  # Weekly pattern
             ),
             "DE_solar_generation_actual": np.maximum(
                 0,
@@ -169,7 +169,8 @@ class OPSDTestVariables:
                 + 3000 * np.sin(2 * np.pi * np.arange(n_samples) / 24),  # Solar pattern
             ),
             "DE_wind_generation_actual": np.maximum(
-                0, 8000 + np.random.normal(0, 3000, n_samples)  # Wind variation
+                0,
+                8000 + np.random.normal(0, 3000, n_samples),  # Wind variation
             ),
             "DE_wind_offshore_generation_actual": np.maximum(
                 0, 3000 + np.random.normal(0, 1500, n_samples)
@@ -405,11 +406,7 @@ class OPSDTestVariables:
                 mean_val = 50000
                 std_val = 5000
             else:
-                mean_val = (
-                    np.random.uniform(0, 24)
-                    if col == "hour"
-                    else np.random.uniform(0, 1)
-                )
+                mean_val = np.random.uniform(0, 24) if col == "hour" else np.random.uniform(0, 1)
                 std_val = np.random.uniform(0.5, 2.0)
 
             profile_data.append(
@@ -478,9 +475,7 @@ def test_train_test_split():
     df["feature1"] = np.random.randn(len(df))
     df["feature2"] = np.random.randn(len(df))
 
-    X_train, X_test, y_train, y_test, train_ts, test_ts = (
-        OPSDTestVariables.get_train_test_split(df)
-    )
+    X_train, X_test, y_train, y_test, train_ts, test_ts = OPSDTestVariables.get_train_test_split(df)
 
     assert len(X_train) == 80  # 80% of 100
     assert len(X_test) == 20  # 20% of 100

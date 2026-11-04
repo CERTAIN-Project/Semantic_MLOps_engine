@@ -1,19 +1,20 @@
+import uuid
+
 from sqlalchemy import (
-    Column,
-    String,
-    Float,
-    Integer,
-    ForeignKey,
-    Boolean,
     JSON,
     BigInteger,
-    PrimaryKeyConstraint,
+    Boolean,
+    Column,
+    Float,
+    ForeignKey,
     ForeignKeyConstraint,
+    Integer,
+    Numeric,
+    PrimaryKeyConstraint,
+    String,
 )
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import declarative_base, relationship
-from sqlalchemy import Numeric
-import uuid
 
 Base = declarative_base()
 
@@ -29,18 +30,12 @@ class Experiments(Base):
     creation_time = Column(Numeric, nullable=False, default=1672531200)
     last_update_time = Column(Numeric, nullable=False, default=1672531200)
 
-    runs = relationship(
-        "Runs", back_populates="experiments", cascade="all, delete-orphan"
-    )
-    tags = relationship(
-        "ExperimentTag", back_populates="experiments", cascade="all, delete-orphan"
-    )
+    runs = relationship("Runs", back_populates="experiments", cascade="all, delete-orphan")
+    tags = relationship("ExperimentTag", back_populates="experiments", cascade="all, delete-orphan")
     deployment = relationship(
         "ModelDeployed", back_populates="experiments", cascade="all, delete-orphan"
     )
-    ai_actors = relationship(
-        "AIActors", back_populates="experiments", cascade="all, delete-orphan"
-    )
+    ai_actors = relationship("AIActors", back_populates="experiments", cascade="all, delete-orphan")
     labeling_procedures = relationship(
         "LabelingProcedures", back_populates="experiments", cascade="all, delete-orphan"
     )
@@ -54,9 +49,7 @@ class Experiments(Base):
         back_populates="experiments",
         cascade="all, delete-orphan",
     )
-    risks = relationship(
-        "Risk", back_populates="experiments", cascade="all, delete-orphan"
-    )
+    risks = relationship("Risk", back_populates="experiments", cascade="all, delete-orphan")
 
 
 class Runs(Base):
@@ -112,9 +105,7 @@ class Runs(Base):
         cascade="all, delete-orphan",
     )
     # Link to a runtime environment record (one-per-run when available)
-    runtime_environment = relationship(
-        "RuntimeEnvironment", back_populates="run", uselist=False
-    )
+    runtime_environment = relationship("RuntimeEnvironment", back_populates="run", uselist=False)
 
 
 class ExperimentsTags(Base):
@@ -143,9 +134,7 @@ class ModelDeployed(Base):
         nullable=False,
         default=lambda: str(uuid.uuid4()),
     )
-    model_id = Column(
-        String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
-    )
+    model_id = Column(String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4()))
     deployment_id = Column(
         String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
     )
@@ -158,9 +147,7 @@ class ModelDeployed(Base):
     description = Column(String)
     user_id = Column(String)
     current_stage = Column(String)
-    run_id = Column(
-        String, ForeignKey("runs.run_id"), default=lambda: str(uuid.uuid4())
-    )
+    run_id = Column(String, ForeignKey("runs.run_id"), default=lambda: str(uuid.uuid4()))
     location = Column(String)
     status = Column(String)
     model_cateory = Column(String)
@@ -190,9 +177,7 @@ class ModelDeployed(Base):
     interface = relationship(
         "Interface", back_populates="experiments", cascade="all, delete-orphan"
     )
-    standard = relationship(
-        "Standard", back_populates="experiments", cascade="all, delete-orphan"
-    )
+    standard = relationship("Standard", back_populates="experiments", cascade="all, delete-orphan")
     decomissioning = relationship(
         "Decomissioning", back_populates="experiments", cascade="all, delete-orphan"
     )
@@ -207,9 +192,7 @@ class RuntimeEnvironment(Base):
     experiment_id = Column(
         String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
     )
-    model_id = Column(
-        String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
-    )
+    model_id = Column(String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4()))
     # Optional run_id to link a runtime environment to the run that produced it
     run_id = Column(String, ForeignKey("runs.run_id"), nullable=True)
 
@@ -231,9 +214,7 @@ class RuntimeEnvironment(Base):
         ),
     )
 
-    deployment = relationship(
-        "ModelDeployed", back_populates="runtime_environment", uselist=False
-    )
+    deployment = relationship("ModelDeployed", back_populates="runtime_environment", uselist=False)
 
     # Back-reference to the run that produced the runtime environment artifact
     run = relationship("Runs", back_populates="runtime_environment", uselist=False)
@@ -248,9 +229,7 @@ class MonitorLog(Base):
     experiment_id = Column(
         String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
     )
-    model_id = Column(
-        String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
-    )
+    model_id = Column(String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4()))
     log_id = Column(
         String,
         primary_key=True,
@@ -283,9 +262,7 @@ class DriftMetric(Base):
     # a deployment identifier; keep the column but do not require it in the
     # primary key so rows can be inserted without a deployment_id.
     deployment_id = Column(String, nullable=True)
-    model_id = Column(
-        String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
-    )
+    model_id = Column(String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4()))
     value = Column(Integer)
     timestamp = Column(Numeric, nullable=False, default=1672531200)
 
@@ -300,9 +277,7 @@ class DriftMetric(Base):
         ),
     )
 
-    deployment = relationship(
-        "ModelDeployed", back_populates="drift_metric", uselist=False
-    )
+    deployment = relationship("ModelDeployed", back_populates="drift_metric", uselist=False)
 
 
 class RunTags(Base):
@@ -398,9 +373,7 @@ class Data(Base):
     data_techniques = relationship(
         "DataTechniques", back_populates="data", cascade="all, delete-orphan"
     )
-    data_metrics = relationship(
-        "DataMetrics", back_populates="data", cascade="all, delete-orphan"
-    )
+    data_metrics = relationship("DataMetrics", back_populates="data", cascade="all, delete-orphan")
 
 
 class DataResources(Base):
@@ -424,21 +397,15 @@ class DataResources(Base):
 class DataTechniquesHyperparameters(Base):
     __tablename__ = "data_hyperparameters"
 
-    run_id = Column(
-        String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
-    )
-    data_id = Column(
-        String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
-    )
+    run_id = Column(String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4()))
+    data_id = Column(String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4()))
     technique_name = Column(String, primary_key=True, nullable=False)
     technique_parameter_name = Column(String, primary_key=True, nullable=False)
     technique_parameter_value = Column(String, nullable=False)
     value = Column(String)
 
     __table_args__ = (
-        PrimaryKeyConstraint(
-            "run_id", "data_id", "technique_name", "technique_parameter_name"
-        ),
+        PrimaryKeyConstraint("run_id", "data_id", "technique_name", "technique_parameter_name"),
         ForeignKeyConstraint(
             ["run_id", "data_id"],
             ["data.run_id", "data.data_id"],
@@ -519,9 +486,7 @@ class ModelArchitecture(Base):
         nullable=False,
         default=lambda: str(uuid.uuid4()),
     )
-    model_id = Column(
-        String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
-    )
+    model_id = Column(String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4()))
     model_version = Column(Integer, nullable=False, default=1)
     architecture_name = Column(String)
     activation_function = Column(String)
@@ -611,9 +576,7 @@ class ModelHyperparameters(Base):
         ),
     )
 
-    model_architecture = relationship(
-        "ModelArchitecture", back_populates="model_hyperparameters"
-    )
+    model_architecture = relationship("ModelArchitecture", back_populates="model_hyperparameters")
 
 
 class ModelMetrics(Base):
@@ -636,9 +599,7 @@ class ModelMetrics(Base):
         ),
     )
 
-    model_architecture = relationship(
-        "ModelArchitecture", back_populates="model_metrics"
-    )
+    model_architecture = relationship("ModelArchitecture", back_populates="model_metrics")
 
 
 class LastModelMetrics(Base):
@@ -661,9 +622,7 @@ class LastModelMetrics(Base):
         ),
     )
 
-    model_architecture = relationship(
-        "ModelArchitecture", back_populates="last_model_metrics"
-    )
+    model_architecture = relationship("ModelArchitecture", back_populates="last_model_metrics")
 
 
 class WeightDistribution(Base):
@@ -687,9 +646,7 @@ class WeightDistribution(Base):
         ),
     )
 
-    model_architecture = relationship(
-        "ModelArchitecture", back_populates="weight_distribution"
-    )
+    model_architecture = relationship("ModelArchitecture", back_populates="weight_distribution")
 
 
 class Resources(Base):
@@ -808,17 +765,13 @@ class ModelPackaging(Base):
     deployment_id = Column(
         String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
     )
-    model_id = Column(
-        String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
-    )
+    model_id = Column(String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4()))
     packaging_format = Column(String)
     dependencies = Column(ARRAY(String))
     containerization_details = Column(String)
 
     __table_args__ = (
-        PrimaryKeyConstraint(
-            "packaging_id", "experiment_id", "deployment_id", "model_id"
-        ),
+        PrimaryKeyConstraint("packaging_id", "experiment_id", "deployment_id", "model_id"),
         ForeignKeyConstraint(
             ["experiment_id", "deployment_id", "model_id"],
             [
@@ -945,6 +898,7 @@ class Standard(Base):
         ForeignKeyConstraint(["run_id"], ["runs.run_id"]),
     )
 
+
 class Interface(Base):
     __tablename__ = "interfaces"
 
@@ -960,18 +914,14 @@ class Interface(Base):
     deployment_id = Column(
         String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
     )
-    model_id = Column(
-        String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4())
-    )
+    model_id = Column(String, primary_key=True, nullable=False, default=lambda: str(uuid.uuid4()))
     interface_type = Column(String, nullable=False)
     specifications = Column(String)
     version = Column(String)
     documentation_link = Column(String)
 
     __table_args__ = (
-        PrimaryKeyConstraint(
-            "interface_id", "experiment_id", "deployment_id", "model_id"
-        ),
+        PrimaryKeyConstraint("interface_id", "experiment_id", "deployment_id", "model_id"),
         ForeignKeyConstraint(
             ["experiment_id", "deployment_id", "model_id"],
             [
@@ -1093,9 +1043,7 @@ class Decomissioning(Base):
     procedure_details = Column(String)
 
     __table_args__ = (
-        PrimaryKeyConstraint(
-            "decomissioning_id", "experiment_id", "deployment_id", "model_id"
-        ),
+        PrimaryKeyConstraint("decomissioning_id", "experiment_id", "deployment_id", "model_id"),
         ForeignKeyConstraint(
             ["experiment_id", "deployment_id", "model_id"],
             [
@@ -1142,9 +1090,7 @@ class TokenizerConfig(Base):
     )
     run_id = Column(String, nullable=False)
     # Tokenizer identity
-    tokenizer_type = Column(
-        String, nullable=False
-    )  # e.g. "BPE", "WordPiece", "SentencePiece"
+    tokenizer_type = Column(String, nullable=False)  # e.g. "BPE", "WordPiece", "SentencePiece"
     model_name_or_path = Column(String)  # e.g. "bert-base-uncased"
     vocab_size = Column(Integer)
     # Encoding settings

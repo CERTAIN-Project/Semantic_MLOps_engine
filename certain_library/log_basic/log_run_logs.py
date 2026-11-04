@@ -1,15 +1,14 @@
-from certain_library.tracking.tracker import tracker
 import os
 import tempfile
 import time
 import uuid
-from typing import List
 
 import pandas as pd
+from certain_library.tracking.tracker import tracker
 
 
 def log_run_logs(
-    messages: List[str],
+    messages: list[str],
     log_type: str = "stdout",
 ) -> None:
     """

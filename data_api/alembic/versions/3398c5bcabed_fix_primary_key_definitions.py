@@ -6,17 +6,15 @@ Create Date: 2025-12-23 16:01:32.262917
 
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 from alembic import op
-import sqlalchemy as sa
-
 
 # revision identifiers, used by Alembic.
 revision: str = "3398c5bcabed"
-down_revision: Union[str, None] = "07de3d447599"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "07de3d447599"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -70,6 +68,4 @@ def downgrade() -> None:
         "build_and_integration_testing",
         type_="primary",
     )
-    op.drop_constraint(
-        "data_hyperparameters_pkey", "data_hyperparameters", type_="primary"
-    )
+    op.drop_constraint("data_hyperparameters_pkey", "data_hyperparameters", type_="primary")

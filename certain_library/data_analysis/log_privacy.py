@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import os
 import tempfile
-from typing import Iterable, Optional
 
 import pandas as pd
 
@@ -82,10 +81,10 @@ def log_privacy_metrics(
     logger,
     df: pd.DataFrame,
     quasi_identifiers: list[str],
-    sensitive_column: Optional[str] = None,
-    epsilon: Optional[float] = None,
-    delta: Optional[float] = None,
-    data_id: Optional[str] = None,
+    sensitive_column: str | None = None,
+    epsilon: float | None = None,
+    delta: float | None = None,
+    data_id: str | None = None,
 ) -> dict[str, float]:
     """Compute and log privacy metrics for a tabular dataset.
 
@@ -98,9 +97,7 @@ def log_privacy_metrics(
     active_logger = _resolve_logger(logger)
 
     metrics: dict[str, float] = {
-        "privacy_k_anonymity": float(
-            compute_k_anonymity(frame, quasi_identifiers)
-        )
+        "privacy_k_anonymity": float(compute_k_anonymity(frame, quasi_identifiers))
     }
 
     if sensitive_column:
@@ -131,10 +128,10 @@ def log_privacy_from_data(
     logger,
     df: pd.DataFrame,
     quasi_identifiers: list[str],
-    sensitive_column: Optional[str] = None,
-    epsilon: Optional[float] = None,
-    delta: Optional[float] = None,
-    data_id: Optional[str] = None,
+    sensitive_column: str | None = None,
+    epsilon: float | None = None,
+    delta: float | None = None,
+    data_id: str | None = None,
 ) -> dict[str, float]:
     """Compute, log, and persist privacy metrics under the CERTAIN artifact tree."""
 

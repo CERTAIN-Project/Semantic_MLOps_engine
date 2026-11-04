@@ -1,8 +1,7 @@
-from abc import abstractmethod, ABC
+from abc import ABC, abstractmethod
 
 
 class KPIGenerator(ABC):
-
     def __init__(self):
         self.kpis = None
 

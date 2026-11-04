@@ -15,33 +15,32 @@ Covers:
 
 import os
 import shutil
-import uuid
-import time
-import tempfile
-
-import pandas as pd
-import pytest
-from unittest.mock import patch, MagicMock
-
-# ── certain_library imports ──────────────────────────────────────────────────
-from certain_library.train_monitor.log_checkpoints import log_checkpoint
-from certain_library.train_monitor.log_weights import log_weight_distribution
-from certain_library.train_monitor.log_examples import log_examples
-from certain_library.log_basic.log_run_logs import log_run_logs
 
 # ── data_api map-function imports ────────────────────────────────────────────
 import sys
+import time
+import uuid
+from unittest.mock import MagicMock, patch
+
+import pandas as pd
+import pytest
+from certain_library.log_basic.log_run_logs import log_run_logs
+
+# ── certain_library imports ──────────────────────────────────────────────────
+from certain_library.train_monitor.log_checkpoints import log_checkpoint
+from certain_library.train_monitor.log_examples import log_examples
+from certain_library.train_monitor.log_weights import log_weight_distribution
 
 sys.path.insert(
     0,
     os.path.join(os.path.dirname(__file__), "..", "data_api"),
 )
 from misc.data_transform import (  # noqa: E402
-    map_run_code,
     map_checkpoints,
-    map_weight_distribution,
     map_examples,
+    map_run_code,
     map_run_logs,
+    map_weight_distribution,
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -72,7 +71,7 @@ class TestLogCheckpoint:
             log_checkpoint("epoch_5", "/tmp/model_epoch5.pt")
             mock_artifact.assert_called_once()
             _, kwargs = mock_artifact.call_args
-            assert kwargs.get("artifact_path") == "checkpoints"
+            assert kwargs.get("artifact_path") == "certain/checkpoints"
 
     def test_csv_contains_expected_columns(self, tmp_path):
         persistent = str(tmp_path / "ckpt.csv")
@@ -170,7 +169,7 @@ class TestLogWeightDistribution:
         with patch("mlflow.log_artifact") as mock_artifact:
             log_weight_distribution(model)
             _, kwargs = mock_artifact.call_args
-            assert kwargs.get("artifact_path") == "weight_distribution"
+            assert kwargs.get("artifact_path") == "certain/weight_distribution"
 
     def test_stage_written_to_csv(self, tmp_path):
         model = object()
@@ -195,15 +194,20 @@ class TestLogExamples:
     def test_basic_logging(self):
         with patch("mlflow.log_artifact") as mock_artifact:
             log_examples([1, 2, 3], [0.9, 1.8, 3.1], [1, 2, 3])
-            mock_artifact.assert_called_once()
-            _, kwargs = mock_artifact.call_args
-            assert kwargs.get("artifact_path") == "examples"
+            # One CSV plus one per-step JSON artifact, both under certain/examples
+            assert mock_artifact.call_count == 2
+            logged = [call.args[0] for call in mock_artifact.call_args_list]
+            assert logged[0].endswith(".csv")
+            assert logged[1].endswith(".json")
+            for call in mock_artifact.call_args_list:
+                assert call.kwargs.get("artifact_path") == "certain/examples"
 
     def test_csv_has_correct_rows(self, tmp_path):
         persistent = str(tmp_path / "examples.csv")
 
         def fake_log(path, artifact_path=None):
-            shutil.copy(path, persistent)
+            if path.endswith(".csv"):
+                shutil.copy(path, persistent)
 
         with patch("mlflow.log_artifact", side_effect=fake_log):
             log_examples(["a", "b"], ["x", "y"], ["x", "y"], step=5, stage="eval")
@@ -226,7 +230,8 @@ class TestLogExamples:
         persistent = str(tmp_path / "examples_str.csv")
 
         def fake_log(path, artifact_path=None):
-            shutil.copy(path, persistent)
+            if path.endswith(".csv"):
+                shutil.copy(path, persistent)
 
         with patch("mlflow.log_artifact", side_effect=fake_log):
             log_examples([[1, 2, 3]], [0.5], [1])
@@ -246,7 +251,7 @@ class TestLogRunLogs:
             log_run_logs(["line 1", "line 2"])
             mock_artifact.assert_called_once()
             _, kwargs = mock_artifact.call_args
-            assert kwargs.get("artifact_path") == "run_logs"
+            assert kwargs.get("artifact_path") == "certain/run_logs"
 
     def test_csv_columns_present(self, tmp_path):
         persistent = str(tmp_path / "logs.csv")
@@ -258,9 +263,7 @@ class TestLogRunLogs:
             log_run_logs(["Error occurred", "Training done"], log_type="stderr")
 
         df = pd.read_csv(persistent)
-        assert set(["log_id", "log_type", "log_message", "log_creation_time"]).issubset(
-            df.columns
-        )
+        assert set(["log_id", "log_type", "log_message", "log_creation_time"]).issubset(df.columns)
         assert len(df) == 2
         assert all(df["log_type"] == "stderr")
         assert list(df["log_message"]) == ["Error occurred", "Training done"]
@@ -292,18 +295,16 @@ class TestMapRunCode:
     def _make_tags_df(self, run_id, commit="abc123", source="train.py"):
         rows = []
         if commit:
-            rows.append(
-                {"run_uuid": run_id, "key": "mlflow.source.git.commit", "value": commit}
-            )
+            rows.append({"run_uuid": run_id, "key": "mlflow.source.git.commit", "value": commit})
         if source:
-            rows.append(
-                {"run_uuid": run_id, "key": "mlflow.source.name", "value": source}
-            )
+            rows.append({"run_uuid": run_id, "key": "mlflow.source.name", "value": source})
         return pd.DataFrame(rows)
 
     def test_returns_correct_fields(self):
         tags_df = self._make_tags_df(RUN_ID)
-        result = map_run_code(tags_df, RUN_ID)
+        # Git info is read from the certain/metadata git record, not from tags
+        git_record = {"git.commit": "abc123", "mlflow.source.name": "train.py"}
+        result = map_run_code(tags_df, RUN_ID, artifact_git_record=git_record)
         assert result["run_id"] == RUN_ID
         assert result["git_commit_hash"] == "abc123"
         assert result["name"] == "train.py"
@@ -381,8 +382,6 @@ class TestMapWeightDistribution:
         assert result["step"] == 10
 
     def test_nan_mean_becomes_zero_and_is_nan_true(self):
-        import math
-
         row = self._make_row(mean=float("nan"), std=float("nan"))
         result = map_weight_distribution(row, ID_MAPPING)
         assert result["mean"] == 0.0
@@ -453,4 +452,5 @@ class TestMapRunLogs:
         result = map_run_logs(row, RUN_ID)
         assert result["run_id"] == RUN_ID
         assert result["log_type"] == "stdout"
-        assert result["log_message"] == ""
+        # Without a message column the whole row is stringified as a fallback
+        assert result["log_message"] == "{}"

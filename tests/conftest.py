@@ -1,12 +1,17 @@
-import pytest
-import pandas as pd
-import numpy as np
-import tempfile
 import os
-import json
-from unittest.mock import Mock, patch
+import tempfile
+from unittest.mock import Mock
+
 import mlflow
+import numpy as np
+import pandas as pd
+import pytest
+from certain_library.tracking.artifact_mirror import ArtifactMirror
+from certain_library.tracking.manifest import ManifestStore
+from certain_library.tracking.metadata_writer import MetadataWriter
+from certain_library.tracking.tracker import tracker as certain_tracker
 from codecarbon import EmissionsTracker
+from mlflow.tracking import MlflowClient
 
 from tests.test_opsd_variables import OPSDTestVariables
 
@@ -39,14 +44,6 @@ def opsd_cleaned_data_pipeline():
 
     # Create the pipeline stages with the expected keys
     stages = OPSDTestVariables.create_cleaned_data_pipeline_stages(sample_data)
-
-    # Ensure all expected keys exist
-    expected_keys = [
-        "dropped_missing_target",
-        "df_cleaned",
-        "df_filtered",
-        "df_augmented",
-    ]
 
     # Add missing keys if they don't exist
     if "dropped_missing" not in stages and "dropped_missing_target" in stages:
@@ -272,6 +269,52 @@ def setup_mlflow():
         # End run if still active
         if mlflow.active_run():
             mlflow.end_run()
+
+
+@pytest.fixture(autouse=True)
+def isolate_certain_mirror(tmp_path, monkeypatch):
+    """Point the shared CERTAIN tracker's local mirror at a temporary directory.
+
+    The module-level ``tracker`` resolves its mirror root (``./certain``) at import
+    time, so without this every test would write events, manifests and mirrored
+    artifacts into the current working directory.
+    """
+    mirror_dir = tmp_path / "certain"
+    monkeypatch.setenv("CERTAIN_MIRROR_ROOT", str(mirror_dir))
+    # Never POST to a real data_transfer /sync/all from unit tests; the auto-sync test
+    # enables it explicitly.
+    monkeypatch.setenv("CERTAIN_AUTO_SYNC_ON_RUN_END", "false")
+    monkeypatch.setattr(certain_tracker, "root", mirror_dir)
+    monkeypatch.setattr(certain_tracker, "writer", MetadataWriter(mirror_dir))
+    monkeypatch.setattr(certain_tracker, "manifests", ManifestStore(mirror_dir))
+    monkeypatch.setattr(certain_tracker, "artifacts", ArtifactMirror(mirror_dir))
+    return mirror_dir
+
+
+@pytest.fixture
+def mlflow_client():
+    """MlflowClient bound to the temporary tracking store from setup_mlflow."""
+    return MlflowClient()
+
+
+@pytest.fixture
+def active_run_id():
+    """ID of the MLflow run started by setup_mlflow."""
+    return mlflow.active_run().info.run_id
+
+
+@pytest.fixture
+def list_artifact_names(mlflow_client):
+    """Return the file names logged under an artifact directory of a run."""
+
+    def _list(run_id, artifact_dir):
+        return sorted(
+            os.path.basename(artifact.path)
+            for artifact in mlflow_client.list_artifacts(run_id, artifact_dir)
+            if not artifact.is_dir
+        )
+
+    return _list
 
 
 @pytest.fixture

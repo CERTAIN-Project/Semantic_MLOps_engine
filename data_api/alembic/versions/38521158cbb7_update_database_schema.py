@@ -5,17 +5,17 @@ Revises: 54d2069b728a
 Create Date: 2026-08-14 11:10:53.457613
 
 """
-from typing import Sequence, Union
 
-from alembic import op
+from collections.abc import Sequence
+
 import sqlalchemy as sa
-
+from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = '38521158cbb7'
-down_revision: Union[str, None] = '54d2069b728a'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+revision: str = "38521158cbb7"
+down_revision: str | None = "54d2069b728a"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -27,15 +27,17 @@ def upgrade() -> None:
     # Try to drop the constraint using Alembic; if that fails, run a
     # best-effort raw SQL fallback.
     try:
-        op.drop_constraint('drift_metrics_pkey', 'drift_metrics', type_='primary')
+        op.drop_constraint("drift_metrics_pkey", "drift_metrics", type_="primary")
     except Exception:
-        op.execute(sa.text("ALTER TABLE drift_metrics DROP CONSTRAINT IF EXISTS drift_metrics_pkey"))
+        op.execute(
+            sa.text("ALTER TABLE drift_metrics DROP CONSTRAINT IF EXISTS drift_metrics_pkey")
+        )
 
     # Now make the deployment_id column nullable
-    op.alter_column('drift_metrics', 'deployment_id', existing_type=sa.VARCHAR(), nullable=True)
+    op.alter_column("drift_metrics", "deployment_id", existing_type=sa.VARCHAR(), nullable=True)
 
     # Recreate a primary key that does NOT include deployment_id
-    op.create_primary_key('drift_metrics_pkey', 'drift_metrics', ['experiment_id', 'model_id'])
+    op.create_primary_key("drift_metrics_pkey", "drift_metrics", ["experiment_id", "model_id"])
     # ### end Alembic commands ###
 
 
@@ -44,11 +46,15 @@ def downgrade() -> None:
     # To reverse: drop the PK that omits deployment_id, make deployment_id
     # NOT NULL again, and recreate the original PK including deployment_id.
     try:
-        op.drop_constraint('drift_metrics_pkey', 'drift_metrics', type_='primary')
+        op.drop_constraint("drift_metrics_pkey", "drift_metrics", type_="primary")
     except Exception:
-        op.execute(sa.text("ALTER TABLE drift_metrics DROP CONSTRAINT IF EXISTS drift_metrics_pkey"))
+        op.execute(
+            sa.text("ALTER TABLE drift_metrics DROP CONSTRAINT IF EXISTS drift_metrics_pkey")
+        )
 
-    op.alter_column('drift_metrics', 'deployment_id', existing_type=sa.VARCHAR(), nullable=False)
+    op.alter_column("drift_metrics", "deployment_id", existing_type=sa.VARCHAR(), nullable=False)
 
-    op.create_primary_key('drift_metrics_pkey', 'drift_metrics', ['experiment_id', 'deployment_id', 'model_id'])
+    op.create_primary_key(
+        "drift_metrics_pkey", "drift_metrics", ["experiment_id", "deployment_id", "model_id"]
+    )
     # ### end Alembic commands ###

@@ -1,7 +1,8 @@
-from certain_library.tracking.tracker import tracker
 import os
 
 import pandas as pd
+
+from certain_library.tracking.tracker import tracker
 
 # The way to pass the train and test timestamps
 # train_timestamps = df_sorted.loc[X_train.index, "utc_timestamp"]
@@ -37,9 +38,7 @@ def timestamp_analysis(
     if not isinstance(train_timestamps, (pd.Series, pd.DataFrame)) or not isinstance(
         test_timestamps, (pd.Series, pd.DataFrame)
     ):
-        raise TypeError(
-            "Both train_timestamps and test_timestamps must be pandas Series objects"
-        )
+        raise TypeError("Both train_timestamps and test_timestamps must be pandas Series objects")
 
     if train_timestamps.empty or test_timestamps.empty:
         raise ValueError("Both train_timestamps and test_timestamps must not be empty")
@@ -49,17 +48,13 @@ def timestamp_analysis(
         try:
             pd.to_datetime(train_timestamps)
         except Exception as e:
-            raise ValueError(
-                f"train_timestamps must contain datetime-like values: {str(e)}"
-            ) from e
+            raise ValueError(f"train_timestamps must contain datetime-like values: {str(e)}") from e
 
     if not pd.api.types.is_datetime64_any_dtype(test_timestamps):
         try:
             pd.to_datetime(test_timestamps)
         except Exception as e:
-            raise ValueError(
-                f"test_timestamps must contain datetime-like values: {str(e)}"
-            ) from e
+            raise ValueError(f"test_timestamps must contain datetime-like values: {str(e)}") from e
 
     # Ensure output directory exists
     os.makedirs(output_dir, exist_ok=True)

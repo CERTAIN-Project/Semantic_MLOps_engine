@@ -895,9 +895,7 @@ Records explainability outputs.
 log_explainable_ai(
     feature_names=["temperature", "hour", "wind"],
     feature_values=["0.42", "0.31", "0.17"],
-    implementation_details=(
-        "XGBoost built-in gain-based feature importance."
-    ),
+    implementation_details=("XGBoost built-in gain-based feature importance."),
 )
 ```
 
@@ -998,10 +996,7 @@ log_interface(
     deployment_id="dep-energy-xgb-prod",
     model_id="energy-load-xgb-v1",
     interface_type="REST API",
-    specifications=(
-        "POST /predict\n"
-        "GET /health"
-    ),
+    specifications=("POST /predict\nGET /health"),
     version="v1.0",
     documentation_link="http://localhost:8090/docs",
 )

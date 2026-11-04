@@ -8,6 +8,7 @@
 #  If a copy of the MPL was not distributed with this  file, you can obtain one at
 #  http://mozilla.org/MPL/2.0/.
 
+import argparse
 import datetime as dt
 import os
 import statistics
@@ -15,19 +16,21 @@ import statistics
 import mlflow
 import numpy as np
 import pandas as pd
-from finance_pilot.utils.constants import DEFAULT_RATING_COL, DEFAULT_ITEM_COL, DEFAULT_TIMESTAMP_COL, DEFAULT_USER_COL
-
-from finance_pilot.algorithms.kpi_gen.profit_vol_ma_kpi_generator import ProfitabilityVolatilityMAKPIGenerator
+from certain_library.log_basic.log_params import log_params
+from finance_pilot.algorithms.kpi_gen.profit_vol_ma_kpi_generator import (
+    ProfitabilityVolatilityMAKPIGenerator,
+)
 from finance_pilot.data.financial_asset_time_series import FinancialAssetTimeSeries
 from finance_pilot.data.financial_data_continuous import FinancialContinuousData
 from finance_pilot.data.financial_interaction_data import FinancialInteractionData
-
-
-from certain_library.log_basic.log_params import log_params
+from finance_pilot.utils.constants import (
+    DEFAULT_ITEM_COL,
+    DEFAULT_RATING_COL,
+    DEFAULT_TIMESTAMP_COL,
+    DEFAULT_USER_COL,
+)
 
 from ..test_finance_pitol import safe_log_dataset
-
-import argparse
 
 pd.options.mode.chained_assignment = None  # default='warn'
 
@@ -39,30 +42,44 @@ if __name__ == "__main__":
         parser = argparse.ArgumentParser(
             prog="dataset_analysis",
             description="Analyzes the dataset from a general asset point of view.",
-            epilog="Developed by University of Glasgow"
+            epilog="Developed by University of Glasgow",
         )
 
         parser.add_argument("interactions", help="Customer-asset transaction data file.")
         parser.add_argument("time_series", help="Asset pricing data file.")
-        subparsers = parser.add_subparsers(title='date_format', help='Data choice format.', dest='date_format')
+        subparsers = parser.add_subparsers(
+            title="date_format", help="Data choice format.", dest="date_format"
+        )
 
-        parser_range = subparsers.add_parser('range', help='Range of dates to use. This mode divides the dataset as '
-                                                        'follows:\n'
-                                                        '- First, divide the period between min_date and max_date into'
-                                                        'num_splits + num_future dates\n'
-                                                        '- Second, the first num_split dates are considered the split '
-                                                        'dates (everything before them is the training set).\n'
-                                                        '- The test set contains the data between the split date and '
-                                                        '  num_future dates in the list afterwards.')
-        parser_range.add_argument("min_date", help='Date of the first split. Format: %Y-%m-%d')
-        parser_range.add_argument("max_date", help='End date of the last test set. Format: %Y-%m-%d')
-        parser_range.add_argument("num_splits", help='Number of splits to consider.', type=int)
-        parser_range.add_argument("num_future", help='Number of dates to look formward', type=int)
+        parser_range = subparsers.add_parser(
+            "range",
+            help="Range of dates to use. This mode divides the dataset as "
+            "follows:\n"
+            "- First, divide the period between min_date and max_date into"
+            "num_splits + num_future dates\n"
+            "- Second, the first num_split dates are considered the split "
+            "dates (everything before them is the training set).\n"
+            "- The test set contains the data between the split date and "
+            "  num_future dates in the list afterwards.",
+        )
+        parser_range.add_argument("min_date", help="Date of the first split. Format: %Y-%m-%d")
+        parser_range.add_argument(
+            "max_date", help="End date of the last test set. Format: %Y-%m-%d"
+        )
+        parser_range.add_argument("num_splits", help="Number of splits to consider.", type=int)
+        parser_range.add_argument("num_future", help="Number of dates to look formward", type=int)
 
-        parser_fixed = subparsers.add_parser('fixed_dates', help='List of fixed dates to use. This mode provides fixed '
-                                                                'lists of dates for split and test.')
-        parser_fixed.add_argument('split_dates', help='Comma separated list of split dates. Date format: %Y-%m-%d')
-        parser_fixed.add_argument('future_dates', help='Comma separated list of test end dates. Date format: %Y-%m-%d')
+        parser_fixed = subparsers.add_parser(
+            "fixed_dates",
+            help="List of fixed dates to use. This mode provides fixed "
+            "lists of dates for split and test.",
+        )
+        parser_fixed.add_argument(
+            "split_dates", help="Comma separated list of split dates. Date format: %Y-%m-%d"
+        )
+        parser_fixed.add_argument(
+            "future_dates", help="Comma separated list of test end dates. Date format: %Y-%m-%d"
+        )
         parser.add_argument("output_dir", help="directory on which to store the outputs.")
         parser.add_argument("summary_file", help="name of the summary file.")
 
@@ -82,8 +99,8 @@ if __name__ == "__main__":
         future_dates_args = []
         num_splits = 0
         num_future = 0
-        min_date: dt.datetime # CHANGED 
-        max_date: dt.datetime # CHANGED
+        min_date: dt.datetime  # CHANGED
+        max_date: dt.datetime  # CHANGED
 
         if date_format == "range":
             min_date = dt.datetime.strptime(args.min_date, "%Y-%m-%d")
@@ -100,11 +117,11 @@ if __name__ == "__main__":
         else:
             exit(-1)
 
-        log_params({'date_format': date_format})
-        log_params({'min_date': min_date})
-        log_params({'max_date': max_date})
-        log_params({'num_splits': num_splits})
-        log_params({'num_future': num_future})
+        log_params({"date_format": date_format})
+        log_params({"min_date": min_date})
+        log_params({"max_date": max_date})
+        log_params({"num_splits": num_splits})
+        log_params({"num_future": num_future})
 
         directory = args.output_dir
 
@@ -117,7 +134,7 @@ if __name__ == "__main__":
         data.load()
 
         timeb = dt.datetime.now() - timea
-        print("Dataset loaded (" + '{}'.format(timeb) + ")")
+        print("Dataset loaded (" + f"{timeb}" + ")")
 
         # Generate the technical indicators:
 
@@ -132,7 +149,7 @@ if __name__ == "__main__":
             data.add_kpis(kpis)
 
         timeb = dt.datetime.now() - timea
-        print("Technical indicators computed (" + '{}'.format(timeb) + ")")
+        print("Technical indicators computed (" + f"{timeb}" + ")")
 
         # Now, we select the possible dates:
         dates = []
@@ -148,16 +165,23 @@ if __name__ == "__main__":
             for date in future_dates_args:
                 future_dates.append(pd.to_datetime(date))
 
-        log_params({'num_splits': num_splits})
-        log_params({'num_future': num_future})
+        log_params({"num_splits": num_splits})
+        log_params({"num_future": num_future})
 
         print("Selected dates:")
         for i in range(0, len(dates)):
-            print("\t" + str(i) + "Training date: " + str(dates[i]) + "\tFuture date: " + str(future_dates[i]))
+            print(
+                "\t"
+                + str(i)
+                + "Training date: "
+                + str(dates[i])
+                + "\tFuture date: "
+                + str(future_dates[i])
+            )
 
         values = []
         for i in range(0, len(dates)):
-            log_params({'start_date_{}'.format(i): dates[i]})
+            log_params({f"start_date_{i}": dates[i]})
             print("Starting " + str(dates[i]))
 
             rec_date = dates[i]
@@ -169,21 +193,35 @@ if __name__ == "__main__":
             splitted = data.split(min_split_date, rec_date, future_date)
 
             time_series = data.time_series.data
-            current_val = time_series[time_series[DEFAULT_TIMESTAMP_COL] == rec_date][[DEFAULT_ITEM_COL, DEFAULT_RATING_COL]]
-            future_val = time_series[time_series[DEFAULT_TIMESTAMP_COL] == future_date][[DEFAULT_ITEM_COL, DEFAULT_RATING_COL]]
-            profit_df = pd.merge(current_val, future_val, on=DEFAULT_ITEM_COL, suffixes=("_current", "_future"))
-            profit_df["ROI"] = (profit_df[DEFAULT_RATING_COL + "_future"] - profit_df[DEFAULT_RATING_COL + "_current"]) / profit_df[DEFAULT_RATING_COL + "_current"]
-            profit_df["AnnROI"] = profit_df["ROI"].apply(lambda x: pow(1 + x, 365 / (future_date - rec_date).days) - 1)
-            profit_df["MonthROI"] = profit_df["ROI"].apply(lambda x: pow(1 + x, 30 / (future_date - rec_date).days) - 1)
+            current_val = time_series[time_series[DEFAULT_TIMESTAMP_COL] == rec_date][
+                [DEFAULT_ITEM_COL, DEFAULT_RATING_COL]
+            ]
+            future_val = time_series[time_series[DEFAULT_TIMESTAMP_COL] == future_date][
+                [DEFAULT_ITEM_COL, DEFAULT_RATING_COL]
+            ]
+            profit_df = pd.merge(
+                current_val, future_val, on=DEFAULT_ITEM_COL, suffixes=("_current", "_future")
+            )
+            profit_df["ROI"] = (
+                profit_df[DEFAULT_RATING_COL + "_future"]
+                - profit_df[DEFAULT_RATING_COL + "_current"]
+            ) / profit_df[DEFAULT_RATING_COL + "_current"]
+            profit_df["AnnROI"] = profit_df["ROI"].apply(
+                lambda x, days=(future_date - rec_date).days: pow(1 + x, 365 / days) - 1
+            )
+            profit_df["MonthROI"] = profit_df["ROI"].apply(
+                lambda x, days=(future_date - rec_date).days: pow(1 + x, 30 / days) - 1
+            )
 
             tuples = []
             for asset in time_series[DEFAULT_ITEM_COL].unique().flatten():
                 aux_series = time_series[time_series[DEFAULT_ITEM_COL] == asset]
-                aux_series["profit"] = (aux_series[DEFAULT_RATING_COL] - aux_series[DEFAULT_RATING_COL].shift(1)) / \
-                                    aux_series[DEFAULT_RATING_COL].shift(1)
+                aux_series["profit"] = (
+                    aux_series[DEFAULT_RATING_COL] - aux_series[DEFAULT_RATING_COL].shift(1)
+                ) / aux_series[DEFAULT_RATING_COL].shift(1)
                 aux_series = aux_series.dropna()
 
-                tuples.append((asset,aux_series["profit"].std() * np.sqrt(252)))
+                tuples.append((asset, aux_series["profit"].std() * np.sqrt(252)))
 
             vol_df = pd.DataFrame(tuples, columns=[DEFAULT_ITEM_COL, "Volatility"])
             profit_df = profit_df.merge(vol_df, on=DEFAULT_ITEM_COL)
@@ -192,43 +230,67 @@ if __name__ == "__main__":
                 cleanedList = profit_df[key].to_list()
                 mean_val = statistics.mean(cleanedList)
                 quantiles = statistics.quantiles(cleanedList)
-                percentile = 1.0 - len([x for x in cleanedList if x > 0.0]) / (len(cleanedList) + 0.0)
+                percentile = 1.0 - len([x for x in cleanedList if x > 0.0]) / (
+                    len(cleanedList) + 0.0
+                )
 
-                date_values["overall_mean_"+key] = mean_val
-                date_values["overall_q1_"+key] = quantiles[0]
-                date_values["overall_median_"+key] = quantiles[1]
-                date_values["overall_q3_"+key] = quantiles[2]
-                date_values["overall_perc_non_profitable_"+key] = percentile
+                date_values["overall_mean_" + key] = mean_val
+                date_values["overall_q1_" + key] = quantiles[0]
+                date_values["overall_median_" + key] = quantiles[1]
+                date_values["overall_q3_" + key] = quantiles[2]
+                date_values["overall_perc_non_profitable_" + key] = percentile
 
-            date_values["index_month_roi"] = pow(1 + date_values["overall_mean_ROI"],
-                                                30/(future_date - rec_date).days) - 1.0
-            date_values["index_annual_roi"] = pow(1 + date_values["overall_mean_ROI"],
-                                                365 / (future_date - rec_date).days) - 1.0
+            date_values["index_month_roi"] = (
+                pow(1 + date_values["overall_mean_ROI"], 30 / (future_date - rec_date).days) - 1.0
+            )
+            date_values["index_annual_roi"] = (
+                pow(1 + date_values["overall_mean_ROI"], 365 / (future_date - rec_date).days) - 1.0
+            )
 
-            profit_df.to_csv(os.path.join(directory, "assets_stats_" + str(rec_date).split()[0] + ".csv"), index=False)
+            profit_df.to_csv(
+                os.path.join(directory, "assets_stats_" + str(rec_date).split()[0] + ".csv"),
+                index=False,
+            )
             date_values["num_assets"] = len(profit_df[DEFAULT_ITEM_COL].unique())
             date_values["num_users"] = len(splitted.users)
             date_values["num_assets_rec"] = len(splitted.assets)
 
-            date_values_df = interaction_data.data[interaction_data.data[DEFAULT_TIMESTAMP_COL] < future_date]
+            date_values_df = interaction_data.data[
+                interaction_data.data[DEFAULT_TIMESTAMP_COL] < future_date
+            ]
             date_values_df = date_values_df[date_values_df[DEFAULT_USER_COL].isin(splitted.users)]
 
             date_values["train_ratings"] = splitted.train.shape[0]
             date_values["test_ratings"] = splitted.test.shape[0]
 
-            date_values["train_transactions"] = date_values_df[(date_values_df[DEFAULT_TIMESTAMP_COL] < rec_date)].shape[0]
-            date_values["training_buys"] = date_values_df[(date_values_df[DEFAULT_TIMESTAMP_COL] < rec_date) & (date_values_df[DEFAULT_RATING_COL]) > 0].shape[0]
-            date_values["positive_train_ratings"] = splitted.train[splitted.train[DEFAULT_RATING_COL] > 0].shape[0]
+            date_values["train_transactions"] = date_values_df[
+                (date_values_df[DEFAULT_TIMESTAMP_COL] < rec_date)
+            ].shape[0]
+            date_values["training_buys"] = date_values_df[
+                (date_values_df[DEFAULT_TIMESTAMP_COL] < rec_date)
+                & (date_values_df[DEFAULT_RATING_COL])
+                > 0
+            ].shape[0]
+            date_values["positive_train_ratings"] = splitted.train[
+                splitted.train[DEFAULT_RATING_COL] > 0
+            ].shape[0]
 
             date_values_df = date_values_df[date_values_df[DEFAULT_ITEM_COL].isin(splitted.assets)]
-            date_values["test_transactions"] = date_values_df[date_values_df[DEFAULT_TIMESTAMP_COL] >= rec_date].shape[0]
-            date_values["test_buys"] = date_values_df[(date_values_df[DEFAULT_TIMESTAMP_COL] >= rec_date) & (date_values_df[DEFAULT_RATING_COL] > 0)].shape[0]
-            date_values["positive_test_ratings"] = splitted.test[splitted.test[DEFAULT_RATING_COL] > 0].shape[0]
+            date_values["test_transactions"] = date_values_df[
+                date_values_df[DEFAULT_TIMESTAMP_COL] >= rec_date
+            ].shape[0]
+            date_values["test_buys"] = date_values_df[
+                (date_values_df[DEFAULT_TIMESTAMP_COL] >= rec_date)
+                & (date_values_df[DEFAULT_RATING_COL] > 0)
+            ].shape[0]
+            date_values["positive_test_ratings"] = splitted.test[
+                splitted.test[DEFAULT_RATING_COL] > 0
+            ].shape[0]
 
             values.append(date_values)
 
             print("Finished " + str(dates[i]))
-            log_params({'finish_date_{}'.format(i): dates[i]})
+            log_params({f"finish_date_{i}": dates[i]})
         df = pd.DataFrame(values)
         df.set_index("timestamp")
         df.to_csv(os.path.join(directory, end_file))

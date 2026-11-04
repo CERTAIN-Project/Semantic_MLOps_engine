@@ -38,8 +38,10 @@ class Algorithm(ABC):
         """
         Generates the recommendations.
         :param rec_date: the recommendation date.
-        :param repeated: True if we allow customers to be recommended items they invested in the past.
+        :param repeated: True if we allow customers to be recommended items they invested in
+            the past.
         :param only_test_customers: true if we only consider customers with test data.
-        :return: a pandas dataframe containing the recommendations. Format: col_user \t col_item \t score
+        :return: a pandas dataframe containing the recommendations.
+            Format: col_user \t col_item \t score
         """
         pass

@@ -42,7 +42,9 @@ def _read_s3_json(source: str, filename: str) -> Any:
     access_key = os.getenv("MINIO_ACCESS_KEY")
     secret_key = os.getenv("MINIO_SECRET_KEY")
     if not access_key or not secret_key:
-        raise RuntimeError("Set MINIO_ACCESS_KEY and MINIO_SECRET_KEY to read from an s3:// source.")
+        raise RuntimeError(
+            "Set MINIO_ACCESS_KEY and MINIO_SECRET_KEY to read from an s3:// source."
+        )
 
     client = Minio(
         os.getenv("MINIO_ENDPOINT", "localhost:9000"),

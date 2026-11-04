@@ -2,11 +2,10 @@ import os
 
 import numpy as np
 import pandas as pd
+from finance_pilot.algorithms.rfr_kpi_model import KPIFeatureTransformer
+from finance_pilot.utils.constants import DEFAULT_ITEM_COL, DEFAULT_TIMESTAMP_COL
 from lightgbm import LGBMRegressor
 from sklearn.pipeline import Pipeline
-
-from finance_pilot.utils.constants import DEFAULT_ITEM_COL, DEFAULT_TIMESTAMP_COL
-from finance_pilot.algorithms.rfr_kpi_model import KPIFeatureTransformer
 
 
 class LGBMKPIModel:
@@ -35,12 +34,15 @@ class LGBMKPIModel:
         self.pipeline = Pipeline(
             steps=[
                 ("kpi", self.transformer),
-                ("lgbm", LGBMRegressor(
-                    n_estimators=self.n_estimators,
-                    n_jobs=self.n_jobs,
-                    random_state=self.random_state,
-                    verbose=-1,
-                )),
+                (
+                    "lgbm",
+                    LGBMRegressor(
+                        n_estimators=self.n_estimators,
+                        n_jobs=self.n_jobs,
+                        random_state=self.random_state,
+                        verbose=-1,
+                    ),
+                ),
             ]
         )
         self.model = self.pipeline.named_steps["lgbm"]
@@ -90,7 +92,11 @@ class LGBMKPIModel:
                 on=[DEFAULT_ITEM_COL, DEFAULT_TIMESTAMP_COL],
                 how="inner",
             )
-            train_columns = list(self.kpi_features) + [DEFAULT_ITEM_COL, DEFAULT_TIMESTAMP_COL, "target"]
+            train_columns = list(self.kpi_features) + [
+                DEFAULT_ITEM_COL,
+                DEFAULT_TIMESTAMP_COL,
+                "target",
+            ]
             merged = merged[train_columns].dropna()
             target_df = merged[[DEFAULT_ITEM_COL, DEFAULT_TIMESTAMP_COL, "target"]].copy()
             target = merged["target"].values

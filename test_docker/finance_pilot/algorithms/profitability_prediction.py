@@ -8,36 +8,48 @@
 #  If a copy of the MPL was not distributed with this  file, you can obtain one at
 #  http://mozilla.org/MPL/2.0/.
 
-import os
-import re
-import fcntl
-import pickle
-import gc
-
 import datetime
+import fcntl
+import gc
+import os
+import pickle
 import random
+import re
+
 import numpy as np
 import pandas as pd
 import torch
-from finance_pilot.utils.constants import DEFAULT_TIMESTAMP_COL, DEFAULT_ITEM_COL, DEFAULT_USER_COL, DEFAULT_RATING_COL
-from finance_pilot.utils.common_util import stratified_sample_by_group
-
 from finance_pilot.algorithms.algorithm import Algorithm
 from finance_pilot.algorithms.lgbm_kpi_model import LGBMKPIModel
 from finance_pilot.algorithms.rfr_kpi_model import RFRKPIModel
 from finance_pilot.algorithms.tabpfn_kpi_model import TabPFNKPIModel
-
+from finance_pilot.utils.common_util import stratified_sample_by_group
+from finance_pilot.utils.constants import (
+    DEFAULT_ITEM_COL,
+    DEFAULT_RATING_COL,
+    DEFAULT_TIMESTAMP_COL,
+    DEFAULT_USER_COL,
+)
 
 INTERNAL_KPI_MODELS = (RFRKPIModel, LGBMKPIModel, TabPFNKPIModel)
 
 
 class ProfitabilityPrediction(Algorithm):
     """
-    Algorithm that predicts the future profitability of assets. Ranks the assets according to that value.
+    Algorithm that predicts the future profitability of assets. Ranks the assets according to
+    that value.
     """
 
-    def __init__(self, model, data, months, indicators, train_examples_per_asset, save_for_testing=False,
-                 training_sizes_path=None):
+    def __init__(
+        self,
+        model,
+        data,
+        months,
+        indicators,
+        train_examples_per_asset,
+        save_for_testing=False,
+        training_sizes_path=None,
+    ):
         """
         Configures the profitability prediction model.
         :param model: the model to train.
@@ -100,27 +112,39 @@ class ProfitabilityPrediction(Algorithm):
             kpi_type = getattr(self.model, "kpi_type", "na")
             sample_pct = getattr(self.model, "sample_pct", None)
             if sample_pct is not None:
-                return self._safe_fragment(f"kpi-{kpi_type}_internal_kpis_tabpfn_sample{sample_pct}")
+                return self._safe_fragment(
+                    f"kpi-{kpi_type}_internal_kpis_tabpfn_sample{sample_pct}"
+                )
             return self._safe_fragment(f"kpi-{kpi_type}_internal_kpis")
 
         n_estimators = getattr(self.model, "n_estimators", "na")
         return self._safe_fragment(f"n-{n_estimators}")
 
     def _artifact_dir(self):
-        return os.path.join("artifacts_for_counterfactuals", f"{self._model_tag()}_{self._model_param_tag()}")
+        return os.path.join(
+            "artifacts_for_counterfactuals", f"{self._model_tag()}_{self._model_param_tag()}"
+        )
 
     def _dataset_artifact_label(self, when):
         return self._safe_fragment(when)
 
     def _artifact_path(self, prefix, when, extension="csv"):
-        name = f"{prefix}_{self._safe_fragment(when)}_{self._model_tag()}_{self._model_param_tag()}.{extension}"
+        name = (
+            f"{prefix}_{self._safe_fragment(when)}_{self._model_tag()}_"
+            f"{self._model_param_tag()}.{extension}"
+        )
         return os.path.join(self._artifact_dir(), name)
 
     def _dataset_artifact_path(self, prefix, when, extension="csv"):
-        name = f"{prefix}_{self._safe_fragment(when)}_{self._model_tag()}_{self._model_param_tag()}.{extension}"
+        name = (
+            f"{prefix}_{self._safe_fragment(when)}_{self._model_tag()}_"
+            f"{self._model_param_tag()}.{extension}"
+        )
         return os.path.join(self._artifact_dir(), name)
 
-    def _compute_generalization_metrics(self, kpi_train_feats, train_targets, kpi_test_feats, test_targets):
+    def _compute_generalization_metrics(
+        self, kpi_train_feats, train_targets, kpi_test_feats, test_targets
+    ):
         """Compute train/test regression metrics to assess generalization.
 
         Uses the fitted underlying estimator directly on pre-computed KPI features,
@@ -160,13 +184,13 @@ class ProfitabilityPrediction(Algorithm):
             else:
                 return {}
 
-            train_r2   = float(r2_score(y_train, train_preds))
-            test_r2    = float(r2_score(y_test,  test_preds))
+            train_r2 = float(r2_score(y_train, train_preds))
+            test_r2 = float(r2_score(y_test, test_preds))
             train_rmse = float(np.sqrt(mean_squared_error(y_train, train_preds)))
-            test_rmse  = float(np.sqrt(mean_squared_error(y_test,  test_preds)))
-            train_mae  = float(mean_absolute_error(y_train, train_preds))
-            test_mae   = float(mean_absolute_error(y_test,  test_preds))
-            gap        = train_r2 - test_r2
+            test_rmse = float(np.sqrt(mean_squared_error(y_test, test_preds)))
+            train_mae = float(mean_absolute_error(y_train, train_preds))
+            test_mae = float(mean_absolute_error(y_test, test_preds))
+            gap = train_r2 - test_r2
 
             print(
                 f"Generalization | train_R²={train_r2:.4f}  test_R²={test_r2:.4f}  "
@@ -177,14 +201,14 @@ class ProfitabilityPrediction(Algorithm):
 
             return {
                 "generalization_gap_r2": gap,
-                "train_r2":   train_r2,
-                "test_r2":    test_r2,
+                "train_r2": train_r2,
+                "test_r2": test_r2,
                 "train_rmse": train_rmse,
-                "test_rmse":  test_rmse,
-                "train_mae":  train_mae,
-                "test_mae":   test_mae,
+                "test_rmse": test_rmse,
+                "train_mae": train_mae,
+                "test_mae": test_mae,
                 "train_samples": int(len(y_train)),
-                "test_samples":  int(len(y_test)),
+                "test_samples": int(len(y_test)),
             }
         except Exception as exc:
             print(f"WARNING: Could not compute generalization metrics: {exc}", flush=True)
@@ -218,14 +242,20 @@ class ProfitabilityPrediction(Algorithm):
                 current = pd.DataFrame(columns=["model", "model_params", "rec_date", "train_rows"])
 
             exists_mask = (
-                (current["model"] == row["model"])
-                & (current["model_params"] == row["model_params"])
-                & (current["rec_date"] == row["rec_date"])
-            ) if len(current) > 0 else pd.Series([], dtype=bool)
+                (
+                    (current["model"] == row["model"])
+                    & (current["model_params"] == row["model_params"])
+                    & (current["rec_date"] == row["rec_date"])
+                )
+                if len(current) > 0
+                else pd.Series([], dtype=bool)
+            )
 
             if len(current) == 0 or not exists_mask.any():
                 updated = pd.concat([current, pd.DataFrame([row])], ignore_index=True)
-                updated = updated.sort_values(["model", "model_params", "rec_date"]).reset_index(drop=True)
+                updated = updated.sort_values(["model", "model_params", "rec_date"]).reset_index(
+                    drop=True
+                )
                 updated.to_csv(out_path, index=False)
 
     def _generate_internal_kpis(self, time_series_df):
@@ -262,32 +292,36 @@ class ProfitabilityPrediction(Algorithm):
         split_assets = set(self.data.assets)
         time_series_df = time_series_df[time_series_df[DEFAULT_ITEM_COL].isin(split_assets)]
 
-        # As a first step, we find the technical indicators. We use all the possible information previous
-        # to the training date - the number of months we are considering.
+        # As a first step, we find the technical indicators. We use all the possible information
+        # previous to the training date - the number of months we are considering.
         if isinstance(self.model, INTERNAL_KPI_MODELS):
             source_kpis = self._generate_internal_kpis(time_series_df)
         else:
             source_kpis = self.kpis
 
         if source_kpis is None:
-            raise ValueError("KPI data is missing and the selected model does not generate KPIs internally")
+            raise ValueError(
+                "KPI data is missing and the selected model does not generate KPIs internally"
+            )
 
         kpi_indicators = source_kpis[source_kpis[DEFAULT_ITEM_COL].isin(self.data.assets)].copy()
         # For each asset, compute the target (profitability at k months) — vectorised groupby
-        kpi_indicators["final_price"] = (
-            kpi_indicators.groupby(DEFAULT_ITEM_COL, sort=False)[DEFAULT_RATING_COL]
-            .shift(-self.months * 21)
-        )
+        kpi_indicators["final_price"] = kpi_indicators.groupby(DEFAULT_ITEM_COL, sort=False)[
+            DEFAULT_RATING_COL
+        ].shift(-self.months * 21)
         kpi_indicators["target"] = (
-            (kpi_indicators["final_price"] - kpi_indicators[DEFAULT_RATING_COL])
-            / kpi_indicators[DEFAULT_RATING_COL]
-        )
+            kpi_indicators["final_price"] - kpi_indicators[DEFAULT_RATING_COL]
+        ) / kpi_indicators[DEFAULT_RATING_COL]
         kpi_indicators = kpi_indicators[kpi_indicators[DEFAULT_RATING_COL] > 0.0]
 
         # Finally, we filter the indicators by date.
         full = kpi_indicators.copy()
-        kpi_indicators = full[full[DEFAULT_TIMESTAMP_COL] < (train_date - delta)]  # TRAIN rows: only timestamps strictly before the training cutoff (train_date - prediction horizon)
-        kpi_indicators_test = full[full[DEFAULT_TIMESTAMP_COL] >= (train_date - delta)]  # TEST/EVAL rows: timestamps on/after the cutoff
+        # TRAIN rows: only timestamps strictly before the training cutoff
+        # (train_date - prediction horizon)
+        kpi_indicators = full[full[DEFAULT_TIMESTAMP_COL] < (train_date - delta)]
+        kpi_indicators_test = full[
+            full[DEFAULT_TIMESTAMP_COL] >= (train_date - delta)
+        ]  # TEST/EVAL rows: timestamps on/after the cutoff
 
         aux_list = self.indicators.copy()
         aux_list.append(DEFAULT_ITEM_COL)
@@ -317,12 +351,20 @@ class ProfitabilityPrediction(Algorithm):
             self._save_training_size(train_date, kpi_indicators_features.shape[0])
             # Internal models are trained from raw time-series + aligned targets.
             if isinstance(self.model, INTERNAL_KPI_MODELS):
-                training_time_series = time_series_df[time_series_df[DEFAULT_TIMESTAMP_COL] < (train_date - delta)]  # Internal-model train split over raw time-series (same temporal cutoff as KPI train rows)
+                # Internal-model train split over raw time-series
+                # (same temporal cutoff as KPI train rows)
+                training_time_series = time_series_df[
+                    time_series_df[DEFAULT_TIMESTAMP_COL] < (train_date - delta)
+                ]
                 train_targets = training_data[[DEFAULT_ITEM_COL, DEFAULT_TIMESTAMP_COL, "target"]]
-                artifact_prefix = os.path.join(
-                    self._artifact_dir(),
-                    f"kpis_train_{self._dataset_artifact_label(train_date)}_{self._model_tag()}_{self._model_param_tag()}",
-                ) if self.save_for_testing else None
+                artifact_prefix = (
+                    os.path.join(
+                        self._artifact_dir(),
+                        f"kpis_train_{self._dataset_artifact_label(train_date)}_{self._model_tag()}_{self._model_param_tag()}",
+                    )
+                    if self.save_for_testing
+                    else None
+                )
 
                 self.model.fit(
                     training_time_series,
@@ -333,7 +375,7 @@ class ProfitabilityPrediction(Algorithm):
             else:
                 # External (precomputed-KPI) models are trained directly on KPI features.
                 self.model.fit(kpi_indicators_features, goals)
-            
+
             self.is_fitted = True
 
             self.generalization_metrics_ = self._compute_generalization_metrics(
@@ -354,8 +396,14 @@ class ProfitabilityPrediction(Algorithm):
                     # testing_time_series = time_series_df[
                     #     time_series_df[DEFAULT_TIMESTAMP_COL] >= (train_date - delta)
                     # ]
-                    # self._save_csv_if_missing(training_time_series, self._dataset_artifact_path("training_data", train_date))
-                    # self._save_csv_if_missing(testing_time_series, self._dataset_artifact_path("testing_data", train_date))
+                    # self._save_csv_if_missing(
+                    #     training_time_series,
+                    #     self._dataset_artifact_path("training_data", train_date)
+                    # )
+                    # self._save_csv_if_missing(
+                    #     testing_time_series,
+                    #     self._dataset_artifact_path("testing_data", train_date)
+                    # )
                     # self.save_fitted_model(train_date)
                     pass
                 else:
@@ -368,12 +416,23 @@ class ProfitabilityPrediction(Algorithm):
                         testing_time_series = time_series_df[
                             time_series_df[DEFAULT_TIMESTAMP_COL] >= (train_date - delta)
                         ]
-                        self._save_csv_if_missing(training_time_series, self._dataset_artifact_path("training_data", train_date))
-                        self._save_csv_if_missing(testing_time_series, self._dataset_artifact_path("testing_data", train_date))
+                        self._save_csv_if_missing(
+                            training_time_series,
+                            self._dataset_artifact_path("training_data", train_date),
+                        )
+                        self._save_csv_if_missing(
+                            testing_time_series,
+                            self._dataset_artifact_path("testing_data", train_date),
+                        )
                     else:
                         # External (precomputed-KPI) models: save the KPI-based splits instead.
-                        self._save_csv_if_missing(training_data, self._dataset_artifact_path("training_data", train_date))
-                        self._save_csv_if_missing(kpi_indicators_test, self._dataset_artifact_path("testing_data", train_date))
+                        self._save_csv_if_missing(
+                            training_data, self._dataset_artifact_path("training_data", train_date)
+                        )
+                        self._save_csv_if_missing(
+                            kpi_indicators_test,
+                            self._dataset_artifact_path("testing_data", train_date),
+                        )
                     self.save_fitted_model(train_date)
 
             self._release_gpu_memory()
@@ -396,40 +455,55 @@ class ProfitabilityPrediction(Algorithm):
 
         if self.is_fitted:
             if isinstance(self.model, RFRKPIModel):
-                pipeline_path = self._artifact_path("profitability_recommendation_pipeline", train_date, "pkl")
+                pipeline_path = self._artifact_path(
+                    "profitability_recommendation_pipeline", train_date, "pkl"
+                )
                 _save_pickle_object(self.model, pipeline_path)
 
                 from skl2onnx import convert_sklearn
                 from skl2onnx.common.data_types import FloatTensorType
-                initial_type = [('float_input', FloatTensorType([None, len(self.indicators)]))]
+
+                initial_type = [("float_input", FloatTensorType([None, len(self.indicators)]))]
                 onnx_model = convert_sklearn(self.model.model, initial_types=initial_type)
-                with open(self._artifact_path("profitability_recommendation", train_date, "onnx"), "wb") as f:
+                with open(
+                    self._artifact_path("profitability_recommendation", train_date, "onnx"), "wb"
+                ) as f:
                     f.write(onnx_model.SerializeToString())
             elif isinstance(self.model, LGBMKPIModel):
                 # skl2onnx does not support LGBMRegressor — save pkl only.
-                pipeline_path = self._artifact_path("profitability_recommendation_pipeline", train_date, "pkl")
+                pipeline_path = self._artifact_path(
+                    "profitability_recommendation_pipeline", train_date, "pkl"
+                )
                 _save_pickle_object(self.model, pipeline_path)
             elif isinstance(self.model, TabPFNKPIModel):
                 # skl2onnx does not support TabPFN's transformer architecture — save pkl only.
-                pipeline_path = self._artifact_path("profitability_recommendation_pipeline", train_date, "pkl")
+                pipeline_path = self._artifact_path(
+                    "profitability_recommendation_pipeline", train_date, "pkl"
+                )
                 _save_pickle_object(self.model, pipeline_path)
             else:
                 # For external sklearn models, use skl2onnx.
                 # LGBMRegressor is not supported by skl2onnx — save pkl instead.
                 from lightgbm import LGBMRegressor as _LGBMRegressor
+
                 if isinstance(self.model, _LGBMRegressor):
-                    pipeline_path = self._artifact_path("profitability_recommendation_pipeline", train_date, "pkl")
+                    pipeline_path = self._artifact_path(
+                        "profitability_recommendation_pipeline", train_date, "pkl"
+                    )
                     _save_pickle_object(self.model, pipeline_path)
                 else:
                     from skl2onnx import convert_sklearn
                     from skl2onnx.common.data_types import FloatTensorType
-                    initial_type = [('float_input', FloatTensorType([None, len(self.indicators)]))]
+
+                    initial_type = [("float_input", FloatTensorType([None, len(self.indicators)]))]
                     onnx_model = convert_sklearn(self.model, initial_types=initial_type)
-                    with open(self._artifact_path("profitability_recommendation", train_date, "onnx"), "wb") as f:
+                    with open(
+                        self._artifact_path("profitability_recommendation", train_date, "onnx"),
+                        "wb",
+                    ) as f:
                         f.write(onnx_model.SerializeToString())
         else:
             raise Exception("Model is not fitted yet. Cannot save an untrained model.")
-        
 
     def recommend(self, rec_time, target_custs, repeated, only_test_customers):
         fields = [x for x in self.indicators]
@@ -447,7 +521,8 @@ class ProfitabilityPrediction(Algorithm):
         if isinstance(self.model, INTERNAL_KPI_MODELS):
             # Recommendation-time cutoff: never expose future rows to internal KPI generation.
             if self.is_fitted:
-                # For fitted internal models, get KPI rows from the model prediction path to avoid computing KPIs twice.
+                # For fitted internal models, get KPI rows from the model prediction path to avoid
+                # computing KPIs twice.
                 kpi_indicators = None
             else:
                 # If not fitted, we still need KPI rows to build random baselines.
@@ -481,18 +556,28 @@ class ProfitabilityPrediction(Algorithm):
                 kpi_indicators = kpis_df[fields + ["score"]].copy()
 
                 feature_cols = [col for col in self.indicators if col in kpi_indicators.columns]
-                prediction_input_snapshot = kpi_indicators[[DEFAULT_ITEM_COL, DEFAULT_TIMESTAMP_COL] + feature_cols].copy()
+                prediction_input_snapshot = kpi_indicators[
+                    [DEFAULT_ITEM_COL, DEFAULT_TIMESTAMP_COL] + feature_cols
+                ].copy()
             else:
                 kpi_indicators["score"] = self.model.predict(kpi_indicators[self.indicators])
                 feature_cols = [col for col in self.indicators if col in kpi_indicators.columns]
-                prediction_input_snapshot = kpi_indicators[[DEFAULT_ITEM_COL, DEFAULT_TIMESTAMP_COL] + feature_cols].copy()
+                prediction_input_snapshot = kpi_indicators[
+                    [DEFAULT_ITEM_COL, DEFAULT_TIMESTAMP_COL] + feature_cols
+                ].copy()
         else:
-            kpi_indicators["score"] = kpi_indicators[DEFAULT_ITEM_COL].apply(lambda x: random.random())
+            kpi_indicators["score"] = kpi_indicators[DEFAULT_ITEM_COL].apply(
+                lambda x: random.random()
+            )
             feature_cols = [col for col in self.indicators if col in kpi_indicators.columns]
-            prediction_input_snapshot = kpi_indicators[[DEFAULT_ITEM_COL, DEFAULT_TIMESTAMP_COL] + feature_cols].copy()
+            prediction_input_snapshot = kpi_indicators[
+                [DEFAULT_ITEM_COL, DEFAULT_TIMESTAMP_COL] + feature_cols
+            ].copy()
 
         if self.save_for_testing:
-            score_snapshot = kpi_indicators[[DEFAULT_ITEM_COL, DEFAULT_TIMESTAMP_COL, "score"]].copy()
+            score_snapshot = kpi_indicators[
+                [DEFAULT_ITEM_COL, DEFAULT_TIMESTAMP_COL, "score"]
+            ].copy()
             score_snapshot = score_snapshot.rename(columns={"score": "prediction"})
 
             if prediction_input_snapshot is None:
@@ -504,13 +589,13 @@ class ProfitabilityPrediction(Algorithm):
                     how="left",
                 )
 
-            self._save_csv_if_missing(prediction_snapshot, self._artifact_path("predictions", rec_time))
+            self._save_csv_if_missing(
+                prediction_snapshot, self._artifact_path("predictions", rec_time)
+            )
 
         # And, finally, we sort the assets by score:
-        kpi_indicators_full = (
-            kpi_indicators
-            .sort_values(by="score", ascending=False)
-            .rename(columns={"score": DEFAULT_RATING_COL})
+        kpi_indicators_full = kpi_indicators.sort_values(by="score", ascending=False).rename(
+            columns={"score": DEFAULT_RATING_COL}
         )
 
         kpi_indicators = (
@@ -521,7 +606,11 @@ class ProfitabilityPrediction(Algorithm):
 
         user_recommendations = []
         user_recs_full = []
-        customers = (self.data.users & set(self.data.test[DEFAULT_USER_COL].unique().flatten())) if only_test_customers else self.data.users
+        customers = (
+            (self.data.users & set(self.data.test[DEFAULT_USER_COL].unique().flatten()))
+            if only_test_customers
+            else self.data.users
+        )
         customers = customers & target_custs
 
         # num_rows = num_customers × num_items_available_at_rec_time
@@ -532,15 +621,24 @@ class ProfitabilityPrediction(Algorithm):
             user_recommendation_full[DEFAULT_USER_COL] = customer
 
             if not repeated:
-                items_per_user = set(self.data.train[self.data.train[DEFAULT_USER_COL] == customer][DEFAULT_ITEM_COL].unique().flatten())
-                user_recommendation = user_recommendation[~user_recommendation[DEFAULT_ITEM_COL].isin(items_per_user)]
-                user_recommendation_full = user_recommendation_full[~user_recommendation_full[DEFAULT_ITEM_COL].isin(items_per_user)]
+                items_per_user = set(
+                    self.data.train[self.data.train[DEFAULT_USER_COL] == customer][DEFAULT_ITEM_COL]
+                    .unique()
+                    .flatten()
+                )
+                user_recommendation = user_recommendation[
+                    ~user_recommendation[DEFAULT_ITEM_COL].isin(items_per_user)
+                ]
+                user_recommendation_full = user_recommendation_full[
+                    ~user_recommendation_full[DEFAULT_ITEM_COL].isin(items_per_user)
+                ]
             user_recommendations.append(user_recommendation)
             user_recs_full.append(user_recommendation_full)
-        
+
         user_recs_full = pd.concat(user_recs_full)
         if self.save_for_testing:
-            self._save_csv_if_missing(user_recs_full, self._dataset_artifact_path("user_recs", rec_time))
+            self._save_csv_if_missing(
+                user_recs_full, self._dataset_artifact_path("user_recs", rec_time)
+            )
 
         return pd.concat(user_recommendations)
- 

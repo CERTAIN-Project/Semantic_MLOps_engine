@@ -1,76 +1,75 @@
+import inspect
+import io
+import json
+import sys
 import uuid
 from urllib.parse import urlparse
-import io
-import sys
-import json
-import inspect
+
 import pandas as pd
-import inspect
 import yaml
-from typing import Optional
-from fastapi import FastAPI
-from sqlalchemy import text
 from app.mlflow_connector import (
-    get_metrics_data,
-    get_runs_data,
-    get_experiments_data,
-    get_experiment_tags_data,
-    get_datasets_data,
-    get_latest_metrics_data,
-    get_params_data,
-    get_tags_data,
     get_artifacts_data,
+    get_datasets_data,
+    get_experiment_tags_data,
+    get_experiments_data,
     get_json_artifacts_data,
+    get_latest_metrics_data,
+    get_metrics_data,
+    get_params_data,
+    get_runs_data,
+    get_tags_data,
 )
-from app.target_connector import insert_dataframe, bulk_upsert_metrics, target_engine
+from app.target_connector import bulk_upsert_metrics, insert_dataframe, target_engine
+from fastapi import FastAPI
 from misc.data_transform import (
-    map_runs,
-    map_experiments,
-    map_resources,
-    map_time_series_data,
+    map_ai_actors,
+    map_build_testing,
+    map_change_log,
+    map_checkpoints,
+    map_counterfactual_report,
     map_data_drift,
     map_data_duration_leakage,
-    map_datasets,
     map_data_metrics,
-    map_model_metrics,
-    map_model_params,
-    map_runs_tags,
     map_data_resources,
-    map_run_code,
-    map_checkpoints,
-    map_weight_distribution,
-    map_examples,
-    map_run_logs,
-    map_ai_actors,
-    map_labeling_procedures,
-    map_risk,
-    map_human_oversight,
-    map_transparency_measure,
-    map_change_log,
-    map_declaration_of_conformity,
-    map_visual_documentation,
-    map_explainable_ai,
-    map_model_packaging,
-    map_build_testing,
-    map_standard,
-    map_interface,
-    map_decommissioning,
-    map_monitor_logs,
-    map_tokenizer_config,
-    map_tokenization_stats,
     map_data_techniques,
+    map_dataset_manifest,
+    map_datasets,
+    map_declaration_of_conformity,
+    map_decommissioning,
     map_demographic_bias_report,
-    map_quality_report,
+    map_examples,
+    map_experiment_tags_artifact,
+    map_experiments,
+    map_explainable_ai,
+    map_human_oversight,
+    map_interface,
+    map_labeling_procedures,
+    map_model_metrics,
+    map_model_packaging,
+    map_model_params,
+    map_monitor_logs,
     map_privacy_report,
-    map_counterfactual_report,
+    map_quality_report,
+    map_resources,
+    map_risk,
+    map_run_code,
+    map_run_inputs,
+    map_run_logs,
+    map_run_metrics,
     # New mappers for certain/metadata artifacts
     map_run_params,
-    map_run_metrics,
     map_run_resources,
-    map_run_inputs,
-    map_experiment_tags_artifact,
-    map_dataset_manifest,
+    map_runs,
+    map_runs_tags,
+    map_standard,
+    map_time_series_data,
+    map_tokenization_stats,
+    map_tokenizer_config,
+    map_transparency_measure,
+    map_visual_documentation,
+    map_weight_distribution,
 )
+from sqlalchemy import text
 
 app = FastAPI()
 
@@ -100,8 +99,10 @@ def sync_metrics(id_mapping):
     # model_id/data_id. Also synthesize minimal model_architecture parent rows
     # for any newly-created mappings to satisfy FK constraints.
     if isinstance(df, pd.DataFrame) and not df.empty:
-        run_col = "run_uuid" if "run_uuid" in df.columns else (
-            "run_id" if "run_id" in df.columns else None
+        run_col = (
+            "run_uuid"
+            if "run_uuid" in df.columns
+            else ("run_id" if "run_id" in df.columns else None)
         )
         if run_col:
             metric_run_ids = set(df[run_col].astype(str).tolist())
@@ -110,9 +111,11 @@ def sync_metrics(id_mapping):
 
         missing_runs = [r for r in metric_run_ids if r not in id_mapping]
         if missing_runs:
-            import uuid as _uuid
             import os
+            import uuid as _uuid
+
             from app import mlflow_connector as _mlfc
+
             now_ts = int(pd.Timestamp.now(tz="UTC").timestamp())
 
             # Discover experiment folders for missing runs by scanning the
@@ -176,13 +179,15 @@ def sync_metrics(id_mapping):
             if experiments_to_create:
                 exp_rows = []
                 for e in experiments_to_create:
-                    exp_rows.append({
-                        "experiment_id": e,
-                        "experiment_name": f"artifact-generated-{e[:8]}",
-                        "lifecycle_stage": "data_processing",
-                        "creation_time": now_ts,
-                        "last_update_time": now_ts,
-                    })
+                    exp_rows.append(
+                        {
+                            "experiment_id": e,
+                            "experiment_name": f"artifact-generated-{e[:8]}",
+                            "lifecycle_stage": "data_processing",
+                            "creation_time": now_ts,
+                            "last_update_time": now_ts,
+                        }
+                    )
                 insert_dataframe(pd.DataFrame(exp_rows), "experiments")
 
             if runs_rows:
@@ -232,9 +237,7 @@ def sync_metrics(id_mapping):
             if parent_rows:
                 insert_dataframe(pd.DataFrame(parent_rows), "model_architecture")
 
-    mapped_rows = df.apply(
-        lambda row: map_model_metrics(row, id_mapping), axis=1
-    )
+    mapped_rows = df.apply(lambda row: map_model_metrics(row, id_mapping), axis=1)
     mapped_df = pd.DataFrame(mapped_rows.values.tolist())
 
     if not mapped_df.empty:
@@ -251,11 +254,7 @@ def sync_metrics(id_mapping):
                 mapped_df["timestamp"] = mapped_df["timestamp"].fillna(0).astype(int)
             except Exception:
                 mapped_df["timestamp"] = mapped_df["timestamp"].apply(
-                    lambda x: (
-                        int(x)
-                        if pd.notna(x)
-                        else int(pd.Timestamp.now(tz="UTC").timestamp())
-                    )
+                    lambda x: int(x) if pd.notna(x) else int(pd.Timestamp.now(tz="UTC").timestamp())
                 )
 
     insert_dataframe(mapped_df, "model_metrics")
@@ -266,9 +265,7 @@ def sync_latest_metrics(id_mapping):
     df = get_latest_metrics_data()
 
     # Map rows into the expected DB shape
-    mapped_rows = df.apply(
-        lambda row: map_model_metrics(row, id_mapping), axis=1
-    )
+    mapped_rows = df.apply(lambda row: map_model_metrics(row, id_mapping), axis=1)
     mapped_df = pd.DataFrame(mapped_rows.values.tolist())
 
     if mapped_df.empty:
@@ -287,11 +284,7 @@ def sync_latest_metrics(id_mapping):
             mapped_df["timestamp"] = mapped_df["timestamp"].fillna(0).astype(int)
         except Exception:
             mapped_df["timestamp"] = mapped_df["timestamp"].apply(
-                lambda x: (
-                    int(x)
-                    if pd.notna(x)
-                    else int(pd.Timestamp.now(tz="UTC").timestamp())
-                )
+                lambda x: int(x) if pd.notna(x) else int(pd.Timestamp.now(tz="UTC").timestamp())
             )
 
     # Attempt to derive parent_id for each run so we can deduplicate per
@@ -330,6 +323,7 @@ def sync_latest_metrics(id_mapping):
     missing_runs = [r for r in metric_run_ids if r not in id_mapping]
     if missing_runs:
         import uuid as _uuid
+
         now_ts = int(pd.Timestamp.now(tz="UTC").timestamp())
         new_mappings = []
         parent_rows = []
@@ -416,6 +410,7 @@ def sync_latest_metrics(id_mapping):
 
     insert_dataframe(deduped, "last_model_metrics")
     return {"rows_synced": len(deduped), "status": "success"}
+
 
 def _build_run_artifact_index() -> dict:
     """Collect per-run provenance data from metadata artifacts."""
@@ -540,8 +535,10 @@ def sync_runs():
     # Return a plain list of run id strings (hashable) so callers can use
     # them directly in SQL queries and as dict keys.
     try:
-        id_col = "run_id" if "run_id" in mapped_df.columns else (
-            "run_uuid" if "run_uuid" in mapped_df.columns else None
+        id_col = (
+            "run_id"
+            if "run_id" in mapped_df.columns
+            else ("run_uuid" if "run_uuid" in mapped_df.columns else None)
         )
         if id_col is None:
             return []
@@ -622,20 +619,24 @@ def sync_experiment_tags():
                         # artifact writers sometimes use 'experiment_tags' or 'tags'
                         tag_blob = rec.get("experiment_tags") or rec.get("tags") or {}
                         for k, v in (tag_blob or {}).items():
-                            rows.append({
-                                "experiment_id": str(exp_id or rec.get("experiment_id")),
-                                "key": str(k),
-                                "value": None if v is None else str(v),
-                            })
+                            rows.append(
+                                {
+                                    "experiment_id": str(exp_id or rec.get("experiment_id")),
+                                    "key": str(k),
+                                    "value": None if v is None else str(v),
+                                }
+                            )
                 elif isinstance(item, dict):
                     exp_id = item.get("experiment_id")
                     tag_blob = item.get("experiment_tags") or item.get("tags") or {}
                     for k, v in (tag_blob or {}).items():
-                        rows.append({
-                            "experiment_id": str(exp_id),
-                            "key": str(k),
-                            "value": None if v is None else str(v),
-                        })
+                        rows.append(
+                            {
+                                "experiment_id": str(exp_id),
+                                "key": str(k),
+                                "value": None if v is None else str(v),
+                            }
+                        )
         except Exception:
             # best-effort: ignore malformed items
             pass
@@ -646,12 +647,6 @@ def sync_experiment_tags():
     df = pd.DataFrame(rows)
 
     # Ensure experiments exist in DB before inserting tags (FK constraint)
-    try:
-        # Fetch existing experiments
-        existing = insert_dataframe.__self__ if hasattr(insert_dataframe, "__self__") else None
-    except Exception:
-        existing = None
-
     # Determine which experiment_ids are missing and create minimal entries
     try:
         # Use get_experiments_data to build any missing experiment rows' metadata
@@ -693,10 +688,16 @@ def sync_experiment_tags():
             create_rows.append(
                 {
                     "experiment_id": str(mid),
-                    "experiment_name": meta.get("name") if meta else f"artifact-generated-{str(mid)[:8]}",
+                    "experiment_name": meta.get("name")
+                    if meta
+                    else f"artifact-generated-{str(mid)[:8]}",
                     "lifecycle_stage": meta.get("lifecycle_stage") if meta else "data_processing",
-                    "creation_time": meta.get("creation_time") if meta and meta.get("creation_time") is not None else now_ts,
-                    "last_update_time": meta.get("last_update_time") if meta and meta.get("last_update_time") is not None else now_ts,
+                    "creation_time": meta.get("creation_time")
+                    if meta and meta.get("creation_time") is not None
+                    else now_ts,
+                    "last_update_time": meta.get("last_update_time")
+                    if meta and meta.get("last_update_time") is not None
+                    else now_ts,
                 }
             )
 
@@ -847,9 +848,7 @@ def sync_data(id_mapping):
         if id_col:
             for _, r in runs_df.iterrows():
                 rid = str(r.get(id_col) or r.get("run_id"))
-                parent = (
-                    r.get("parent_id") if "parent_id" in r.index else r.get("parent_id")
-                )
+                parent = r.get("parent_id") if "parent_id" in r.index else r.get("parent_id")
                 parent = str(parent) if parent else None
                 parent_of[rid] = parent
                 # treat empty strings / NaN as no parent
@@ -1011,9 +1010,7 @@ def sync_data_signatures(id_mapping):
     # Normalize JSON strings into Python objects when necessary
     try:
         df[signature_col] = df[signature_col].apply(
-            lambda x: (
-                json.loads(x) if isinstance(x, str) and x.strip().startswith("{") else x
-            )
+            lambda x: json.loads(x) if isinstance(x, str) and x.strip().startswith("{") else x
         )
     except Exception:
         # best-effort: leave as-is
@@ -1066,9 +1063,7 @@ def sync_data_resources(id_mapping):
     if not isinstance(df, pd.DataFrame):
         raise ValueError("The data is not in the expected DataFrame format.")
 
-    mapped_rows = df.apply(
-        lambda row: map_data_resources(row, id_mapping), axis=1
-    )
+    mapped_rows = df.apply(lambda row: map_data_resources(row, id_mapping), axis=1)
 
     # Normalize mapped_rows into a flat list of dicts. mapped_rows may be a
     # Series (most common), or in some environments a DataFrame; guard both.
@@ -1154,13 +1149,13 @@ def sync_model_architecture(id_mapping):
         try:
             grouped = params_df.groupby("run_uuid")[["key", "value"]]
             run_params = grouped.apply(
-                lambda g: dict(zip(g["key"], g["value"]))
+                lambda g: dict(zip(g["key"], g["value"], strict=False))
             ).to_dict()
         except Exception:
             # Fallback for pandas versions that may not support the selection above.
             run_params = (
                 params_df.groupby("run_uuid")
-                .apply(lambda g: dict(zip(g["key"], g["value"])))
+                .apply(lambda g: dict(zip(g["key"], g["value"], strict=False)))
                 .to_dict()
             )
 
@@ -1198,7 +1193,11 @@ def sync_model_architecture(id_mapping):
                 optimizer_dict[hyperparam_name] = value
 
         # Prepare layer_structure payload: it may be a dict or a JSON string
-        raw_ls = layer_structure[run_id] if (isinstance(layer_structure, dict) and run_id in layer_structure.keys()) else {}
+        raw_ls = (
+            layer_structure[run_id]
+            if (isinstance(layer_structure, dict) and run_id in layer_structure.keys())
+            else {}
+        )
         ls = {}
         try:
             if isinstance(raw_ls, str):
@@ -1246,10 +1245,22 @@ def sync_model_architecture(id_mapping):
                 "output_shape": params.get("output_shape", ""),
                 # If the training run logged parameter counts they will appear
                 # in params (via log_model_signature). Parse them when present.
-                "number_of_layers": int(params.get("number_of_layers", 0)) if params.get("number_of_layers") is not None else 0,
-                "number_of_total_parameters": int(params.get("number_of_total_parameters", 0)) if params.get("number_of_total_parameters") is not None else 0,
-                "number_of_trainable_parameters": int(params.get("number_of_trainable_parameters", 0)) if params.get("number_of_trainable_parameters") is not None else 0,
-                "number_of_non_trainable_parameters": int(params.get("number_of_non_trainable_parameters", 0)) if params.get("number_of_non_trainable_parameters") is not None else 0,
+                "number_of_layers": int(params.get("number_of_layers", 0))
+                if params.get("number_of_layers") is not None
+                else 0,
+                "number_of_total_parameters": int(params.get("number_of_total_parameters", 0))
+                if params.get("number_of_total_parameters") is not None
+                else 0,
+                "number_of_trainable_parameters": int(
+                    params.get("number_of_trainable_parameters", 0)
+                )
+                if params.get("number_of_trainable_parameters") is not None
+                else 0,
+                "number_of_non_trainable_parameters": int(
+                    params.get("number_of_non_trainable_parameters", 0)
+                )
+                if params.get("number_of_non_trainable_parameters") is not None
+                else 0,
                 "creation_time": int(pd.Timestamp.now(tz="UTC").timestamp()),
             }
         )
@@ -1337,23 +1348,15 @@ def sync_codecarbon_to_resources(id_mapping: dict):
     # Known numeric/resource keys to map
     from data_api.misc.data_transform import resources_key
 
-    for run_id, experiment_id, record in records:
+    for run_id, _experiment_id, record in records:
         # prefer the run_id coming from the artifact path; get_json_artifacts_data
         # returns the run folder as run_id (so record may also contain a run_id)
         r_id = run_id
 
-        model_id = (
-            id_mapping.get(r_id, {}).get("model_id") if id_mapping.get(r_id) else None
-        )
-        data_id = (
-            id_mapping.get(r_id, {}).get("data_id") if id_mapping.get(r_id) else None
-        )
+        model_id = id_mapping.get(r_id, {}).get("model_id") if id_mapping.get(r_id) else None
+        data_id = id_mapping.get(r_id, {}).get("data_id") if id_mapping.get(r_id) else None
 
-        stage = (
-            record.get("stage", "data_default")
-            if isinstance(record, dict)
-            else "data_default"
-        )
+        stage = record.get("stage", "data_default") if isinstance(record, dict) else "data_default"
 
         for key in resources_key:
             if key in record:
@@ -1434,9 +1437,7 @@ def sync_time_series_data(id_mapping):
     if not isinstance(df, pd.DataFrame):
         raise ValueError("The data is not in the expected DataFrame format.")
 
-    mapped_rows = df.apply(
-        lambda row: map_time_series_data(row, id_mapping), axis=1
-    )
+    mapped_rows = df.apply(lambda row: map_time_series_data(row, id_mapping), axis=1)
 
     expand_mapped_rows = [item for sublist in mapped_rows for item in sublist]
     mapped_df = pd.DataFrame(expand_mapped_rows)
@@ -1469,7 +1470,7 @@ def sync_tags():
                     rows_list = []
         else:
             # non-DataFrame input (dict/series/scalar) — attempt single mapping
-            rows_list = [map_mlflow_runs_tags(df)]
+            rows_list = [map_runs_tags(df)]
 
         mapped_df = pd.DataFrame(rows_list)
 
@@ -1522,9 +1523,10 @@ def sync_tags():
             run_rows = []
             try:
                 # build mapping run->experiment from artifacts
-                from app import mlflow_connector as _mlfc
-                from urllib.parse import urlparse as _urlparse
                 import os as _os
+                from urllib.parse import urlparse as _urlparse
+
+                from app import mlflow_connector as _mlfc
 
                 parsed = _urlparse(_mlfc.mlflow_artifacts_uri)
                 artifacts_root = parsed.path if parsed.path else _mlfc.mlflow_artifacts_uri
@@ -1590,7 +1592,7 @@ def sync_run_code(run_ids: list):
     try:
         json_records = get_json_artifacts_data(folder_name=artifact_path("metadata"))
         # json_records: list of (run_id, experiment_id, record)
-        for run_id, experiment_id, record in json_records:
+        for run_id, _experiment_id, record in json_records:
             # Recognize git metadata records by presence of git.commit or similar
             if isinstance(record, dict) and (
                 "git.commit" in record or "git.commit.short" in record
@@ -1635,9 +1637,7 @@ def sync_checkpoints(id_mapping: dict):
     if not isinstance(df, pd.DataFrame) or df.empty:
         return {"rows_synced": 0, "status": "no checkpoint artifacts found"}
 
-    mapped_rows = df.apply(
-        lambda row: map_checkpoints(row, id_mapping), axis=1
-    ).tolist()
+    mapped_rows = df.apply(lambda row: map_checkpoints(row, id_mapping), axis=1).tolist()
 
     mapped_df = pd.DataFrame(mapped_rows)
     insert_dataframe(mapped_df, "checkpoints")
@@ -1658,9 +1658,7 @@ def sync_weight_distribution(id_mapping: dict):
     if not isinstance(df, pd.DataFrame) or df.empty:
         return {"rows_synced": 0, "status": "no weight distribution artifacts found"}
 
-    mapped_rows = df.apply(
-        lambda row: map_weight_distribution(row, id_mapping), axis=1
-    ).tolist()
+    mapped_rows = df.apply(lambda row: map_weight_distribution(row, id_mapping), axis=1).tolist()
 
     mapped_df = pd.DataFrame(mapped_rows)
     insert_dataframe(mapped_df, "weight_distribution")
@@ -1771,7 +1769,7 @@ def sync_examples(id_mapping: dict):
                     continue
                 if isinstance(row, (list, tuple)):
                     if len(columns) == len(row):
-                        normalized_rows.append(dict(zip(columns, row)))
+                        normalized_rows.append(dict(zip(columns, row, strict=False)))
                     else:
                         normalized_rows.append({"values": list(row)})
                     continue
@@ -1779,7 +1777,10 @@ def sync_examples(id_mapping: dict):
             return normalized_rows
 
         # Some model artifacts store a single example payload directly.
-        if any(key in record for key in ("input", "features", "x", "prediction", "ground_truth", "label", "target")):
+        if any(
+            key in record
+            for key in ("input", "features", "x", "prediction", "ground_truth", "label", "target")
+        ):
             return [record]
 
         return [record]
@@ -1806,9 +1807,7 @@ def sync_examples(id_mapping: dict):
                     ),
                 )
                 prediction = item.get("prediction", item.get("predicted", ""))
-                ground_truth = item.get(
-                    "ground_truth", item.get("label", item.get("target", ""))
-                )
+                ground_truth = item.get("ground_truth", item.get("label", item.get("target", "")))
                 step_value = item.get("step", idx)
                 stage_value = item.get("stage", "input_examples")
                 ts_value = item.get("timestamp", now_ts)
@@ -1859,12 +1858,6 @@ def sync_run_logs(run_ids: list):
 
     try:
         print(f"[sync_run_logs] artifacts dataframe shape: {getattr(df, 'shape', None)}")
-        # show a small sample of distinct run identifiers found in artifacts
-        sample_ids = []
-        if 'run_id' in df.columns:
-            sample_ids = list(df['run_id'].astype(str).unique())[:10]
-        elif 'run_uuid' in df.columns:
-            sample_ids = list(df['run_uuid'].astype(str).unique())[:10]
     except Exception as e:
         print(f"[sync_run_logs] error inspecting artifact dataframe: {e}")
 
@@ -2131,17 +2124,17 @@ def sync_drift_metrics(run_ids: list, id_mapping: dict):
         if run_id not in run_ids:
             continue
 
-        # record expected shape: {run_id, model: {experiment_id,deployment_id,model_id}, columns: [...], summary: {...}}
+        # record expected shape: {run_id, model: {experiment_id,deployment_id,model_id},
+        # columns: [...], summary: {...}}
         model_info = (record.get("model") or {}) if isinstance(record, dict) else {}
-        # Prefer explicit fields in the artifact; fall back to the experiment id returned by artifact discovery
+        # Prefer explicit fields in the artifact; fall back to the experiment id returned by
+        # artifact discovery
         experiment_id = model_info.get("experiment_id") or exp_from_store
         # Try to resolve deployment/model from artifact, otherwise from the id_mapping for this run
-        deployment_id = model_info.get("deployment_id") or id_mapping.get(
-            run_id, {}
-        ).get("deployment_id")
-        model_id = model_info.get("model_id") or id_mapping.get(run_id, {}).get(
-            "model_id"
+        deployment_id = model_info.get("deployment_id") or id_mapping.get(run_id, {}).get(
+            "deployment_id"
         )
+        model_id = model_info.get("model_id") or id_mapping.get(run_id, {}).get("model_id")
 
         cols = record.get("columns") or []
         for c in cols:
@@ -2154,16 +2147,16 @@ def sync_drift_metrics(run_ids: list, id_mapping: dict):
                     "data_id": id_mapping.get(run_id, {}).get("data_id"),
                     "key": f"[drift_metrics]{column}",
                     "value": str(pval),
-                    "timestamp": int(
-                        c.get("timestamp") or pd.Timestamp.now(tz="UTC").timestamp()
-                    ),
+                    "timestamp": int(c.get("timestamp") or pd.Timestamp.now(tz="UTC").timestamp()),
                     "data_stage": "eval",
                     "is_NaN": False,
                 }
             )
 
-        # If model is deployed (we have both IDs), insert an aggregated drift indicator into drift_metrics
-        # If IDs are missing but we have an experiment_id, synthesize minimal parent rows and still insert the indicator.
+        # If model is deployed (we have both IDs), insert an aggregated drift indicator
+        # into drift_metrics
+        # If IDs are missing but we have an experiment_id, synthesize minimal parent rows
+        # and still insert the indicator.
         if deployment_id and model_id and deployment_id != "not deployed yet":
             summary = record.get("summary") or {}
             # value: 1 if any p_value < 0.05 else 0
@@ -2180,8 +2173,10 @@ def sync_drift_metrics(run_ids: list, id_mapping: dict):
             )
         else:
             # Not deployed: add a monitor log with summary so operators can see the status
-            # The monitor_logs table enforces non-null PK columns (deployment_id, experiment_id, model_id).
-            # Use a sentinel string to avoid NOT NULL constraint violations when the artifact lacks these IDs.
+            # The monitor_logs table enforces non-null PK columns
+            # (deployment_id, experiment_id, model_id).
+            # Use a sentinel string to avoid NOT NULL constraint violations when the artifact
+            # lacks these IDs.
             monitor_log_rows.append(
                 {
                     "experiment_id": experiment_id or "not_deployed_yet",
@@ -2191,10 +2186,13 @@ def sync_drift_metrics(run_ids: list, id_mapping: dict):
                     "message": json.dumps({"drift_summary": record.get("summary")}),
                 }
             )
-            # Additionally, if we have an experiment_id and numeric summary, we may still want to insert
-            # a drift metric row. Synthesize deployment/model ids and remember to create parent rows.
+            # Additionally, if we have an experiment_id and numeric summary, we may still want
+            # to insert
+            # a drift metric row. Synthesize deployment/model ids and remember to create
+            # parent rows.
             if experiment_id and (deployment_id is None or model_id is None):
-                # create generated ids to allow insertion; these will be added to model_deployed below
+                # create generated ids to allow insertion; these will be added to
+                # model_deployed below
                 gen_dep = deployment_id or str(uuid.uuid4())
                 gen_mod = model_id or str(uuid.uuid4())
                 summary = record.get("summary") or {}
@@ -2234,9 +2232,7 @@ def sync_drift_metrics(run_ids: list, id_mapping: dict):
 
             needed = set()
             for r in drift_metric_rows:
-                needed.add(
-                    (r.get("experiment_id"), r.get("deployment_id"), r.get("model_id"))
-                )
+                needed.add((r.get("experiment_id"), r.get("deployment_id"), r.get("model_id")))
 
             existing = set()
             with target_engine.connect() as conn:
@@ -2344,7 +2340,8 @@ def sync_drift_metrics(run_ids: list, id_mapping: dict):
                 if parent_rows:
                     insert_dataframe(pd.DataFrame(parent_rows), "model_deployed")
         except Exception:
-            # If reflection or insertion fails, proceed and let the monitor_logs insert surface the error
+            # If reflection or insertion fails, proceed and let the monitor_logs insert
+            # surface the error
             pass
 
         insert_dataframe(pd.DataFrame(monitor_log_rows), "monitor_logs")
@@ -2357,7 +2354,7 @@ def sync_drift_metrics(run_ids: list, id_mapping: dict):
 
 
 def _sync_json_experiment_table(
-    folder_name: str, map_fn, table_name: str, run_ids: list, id_mapping: Optional[dict] = None
+    folder_name: str, map_fn, table_name: str, run_ids: list, id_mapping: dict | None = None
 ):
     """Generic sync for experiment-scoped JSON artifact tables."""
     records = get_json_artifacts_data(folder_name=artifact_path(folder_name))
@@ -2378,7 +2375,7 @@ def _sync_json_experiment_table(
             if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
         ]
 
-        def _apply_mapping(mapped: dict) -> dict:
+        def _apply_mapping(mapped: dict, run_id: str = run_id) -> dict:
             if isinstance(mapped, dict):
                 mapping = (id_mapping or {}).get(run_id, {})
                 if mapping and mapping.get("deployment_id"):
@@ -2415,7 +2412,7 @@ def _sync_json_run_table(
     map_fn,
     table_name: str,
     run_ids: list,
-    id_mapping: Optional[dict] = None,
+    id_mapping: dict | None = None,
 ):
     """Generic sync for run-scoped JSON artifact tables."""
     records = get_json_artifacts_data(folder_name=artifact_path(folder_name))
@@ -2617,9 +2614,7 @@ def sync_build_testing(run_ids: list, id_mapping: dict):
 
 def sync_standards(run_ids: list, id_mapping: dict):
     _replace_run_scoped_rows("standards", run_ids)
-    return _sync_json_run_table(
-        "standards", map_standard, "standards", run_ids, id_mapping
-    )
+    return _sync_json_run_table("standards", map_standard, "standards", run_ids, id_mapping)
 
 
 def model_deployed_has_rows() -> bool:
@@ -2768,8 +2763,7 @@ def sync_model_deployed(run_ids: list, id_mapping: dict):
             "endpoint": record.get("endpoint", ""),
             "model_format": record.get("model_format", ""),
             "size": record.get("size", ""),
-            "description": record.get("description")
-            or record.get("deployment_log", ""),
+            "description": record.get("description") or record.get("deployment_log", ""),
             "user_id": record.get("user_id", ""),
             "current_stage": record.get("current_stage", ""),
             "run_id": record.get("run_id") or run_id,
@@ -2970,7 +2964,9 @@ def sync_dataset_manifest(run_ids: list, id_mapping: dict):
     root_runs = set()
     if isinstance(runs_df, pd.DataFrame) and not runs_df.empty:
         id_col = (
-            "run_uuid" if "run_uuid" in runs_df.columns else ("run_id" if "run_id" in runs_df.columns else None)
+            "run_uuid"
+            if "run_uuid" in runs_df.columns
+            else ("run_id" if "run_id" in runs_df.columns else None)
         )
         if id_col:
             for _, r in runs_df.iterrows():
@@ -3060,7 +3056,8 @@ def sync_dataset_manifest(run_ids: list, id_mapping: dict):
             if computed != parent_did:
                 try:
                     print(
-                        f"[sync_dataset_manifest] overriding data_id for run {run_id}: computed={computed} -> parent={parent_did} (parent run {parent_id})"
+                        f"[sync_dataset_manifest] overriding data_id for run {run_id}: "
+                        f"computed={computed} -> parent={parent_did} (parent run {parent_id})"
                     )
                 except Exception:
                     pass
@@ -3085,7 +3082,8 @@ def sync_dataset_manifest(run_ids: list, id_mapping: dict):
             if computed != parent_did:
                 try:
                     print(
-                        f"[sync_dataset_manifest] overriding (meta) data_id for run {run_id}: computed={computed} -> parent={parent_did} (parent run {parent_id})"
+                        f"[sync_dataset_manifest] overriding (meta) data_id for run {run_id}: "
+                        f"computed={computed} -> parent={parent_did} (parent run {parent_id})"
                     )
                 except Exception:
                     pass
@@ -3100,8 +3098,8 @@ def sync_dataset_manifest(run_ids: list, id_mapping: dict):
 
 
 def sync_id_mapping(run_ids: list):
-    from sqlalchemy import MetaData, Table, select
     from app.target_connector import target_engine
+    from sqlalchemy import MetaData, Table, select
 
     metadata = MetaData()
     table = Table("id_mapping", metadata, autoload_with=target_engine)

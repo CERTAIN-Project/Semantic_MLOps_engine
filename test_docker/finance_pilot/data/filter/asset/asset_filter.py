@@ -5,7 +5,6 @@
 #  http://mozilla.org/MPL/2.0/.
 
 from abc import ABC, abstractmethod
-from typing import Set, Optional
 
 from pandas import DataFrame
 
@@ -16,8 +15,14 @@ class AssetFilter(ABC):
     """
 
     @abstractmethod
-    def filter(self, time_series: DataFrame, train: DataFrame, valid: Optional[DataFrame], test: DataFrame,
-            split_date) -> Set:
+    def filter(
+        self,
+        time_series: DataFrame,
+        train: DataFrame,
+        valid: DataFrame | None,
+        test: DataFrame,
+        split_date,
+    ) -> set:
         """
         Selects the assets to consider.
         :param time_series: the time series in the dataset.
@@ -27,4 +32,3 @@ class AssetFilter(ABC):
         :return: the set of assets to consider.
         """
         pass
-

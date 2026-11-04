@@ -7,15 +7,14 @@ log_ai_actors           → saves to ``ai_actors/`` artifact folder → ``ai_act
 log_labeling_procedures → saves to ``labeling_procedures/`` → ``labeling_procedures`` table
 """
 
-from certain_library.tracking.tracker import tracker
-
-import os
-import json
-import socket
 import getpass
+import json
+import os
+import socket
 import tempfile
 import uuid
-from typing import List, Optional
+
+from certain_library.tracking.tracker import tracker
 
 
 def _detect_runner() -> dict:
@@ -55,15 +54,15 @@ def log_ai_actors(
     auditor: str,
     organization: str,
     use_manual_info: bool = False,
-    ai_provider_name: Optional[str] = None,
-    ai_provider_contact: Optional[str] = None,
-    ai_provider_role: Optional[str] = None,
-    ai_deployer_name: Optional[str] = None,
-    ai_deployer_contact: Optional[str] = None,
-    ai_deployer_role: Optional[str] = None,
-    ai_providers: Optional[List[dict]] = None,
-    ai_deployers: Optional[List[dict]] = None,
-    ai_actors_id: Optional[str] = None,
+    ai_provider_name: str | None = None,
+    ai_provider_contact: str | None = None,
+    ai_provider_role: str | None = None,
+    ai_deployer_name: str | None = None,
+    ai_deployer_contact: str | None = None,
+    ai_deployer_role: str | None = None,
+    ai_providers: list[dict] | None = None,
+    ai_deployers: list[dict] | None = None,
+    ai_actors_id: str | None = None,
 ) -> None:
     """
     Log the AI actors (responsible parties) for the current MLflow experiment.
@@ -220,8 +219,8 @@ def log_ai_actors(
 
 
 def log_labeling_procedures(
-    quality_assurance_methods: List[str],
-    procedures: List[dict],
+    quality_assurance_methods: list[str],
+    procedures: list[dict],
 ) -> None:
     """
     Log the data-labeling / annotation procedures for the current MLflow
@@ -295,9 +294,7 @@ def log_labeling_procedures(
     for i, p in enumerate(procedures):
         for required in ("description", "annotation_tool"):
             if not isinstance(p, dict) or required not in p:
-                raise ValueError(
-                    f"procedures[{i}] must be a dict with a '{required}' key"
-                )
+                raise ValueError(f"procedures[{i}] must be a dict with a '{required}' key")
         unknown = set(p.keys()) - _PROCEDURE_ALLOWED_KEYS
         if unknown:
             raise ValueError(
@@ -316,7 +313,7 @@ def log_labeling_procedures(
                 "annotators": p.get("annotators") or [],
                 "link": p.get("link") or "",
             }
-            fname = f"labeling.json"
+            fname = "labeling.json"
             path = os.path.join(tmp_dir, fname)
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(record, f, indent=2)

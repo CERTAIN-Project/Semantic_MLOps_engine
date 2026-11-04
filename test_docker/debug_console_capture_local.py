@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-import time
-import sys
 import logging
+import sys
+import time
 
 from certain_library.tracking.tracker import tracker
 

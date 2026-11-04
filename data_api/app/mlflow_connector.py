@@ -9,22 +9,18 @@ Environment variables required:
 - MLFLOW_ARTIFACTS: URI for the MLflow artifacts storage.
 """
 
-import os
 import json
-import pandas as pd
-from typing import Optional
-from dotenv import load_dotenv
-from sqlalchemy import create_engine
-from urllib.parse import urlparse
-from fastapi import HTTPException
-import yaml
 import logging
+import os
+from urllib.parse import urlparse
 
-from mlflow.store.tracking.dbmodels import models as tracking_models
+import pandas as pd
+import yaml
 
 # from mlflow.store.model_registry.dbmodels import models as model_registry_models
-
 from data_api.app import models as certain_db_models
+from dotenv import load_dotenv
+from sqlalchemy import create_engine
 
 load_dotenv()
 MLFLOW_DB = os.getenv("MLFLOW_DB")
@@ -62,7 +58,7 @@ def get_experiments_data():
     for cand in candidates:
         try:
             if os.path.exists(cand):
-                with open(cand, "r", encoding="utf-8") as fh:
+                with open(cand, encoding="utf-8") as fh:
                     data = json.load(fh)
                 # Expecting a list of experiment dicts
                 if isinstance(data, dict):
@@ -98,12 +94,10 @@ def get_experiments_data():
     # Prefer reading certain/ai_actors/ai_actors.json when present. This file
     # can contain richer experiment / actor metadata produced by the certain
     # artifact exporter. Use it to populate non-nullable experiment fields.
-    ai_actors_path = os.path.join(
-        artifacts_root, "certain", "ai_actors", "ai_actors.json"
-    )
+    ai_actors_path = os.path.join(artifacts_root, "certain", "ai_actors", "ai_actors.json")
     try:
         if os.path.exists(ai_actors_path):
-            with open(ai_actors_path, "r", encoding="utf-8") as fh:
+            with open(ai_actors_path, encoding="utf-8") as fh:
                 actors_blob = json.load(fh)
 
             # actors_blob is expected to be a dict mapping experiment_id -> info
@@ -202,15 +196,17 @@ def get_experiment_tags_data():
                 if not os.path.exists(tag_file):
                     continue
                 try:
-                    with open(tag_file, "r", encoding="utf-8") as fh:
+                    with open(tag_file, encoding="utf-8") as fh:
                         rec = json.load(fh)
                     exp_id_from_file = str(rec.get("experiment_id") or exp_id)
                     for key, value in (rec.get("experiment_tags") or {}).items():
-                        rows.append({
-                            "experiment_id": exp_id_from_file,
-                            "key": str(key),
-                            "value": str(value),
-                        })
+                        rows.append(
+                            {
+                                "experiment_id": exp_id_from_file,
+                                "key": str(key),
+                                "value": str(value),
+                            }
+                        )
                 except Exception:
                     continue
 
@@ -254,7 +250,7 @@ def get_datasets_data():
                 for candidate in (data_file, manifest_file):
                     if os.path.exists(candidate):
                         try:
-                            with open(candidate, "r", encoding="utf-8") as fh:
+                            with open(candidate, encoding="utf-8") as fh:
                                 record = json.load(fh)
                             break
                         except Exception:
@@ -316,7 +312,7 @@ def get_runs_data():
                         parent_candidate = None
                         if os.path.exists(tags_file):
                             try:
-                                with open(tags_file, "r", encoding="utf-8") as tf:
+                                with open(tags_file, encoding="utf-8") as tf:
                                     rec = json.load(tf)
                                 run_tags = rec.get("run_tags") or {}
                                 # look for possible parent keys
@@ -330,7 +326,7 @@ def get_runs_data():
 
                         if not parent_candidate and os.path.exists(events_file):
                             try:
-                                with open(events_file, "r", encoding="utf-8") as ef:
+                                with open(events_file, encoding="utf-8") as ef:
                                     for line in ef:
                                         try:
                                             ev = json.loads(line)
@@ -351,7 +347,7 @@ def get_runs_data():
                                 pass
                         continue
                     try:
-                        with open(meta_file, "r", encoding="utf-8") as mf:
+                        with open(meta_file, encoding="utf-8") as mf:
                             meta = json.load(mf)
                         # certain_library.tracking.tracker writes the parent
                         # reference as "parent_run_id" in run_metadata.json;
@@ -400,7 +396,7 @@ def get_runs_data():
                 # Prefer run_metadata.json when available
                 if os.path.exists(metadata_path):
                     try:
-                        with open(metadata_path, "r", encoding="utf-8") as fh:
+                        with open(metadata_path, encoding="utf-8") as fh:
                             data = json.load(fh)
                         runs.append(data)
                         continue
@@ -422,7 +418,7 @@ def get_runs_data():
                 # Try run_tags.json (written by save_tags_as_artifact)
                 if os.path.exists(tags_file):
                     try:
-                        with open(tags_file, "r", encoding="utf-8") as fh:
+                        with open(tags_file, encoding="utf-8") as fh:
                             rec = json.load(fh)
                         run_tags = rec.get("run_tags") or {}
                         if isinstance(run_tags, dict):
@@ -437,17 +433,16 @@ def get_runs_data():
                                 or run_tags.get("user_id")
                                 or fallback.get("user_id")
                             )
-                            fallback["source_version"] = (
-                                run_tags.get("source_version")
-                                or fallback.get("source_version")
-                            )
+                            fallback["source_version"] = run_tags.get(
+                                "source_version"
+                            ) or fallback.get("source_version")
                     except Exception:
                         pass
 
                 # Parse events.jsonl for system tags and parentRunId if present
                 if os.path.exists(events_file):
                     try:
-                        with open(events_file, "r", encoding="utf-8") as fh:
+                        with open(events_file, encoding="utf-8") as fh:
                             for line in fh:
                                 try:
                                     ev = json.loads(line)
@@ -460,16 +455,24 @@ def get_runs_data():
                                     if key == "mlflow.parentRunId" and val:
                                         fallback["parent_id"] = str(val)
                                     if key == "mlflow.source.name" and val:
-                                        fallback["source_name"] = fallback.get("source_name") or str(val)
+                                        fallback["source_name"] = fallback.get(
+                                            "source_name"
+                                        ) or str(val)
                                     if key == "mlflow.source.type" and val:
-                                        fallback["source_type"] = fallback.get("source_type") or str(val)
+                                        fallback["source_type"] = fallback.get(
+                                            "source_type"
+                                        ) or str(val)
                                 # some telemetry writes source info as top-level events
                                 if ev.get("event_type") == "system":
                                     # try to pick up source_version or user info
                                     if ev.get("key") == "source_version" and ev.get("value"):
-                                        fallback["source_version"] = fallback.get("source_version") or str(ev.get("value"))
+                                        fallback["source_version"] = fallback.get(
+                                            "source_version"
+                                        ) or str(ev.get("value"))
                                     if ev.get("key") == "user_id" and ev.get("value"):
-                                        fallback["user_id"] = fallback.get("user_id") or str(ev.get("value"))
+                                        fallback["user_id"] = fallback.get("user_id") or str(
+                                            ev.get("value")
+                                        )
                     except Exception:
                         pass
 
@@ -514,7 +517,7 @@ def get_runs_data():
             df[col] = df[col].apply(lambda x: min(max(int(x), -(2**63)), 2**63 - 1))
 
         return df
-    
+
     return pd.DataFrame()
 
 
@@ -543,16 +546,14 @@ def get_metrics_data():
             for run_id in os.listdir(exp_path):
                 if run_id in unwanted:
                     continue
-                metadata_dir = os.path.join(
-                    exp_path, run_id, "artifacts", "certain", "metadata"
-                )
+                metadata_dir = os.path.join(exp_path, run_id, "artifacts", "certain", "metadata")
                 metrics_file = os.path.join(metadata_dir, "run_metrics.json")
                 events_file = os.path.join(metadata_dir, "events.jsonl")
 
                 # Prefer dedicated run_metrics.json
                 if os.path.exists(metrics_file):
                     try:
-                        with open(metrics_file, "r", encoding="utf-8") as fh:
+                        with open(metrics_file, encoding="utf-8") as fh:
                             rec = json.load(fh)
                         run_metrics = rec.get("run_metrics") or {}
                         if isinstance(run_metrics, dict):
@@ -562,14 +563,16 @@ def get_metrics_data():
                                 for entry in history:
                                     if not isinstance(entry, dict):
                                         continue
-                                    metrics.append({
-                                        "run_uuid": str(rec.get("run_id") or run_id),
-                                        "key": str(key),
-                                        "value": entry.get("value", 0),
-                                        "step": int(entry.get("step") or 0),
-                                        "timestamp": int(entry.get("timestamp") or 0),
-                                        "is_nan": False,
-                                    })
+                                    metrics.append(
+                                        {
+                                            "run_uuid": str(rec.get("run_id") or run_id),
+                                            "key": str(key),
+                                            "value": entry.get("value", 0),
+                                            "step": int(entry.get("step") or 0),
+                                            "timestamp": int(entry.get("timestamp") or 0),
+                                            "is_nan": False,
+                                        }
+                                    )
                         continue  # don't also read events.jsonl for this run
                     except Exception:
                         pass  # fall through to events.jsonl
@@ -577,21 +580,23 @@ def get_metrics_data():
                 # Fallback: parse events.jsonl for metric events
                 if os.path.exists(events_file):
                     try:
-                        with open(events_file, "r", encoding="utf-8") as fh:
+                        with open(events_file, encoding="utf-8") as fh:
                             for line in fh:
                                 try:
                                     ev = json.loads(line)
                                 except Exception:
                                     continue
                                 if ev.get("event_type") == "metric":
-                                    metrics.append({
-                                        "run_uuid": str(ev.get("run_id") or run_id),
-                                        "key": ev.get("key", ""),
-                                        "value": ev.get("value", 0),
-                                        "step": int(ev.get("step") or 0),
-                                        "timestamp": int(ev.get("timestamp") or 0),
-                                        "is_nan": ev.get("is_NaN", False),
-                                    })
+                                    metrics.append(
+                                        {
+                                            "run_uuid": str(ev.get("run_id") or run_id),
+                                            "key": ev.get("key", ""),
+                                            "value": ev.get("value", 0),
+                                            "step": int(ev.get("step") or 0),
+                                            "timestamp": int(ev.get("timestamp") or 0),
+                                            "is_nan": ev.get("is_NaN", False),
+                                        }
+                                    )
                     except Exception:
                         continue
 
@@ -640,7 +645,7 @@ def get_latest_metrics_data():
                 if not os.path.exists(metrics_file):
                     continue
                 try:
-                    with open(metrics_file, "r", encoding="utf-8") as fh:
+                    with open(metrics_file, encoding="utf-8") as fh:
                         rec = json.load(fh)
                 except Exception:
                     continue
@@ -657,14 +662,16 @@ def get_latest_metrics_data():
                         history,
                         key=lambda e: (int(e.get("step") or 0), int(e.get("timestamp") or 0)),
                     )
-                    rows.append({
-                        "run_uuid": str(rec.get("run_id") or run_id),
-                        "key": str(key),
-                        "value": latest.get("value", 0),
-                        "step": int(latest.get("step") or 0),
-                        "timestamp": int(latest.get("timestamp") or 0),
-                        "is_nan": False,
-                    })
+                    rows.append(
+                        {
+                            "run_uuid": str(rec.get("run_id") or run_id),
+                            "key": str(key),
+                            "value": latest.get("value", 0),
+                            "step": int(latest.get("step") or 0),
+                            "timestamp": int(latest.get("timestamp") or 0),
+                            "is_nan": False,
+                        }
+                    )
 
     if rows:
         df = pd.DataFrame(rows)
@@ -697,25 +704,25 @@ def get_params_data():
             for run_id in os.listdir(exp_path):
                 if run_id in unwanted:
                     continue
-                metadata_dir = os.path.join(
-                    exp_path, run_id, "artifacts", "certain", "metadata"
-                )
+                metadata_dir = os.path.join(exp_path, run_id, "artifacts", "certain", "metadata")
                 params_file = os.path.join(metadata_dir, "run_params.json")
                 events_file = os.path.join(metadata_dir, "events.jsonl")
 
                 # Prefer dedicated run_params.json
                 if os.path.exists(params_file):
                     try:
-                        with open(params_file, "r", encoding="utf-8") as fh:
+                        with open(params_file, encoding="utf-8") as fh:
                             rec = json.load(fh)
                         run_params = rec.get("run_params") or {}
                         if isinstance(run_params, dict):
                             for key, value in run_params.items():
-                                params.append({
-                                    "run_uuid": str(rec.get("run_id") or run_id),
-                                    "key": str(key),
-                                    "value": str(value),
-                                })
+                                params.append(
+                                    {
+                                        "run_uuid": str(rec.get("run_id") or run_id),
+                                        "key": str(key),
+                                        "value": str(value),
+                                    }
+                                )
                         continue  # don't also read events.jsonl for this run
                     except Exception:
                         pass  # fall through to events.jsonl
@@ -723,18 +730,20 @@ def get_params_data():
                 # Fallback: parse events.jsonl for param events
                 if os.path.exists(events_file):
                     try:
-                        with open(events_file, "r", encoding="utf-8") as fh:
+                        with open(events_file, encoding="utf-8") as fh:
                             for line in fh:
                                 try:
                                     ev = json.loads(line)
                                 except Exception:
                                     continue
                                 if ev.get("event_type") == "param":
-                                    params.append({
-                                        "run_uuid": str(ev.get("run_id") or run_id),
-                                        "key": ev.get("key", ""),
-                                        "value": str(ev.get("value", "")),
-                                    })
+                                    params.append(
+                                        {
+                                            "run_uuid": str(ev.get("run_id") or run_id),
+                                            "key": ev.get("key", ""),
+                                            "value": str(ev.get("value", "")),
+                                        }
+                                    )
                     except Exception:
                         continue
 
@@ -774,9 +783,7 @@ def get_tags_data():
             for run_id in os.listdir(exp_path):
                 if run_id in unwanted:
                     continue
-                metadata_dir = os.path.join(
-                    exp_path, run_id, "artifacts", "certain", "metadata"
-                )
+                metadata_dir = os.path.join(exp_path, run_id, "artifacts", "certain", "metadata")
                 tags_file = os.path.join(metadata_dir, "run_tags.json")
                 events_file = os.path.join(metadata_dir, "events.jsonl")
 
@@ -786,16 +793,18 @@ def get_tags_data():
                 # Prefer dedicated run_tags.json
                 if os.path.exists(tags_file):
                     try:
-                        with open(tags_file, "r", encoding="utf-8") as fh:
+                        with open(tags_file, encoding="utf-8") as fh:
                             rec = json.load(fh)
                         run_tags = rec.get("run_tags") or {}
                         if isinstance(run_tags, dict):
                             for key, value in run_tags.items():
-                                tags.append({
-                                    "run_uuid": str(rec.get("run_id") or run_id_str),
-                                    "key": str(key),
-                                    "value": str(value),
-                                })
+                                tags.append(
+                                    {
+                                        "run_uuid": str(rec.get("run_id") or run_id_str),
+                                        "key": str(key),
+                                        "value": str(value),
+                                    }
+                                )
                         found_via_file = True
                     except Exception:
                         pass
@@ -804,7 +813,7 @@ def get_tags_data():
                 # (these are written by MLflow itself, not by save_tags_as_artifact)
                 if os.path.exists(events_file):
                     try:
-                        with open(events_file, "r", encoding="utf-8") as fh:
+                        with open(events_file, encoding="utf-8") as fh:
                             for line in fh:
                                 try:
                                     ev = json.loads(line)
@@ -817,11 +826,13 @@ def get_tags_data():
                                 # mlflow system tags (parentRunId etc.) from events
                                 if found_via_file and not str(key).startswith("mlflow."):
                                     continue
-                                tags.append({
-                                    "run_uuid": str(ev.get("run_id") or run_id_str),
-                                    "key": str(key),
-                                    "value": str(ev.get("value", "")),
-                                })
+                                tags.append(
+                                    {
+                                        "run_uuid": str(ev.get("run_id") or run_id_str),
+                                        "key": str(key),
+                                        "value": str(ev.get("value", "")),
+                                    }
+                                )
                     except Exception:
                         continue
 
@@ -848,7 +859,8 @@ def get_data_signature():
     """
     data = pd.read_sql(certain_db_models.DataSignatures.__tablename__, target_engine)
 
-    # create a dictionary with key the data_id and value a dict of values the index of each and value the name
+    # create a dictionary with key the data_id and value a dict of values the index of each
+    # and value the name
     data_signatures = {}
     for _, row in data.iterrows():
         data_id = row["data_id"]
@@ -871,7 +883,8 @@ def get_artifacts_data(folder_name: str = "whylogs", file_extension: str = ".csv
 
     Parameters:
         folder_name (str): Subfolder under run artifacts to search (default "whylogs").
-        file_extension (str): File extension filter (e.g. ".csv", ".json", ".pkl", ".txt", "MLmodel").
+        file_extension (str): File extension filter
+            (e.g. ".csv", ".json", ".pkl", ".txt", "MLmodel").
 
     Returns:
         pandas.DataFrame or dict: Concatenated DataFrame of found artifacts (for tabular types)
@@ -932,7 +945,7 @@ def get_artifacts_data(folder_name: str = "whylogs", file_extension: str = ".csv
                         )
                         if os.path.exists(meta_file):
                             try:
-                                with open(meta_file, "r", encoding="utf-8") as mf:
+                                with open(meta_file, encoding="utf-8") as mf:
                                     meta = json.load(mf)
                                 parent_id = (
                                     meta.get("parent_run_id")
@@ -950,13 +963,16 @@ def get_artifacts_data(folder_name: str = "whylogs", file_extension: str = ".csv
                             )
                             if os.path.exists(events_meta):
                                 try:
-                                    with open(events_meta, "r", encoding="utf-8") as ef:
+                                    with open(events_meta, encoding="utf-8") as ef:
                                         for line in ef:
                                             try:
                                                 ev = json.loads(line)
                                             except Exception:
                                                 continue
-                                            if ev.get("event_type") == "tag" and ev.get("key") == "mlflow.parentRunId":
+                                            if (
+                                                ev.get("event_type") == "tag"
+                                                and ev.get("key") == "mlflow.parentRunId"
+                                            ):
                                                 parent_id = ev.get("value")
                                                 break
                                 except Exception:
@@ -977,7 +993,11 @@ def get_artifacts_data(folder_name: str = "whylogs", file_extension: str = ".csv
                                 # Search across experiments for the parent run folder
                                 for cand_exp in os.listdir(artifacts_path):
                                     cand_path = os.path.join(
-                                        artifacts_path, cand_exp, str(parent_id), "artifacts", norm_folder
+                                        artifacts_path,
+                                        cand_exp,
+                                        str(parent_id),
+                                        "artifacts",
+                                        norm_folder,
                                     )
                                     if os.path.exists(cand_path):
                                         folder_path = cand_path
@@ -1034,26 +1054,30 @@ def get_artifacts_data(folder_name: str = "whylogs", file_extension: str = ".csv
                                 data["stage"] = "json"
                             data_list.append(data)
                         elif ".pkl" in file_extension:
-                            # Read the pickle file and convert it to JSON format then load as DataFrame
+                            # Read the pickle file and convert it to JSON format
+                            # then load as DataFrame
                             data = pd.read_pickle(file_path)
                             # Check if the loaded object is a DataFrame
                             if isinstance(data, pd.DataFrame):
                                 json_str = data.to_json(orient="records")
                                 # Continue processing with the DataFrame
                             else:
-                                # Assume it's a model with a get_params() method (e.g., RandomForestRegressor)
+                                # Assume it's a model with a get_params() method
+                                # (e.g., RandomForestRegressor)
                                 if hasattr(data, "get_params"):
                                     model_params = data.get_params()
                                     json_str = json.dumps(model_params)
                                 else:
                                     raise TypeError(
-                                        "The loaded object cannot be serialized to JSON using this approach."
+                                        "The loaded object cannot be serialized to JSON "
+                                        "using this approach."
                                     )
 
                             data_dict[run_id] = json_str
                         elif ".txt" in file_extension:
-                            # Read the text file and convert it to JSON format then load as DataFrame
-                            with open(file_path, "r", encoding="utf-8") as file:
+                            # Read the text file and convert it to JSON format
+                            # then load as DataFrame
+                            with open(file_path, encoding="utf-8") as file:
                                 content = file.read()
 
                             # Convert content to a list of timestamps
@@ -1067,7 +1091,7 @@ def get_artifacts_data(folder_name: str = "whylogs", file_extension: str = ".csv
                         elif "MLmodel" in file_extension:
                             # read txt file and convert it to JSON format then load as DataFrame
                             # Read MLmodel file from the artifact path
-                            with open(file_path, "r", encoding="utf-8") as mlmodel_file:
+                            with open(file_path, encoding="utf-8") as mlmodel_file:
                                 mlmodel_content = mlmodel_file.read()
 
                             # Convert MLmodel content to a structured dictionary using yaml parser
@@ -1078,13 +1102,13 @@ def get_artifacts_data(folder_name: str = "whylogs", file_extension: str = ".csv
                                 # Flatten the nested dictionary structure for DataFrame conversion
                                 flat_mlmodel_data = {}
 
-                                def flatten_dict(nested_dict, prefix=""):
+                                def flatten_dict(nested_dict, prefix="", out=flat_mlmodel_data):
                                     for key, value in nested_dict.items():
                                         new_key = f"{prefix}.{key}" if prefix else key
                                         if isinstance(value, dict):
-                                            flatten_dict(value, new_key)
+                                            flatten_dict(value, new_key, out)
                                         else:
-                                            flat_mlmodel_data[new_key] = value
+                                            out[new_key] = value
 
                                 flatten_dict(mlmodel_data)
 
@@ -1095,9 +1119,7 @@ def get_artifacts_data(folder_name: str = "whylogs", file_extension: str = ".csv
                                 print(f"Failed to parse MLmodel with YAML: {e}")
 
                                 # Create a simple representation of the entire content
-                                mlmodel_df = pd.DataFrame(
-                                    [{"mlmodel_content": mlmodel_content}]
-                                )
+                                mlmodel_df = pd.DataFrame([{"mlmodel_content": mlmodel_content}])
                                 mlmodel_df["run_id"] = effective_run_id
                                 mlmodel_df["experiment_id"] = effective_experiment_id
                             data_list.append(mlmodel_df)
@@ -1110,7 +1132,7 @@ def get_artifacts_data(folder_name: str = "whylogs", file_extension: str = ".csv
     return pd.DataFrame()
 
 
-def get_json_artifacts_data(folder_name: str, file_name: Optional[str] = None) -> list:
+def get_json_artifacts_data(folder_name: str, file_name: str | None = None) -> list:
     """Collect JSON artifact records from MLflow local artifacts store.
 
     Walks the artifacts directory tree looking for ``folder_name`` subdirectories
@@ -1171,14 +1193,16 @@ def get_json_artifacts_data(folder_name: str, file_name: Optional[str] = None) -
                             try:
                                 local = client.download_artifacts(run_id, art.path, dst_path=td)
                                 if os.path.exists(local):
-                                    with open(local, "r", encoding="utf-8") as fh:
+                                    with open(local, encoding="utf-8") as fh:
                                         record = json.load(fh)
                                     if isinstance(record, dict):
                                         results.append((run_id, str(exp.experiment_id), record))
                                     elif isinstance(record, list):
                                         for item in record:
                                             if isinstance(item, dict):
-                                                results.append((run_id, str(exp.experiment_id), item))
+                                                results.append(
+                                                    (run_id, str(exp.experiment_id), item)
+                                                )
                             except Exception:
                                 continue
         except Exception:
@@ -1194,9 +1218,7 @@ def get_json_artifacts_data(folder_name: str, file_name: Optional[str] = None) -
         for run_id in os.listdir(experiment_path):
             if run_id in unwanted:
                 continue
-            folder_path = os.path.join(
-                experiment_path, run_id, "artifacts", folder_name
-            )
+            folder_path = os.path.join(experiment_path, run_id, "artifacts", folder_name)
             if not os.path.isdir(folder_path):
                 continue
             for current_file_name in os.listdir(folder_path):
@@ -1206,7 +1228,7 @@ def get_json_artifacts_data(folder_name: str, file_name: Optional[str] = None) -
                     continue
                 file_path = os.path.join(folder_path, current_file_name)
                 try:
-                    with open(file_path, "r", encoding="utf-8") as fh:
+                    with open(file_path, encoding="utf-8") as fh:
                         record = json.load(fh)
                     if isinstance(record, dict):
                         results.append((run_id, experiment_id, record))
@@ -1215,9 +1237,7 @@ def get_json_artifacts_data(folder_name: str, file_name: Optional[str] = None) -
                             if isinstance(item, dict):
                                 results.append((run_id, experiment_id, item))
                 except Exception as exc:
-                    print(
-                        f"[get_json_artifacts_data] Could not read {file_path}: {exc}"
-                    )
+                    print(f"[get_json_artifacts_data] Could not read {file_path}: {exc}")
     return results
 
 
@@ -1246,18 +1266,16 @@ def get_dataset_manifest_for_run(run_id: str):
         )
         if os.path.exists(manifest_path):
             try:
-                with open(manifest_path, "r", encoding="utf-8") as fh:
+                with open(manifest_path, encoding="utf-8") as fh:
                     return json.load(fh)
             except Exception:
                 return None
 
         # Also check the metadata location for a lightweight data.json
-        meta_path = os.path.join(
-            run_path, "artifacts", "certain", "metadata", "data.json"
-        )
+        meta_path = os.path.join(run_path, "artifacts", "certain", "metadata", "data.json")
         if os.path.exists(meta_path):
             try:
-                with open(meta_path, "r", encoding="utf-8") as fh:
+                with open(meta_path, encoding="utf-8") as fh:
                     return json.load(fh)
             except Exception:
                 return None
@@ -1277,7 +1295,7 @@ def get_dataset_manifest_for_run(run_id: str):
                 rel_path = "certain/dataset/data_manifest.json"
                 local = client.download_artifacts(run_id, rel_path, dst_path=td)
                 if os.path.exists(local):
-                    with open(local, "r", encoding="utf-8") as fh:
+                    with open(local, encoding="utf-8") as fh:
                         return json.load(fh)
             except Exception:
                 # Try metadata path as a fallback, then give up
@@ -1285,7 +1303,7 @@ def get_dataset_manifest_for_run(run_id: str):
                     rel_meta = "certain/metadata/data.json"
                     local2 = client.download_artifacts(run_id, rel_meta, dst_path=td)
                     if os.path.exists(local2):
-                        with open(local2, "r", encoding="utf-8") as fh:
+                        with open(local2, encoding="utf-8") as fh:
                             return json.load(fh)
                 except Exception:
                     return None
@@ -1316,12 +1334,10 @@ def get_python_env_for_run(run_id: str):
         run_path = os.path.join(exp_path, run_id)
         if not os.path.isdir(run_path):
             continue
-        python_env_path = os.path.join(
-            run_path, "artifacts", "certain", "model", "python_env.yaml"
-        )
+        python_env_path = os.path.join(run_path, "artifacts", "certain", "model", "python_env.yaml")
         if os.path.exists(python_env_path):
             try:
-                with open(python_env_path, "r", encoding="utf-8") as fh:
+                with open(python_env_path, encoding="utf-8") as fh:
                     return yaml.safe_load(fh)
             except Exception:
                 return None
@@ -1338,10 +1354,9 @@ def get_python_env_for_run(run_id: str):
                 rel_path = "certain/model/python_env.yaml"
                 local = client.download_artifacts(run_id, rel_path, dst_path=td)
                 if os.path.exists(local):
-                    with open(local, "r", encoding="utf-8") as fh:
+                    with open(local, encoding="utf-8") as fh:
                         return yaml.safe_load(fh)
             except Exception:
                 return None
     except Exception:
         return None
-
