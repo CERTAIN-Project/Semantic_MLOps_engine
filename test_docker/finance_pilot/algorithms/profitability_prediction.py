@@ -318,9 +318,7 @@ class ProfitabilityPrediction(Algorithm):
         full = kpi_indicators.copy()
         # TRAIN rows: only timestamps strictly before the training cutoff
         # (train_date - prediction horizon)
-        kpi_indicators = full[
-            full[DEFAULT_TIMESTAMP_COL] < (train_date - delta)
-        ]
+        kpi_indicators = full[full[DEFAULT_TIMESTAMP_COL] < (train_date - delta)]
         kpi_indicators_test = full[
             full[DEFAULT_TIMESTAMP_COL] >= (train_date - delta)
         ]  # TEST/EVAL rows: timestamps on/after the cutoff

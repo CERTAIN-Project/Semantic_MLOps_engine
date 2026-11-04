@@ -71,7 +71,7 @@ class TestLogCheckpoint:
             log_checkpoint("epoch_5", "/tmp/model_epoch5.pt")
             mock_artifact.assert_called_once()
             _, kwargs = mock_artifact.call_args
-            assert kwargs.get("artifact_path") == "checkpoints"
+            assert kwargs.get("artifact_path") == "certain/checkpoints"
 
     def test_csv_contains_expected_columns(self, tmp_path):
         persistent = str(tmp_path / "ckpt.csv")
@@ -169,7 +169,7 @@ class TestLogWeightDistribution:
         with patch("mlflow.log_artifact") as mock_artifact:
             log_weight_distribution(model)
             _, kwargs = mock_artifact.call_args
-            assert kwargs.get("artifact_path") == "weight_distribution"
+            assert kwargs.get("artifact_path") == "certain/weight_distribution"
 
     def test_stage_written_to_csv(self, tmp_path):
         model = object()
@@ -194,15 +194,20 @@ class TestLogExamples:
     def test_basic_logging(self):
         with patch("mlflow.log_artifact") as mock_artifact:
             log_examples([1, 2, 3], [0.9, 1.8, 3.1], [1, 2, 3])
-            mock_artifact.assert_called_once()
-            _, kwargs = mock_artifact.call_args
-            assert kwargs.get("artifact_path") == "examples"
+            # One CSV plus one per-step JSON artifact, both under certain/examples
+            assert mock_artifact.call_count == 2
+            logged = [call.args[0] for call in mock_artifact.call_args_list]
+            assert logged[0].endswith(".csv")
+            assert logged[1].endswith(".json")
+            for call in mock_artifact.call_args_list:
+                assert call.kwargs.get("artifact_path") == "certain/examples"
 
     def test_csv_has_correct_rows(self, tmp_path):
         persistent = str(tmp_path / "examples.csv")
 
         def fake_log(path, artifact_path=None):
-            shutil.copy(path, persistent)
+            if path.endswith(".csv"):
+                shutil.copy(path, persistent)
 
         with patch("mlflow.log_artifact", side_effect=fake_log):
             log_examples(["a", "b"], ["x", "y"], ["x", "y"], step=5, stage="eval")
@@ -225,7 +230,8 @@ class TestLogExamples:
         persistent = str(tmp_path / "examples_str.csv")
 
         def fake_log(path, artifact_path=None):
-            shutil.copy(path, persistent)
+            if path.endswith(".csv"):
+                shutil.copy(path, persistent)
 
         with patch("mlflow.log_artifact", side_effect=fake_log):
             log_examples([[1, 2, 3]], [0.5], [1])
@@ -245,7 +251,7 @@ class TestLogRunLogs:
             log_run_logs(["line 1", "line 2"])
             mock_artifact.assert_called_once()
             _, kwargs = mock_artifact.call_args
-            assert kwargs.get("artifact_path") == "run_logs"
+            assert kwargs.get("artifact_path") == "certain/run_logs"
 
     def test_csv_columns_present(self, tmp_path):
         persistent = str(tmp_path / "logs.csv")
@@ -296,7 +302,9 @@ class TestMapRunCode:
 
     def test_returns_correct_fields(self):
         tags_df = self._make_tags_df(RUN_ID)
-        result = map_run_code(tags_df, RUN_ID)
+        # Git info is read from the certain/metadata git record, not from tags
+        git_record = {"git.commit": "abc123", "mlflow.source.name": "train.py"}
+        result = map_run_code(tags_df, RUN_ID, artifact_git_record=git_record)
         assert result["run_id"] == RUN_ID
         assert result["git_commit_hash"] == "abc123"
         assert result["name"] == "train.py"
@@ -444,4 +452,5 @@ class TestMapRunLogs:
         result = map_run_logs(row, RUN_ID)
         assert result["run_id"] == RUN_ID
         assert result["log_type"] == "stdout"
-        assert result["log_message"] == ""
+        # Without a message column the whole row is stringified as a fallback
+        assert result["log_message"] == "{}"

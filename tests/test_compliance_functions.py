@@ -141,7 +141,7 @@ class TestLogAiActors:
         with patch("mlflow.log_artifact") as mock:
             log_ai_actors("AuditFirm", "OrgX", self._providers, self._deployers)
             _, kwargs = mock.call_args
-            assert kwargs.get("artifact_path") == "ai_actors"
+            assert kwargs.get("artifact_path") == "certain/ai_actors"
 
     def test_json_contains_expected_fields(self):
         data = _capture_json(log_ai_actors, "AuditFirm", "OrgX", self._providers, self._deployers)
@@ -207,7 +207,7 @@ class TestLogLabelingProcedures:
         with patch("mlflow.log_artifact") as mock:
             log_labeling_procedures(self._qa, self._procedures)
             _, kwargs = mock.call_args
-            assert kwargs.get("artifact_path") == "labeling_procedures"
+            assert kwargs.get("artifact_path") == "certain/labeling_procedures"
 
     def test_one_file_per_procedure(self):
         with patch("mlflow.log_artifact") as mock:
@@ -278,7 +278,7 @@ class TestLogRisk:
                 ]
             )
             _, kwargs = mock.call_args
-            assert kwargs.get("artifact_path") == "risks"
+            assert kwargs.get("artifact_path") == "certain/risks"
 
     def test_json_fields(self):
         data = _capture_json(
@@ -344,7 +344,7 @@ class TestLogHumanOversight:
                 [{"oversight_type": "periodic_review", "description": "Monthly audits"}]
             )
             _, kwargs = mock.call_args
-            assert kwargs.get("artifact_path") == "human_oversight"
+            assert kwargs.get("artifact_path") == "certain/human_oversight"
 
     def test_json_fields(self):
         data = _capture_json(
@@ -389,7 +389,7 @@ class TestLogTransparencyMeasure:
                 [{"measure_type": ["explainability"], "measure_value": ["SHAP"]}]
             )
             _, kwargs = mock.call_args
-            assert kwargs.get("artifact_path") == "transparency_measures"
+            assert kwargs.get("artifact_path") == "certain/transparency_measures"
 
     def test_json_fields(self):
         data = _capture_json(
@@ -428,7 +428,7 @@ class TestLogChange:
         with patch("mlflow.log_artifact") as mock:
             log_change([{"change_description": "Updated threshold", "changed_by": "alice"}])
             _, kwargs = mock.call_args
-            assert kwargs.get("artifact_path") == "change_logs"
+            assert kwargs.get("artifact_path") == "certain/change_logs"
 
     def test_json_fields(self):
         data = _capture_json(
@@ -473,7 +473,7 @@ class TestLogDeclarationsOfConformity:
                 ],
             )
             _, kwargs = mock.call_args
-            assert kwargs.get("artifact_path") == "declaration_of_conformity"
+            assert kwargs.get("artifact_path") == "certain/declaration_of_conformity"
 
     def test_json_fields(self):
         captured = []
@@ -561,7 +561,7 @@ class TestLogVisualDocumentations:
                 documents=[{"filename": "diagram.png", "file_type": "png"}],
             )
             _, kwargs = mock.call_args
-            assert kwargs.get("artifact_path") == "visual_documentation"
+            assert kwargs.get("artifact_path") == "certain/visual_documentation"
 
     def test_json_fields(self):
         captured = []
@@ -623,7 +623,7 @@ class TestLogExplainableAi:
         with patch("mlflow.log_artifact") as mock:
             log_explainable_ai(["feat_a", "feat_b"], ["0.3", "0.7"])
             _, kwargs = mock.call_args
-            assert kwargs.get("artifact_path") == "explainable_ai"
+            assert kwargs.get("artifact_path") == "certain/explainable_ai"
 
     def test_json_fields(self):
         data = _capture_json(log_explainable_ai, ["age", "income"], ["0.5", "0.5"])
@@ -649,7 +649,7 @@ class TestLogModelPackaging:
         with patch("mlflow.log_artifact") as mock:
             log_model_packaging(DEPLOYMENT_ID, MODEL_ID, "docker", ["numpy", "sklearn"])
             _, kwargs = mock.call_args
-            assert kwargs.get("artifact_path") == "model_packaging"
+            assert kwargs.get("artifact_path") == "certain/model_packaging"
 
     def test_json_fields(self):
         details = {"base_image": "python:3.11-slim", "port": 8080}
@@ -690,7 +690,7 @@ class TestLogBuildTesting:
                 {"passed": 42, "failed": 0},
             )
             _, kwargs = mock.call_args
-            assert kwargs.get("artifact_path") == "build_and_integration_testing"
+            assert kwargs.get("artifact_path") == "certain/build_and_integration_testing"
 
     def test_json_fields(self):
         results = {"total": 10, "passed": 10, "failed": 0}
@@ -718,7 +718,7 @@ class TestLogStandards:
         with patch("mlflow.log_artifact") as mock:
             log_standards(DEPLOYMENT_ID, MODEL_ID, [{"name": "ISO 42001"}])
             _, kwargs = mock.call_args
-            assert kwargs.get("artifact_path") == "standards"
+            assert kwargs.get("artifact_path") == "certain/standards"
 
     def test_json_fields(self):
         captured = []
@@ -763,7 +763,7 @@ class TestLogInterface:
         with patch("mlflow.log_artifact") as mock:
             log_interface(DEPLOYMENT_ID, MODEL_ID, "REST API")
             _, kwargs = mock.call_args
-            assert kwargs.get("artifact_path") == "interfaces"
+            assert kwargs.get("artifact_path") == "certain/interfaces"
 
     def test_json_fields(self):
         data = _capture_json(log_interface, DEPLOYMENT_ID, MODEL_ID, "REST API")
@@ -776,7 +776,7 @@ class TestLogMonitorLogs:
         with patch("mlflow.log_artifact") as mock:
             log_monitor_logs(DEPLOYMENT_ID, MODEL_ID, "deployment ok")
             _, kwargs = mock.call_args
-            assert kwargs.get("artifact_path") == "deployment_logs"
+            assert kwargs.get("artifact_path") == "certain/deployment_logs"
 
     def test_json_fields(self):
         data = _capture_json(log_monitor_logs, DEPLOYMENT_ID, MODEL_ID, "deployment ok")
@@ -791,7 +791,7 @@ class TestLogDecommissioning:
         with patch("mlflow.log_artifact") as mock:
             log_decommissioning(DEPLOYMENT_ID, MODEL_ID, ["shutdown", "archive"], "End of life")
             _, kwargs = mock.call_args
-            assert kwargs.get("artifact_path") == "decommissioning"
+            assert kwargs.get("artifact_path") == "certain/decommissioning"
 
     def test_json_fields(self):
         data = _capture_json(
@@ -832,8 +832,11 @@ class TestMapAiActors:
         return base
 
     def test_maps_all_fields(self):
-        result = map_ai_actors(self._record(), EXPERIMENT_ID)
-        assert result["experiment_id"] == EXPERIMENT_ID
+        # ai_actors rows are run-scoped (PK: ai_actors_id, run_id); experiment_id
+        # is only carried over when embedded in the artifact record.
+        result = map_ai_actors(self._record(), RUN_ID)
+        assert result["run_id"] == RUN_ID
+        assert result["experiment_id"] == ""
         assert result["ai_providers"] == [{"name": "ML Team A", "role": "development"}]
         assert result["ai_deployers"] == [{"name": "Ops Team", "role": "production"}]
         assert result["auditor"] == "AuditFirm"
@@ -1123,7 +1126,9 @@ class TestMapInterface:
         return base
 
     def test_maps_all_fields(self):
-        result = map_interface(self._record(), EXPERIMENT_ID)
+        result = map_interface(self._record(), EXPERIMENT_ID, RUN_ID)
+        assert result["experiment_id"] == EXPERIMENT_ID
+        assert result["run_id"] == RUN_ID
         assert result["interface_type"] == "REST API"
         assert result["deployment_id"] == DEPLOYMENT_ID
 

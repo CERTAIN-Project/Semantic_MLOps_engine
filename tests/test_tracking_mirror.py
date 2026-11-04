@@ -1,5 +1,6 @@
 """Tests for real-time MLflow mirroring."""
 
+import hashlib
 import json
 from pathlib import Path
 from unittest.mock import Mock
@@ -75,17 +76,29 @@ def test_param_metric_artifact_and_manifest(
         (10, 0.91),
     ]
 
+    # The tracker also mirrors its own metadata and run_logs artifacts, and
+    # every user artifact is stored under the "certain/" prefix.
     artifact_events = read_jsonl(root / "events" / "artifacts.jsonl")
-    artifact_event = artifact_events[-1]
+    model_events = [
+        event for event in artifact_events if event["artifact_path"] == "certain/model/model.pkl"
+    ]
+    assert len(model_events) == 1
+    artifact_event = model_events[0]
 
     assert artifact_event["run_id"] == run_id
     assert artifact_event["experiment_id"] == experiment_id
-    assert artifact_event["artifact_path"] == "model/model.pkl"
     assert artifact_event["file_size"] == len(b"model-data")
     assert artifact_event["checksum"]
 
     mirrored_artifact = (
-        root / "experiments" / experiment_id / run_id / "artifacts" / "model" / "model.pkl"
+        root
+        / "experiments"
+        / experiment_id
+        / run_id
+        / "artifacts"
+        / "certain"
+        / "model"
+        / "model.pkl"
     )
     assert mirrored_artifact.read_bytes() == b"model-data"
 
@@ -94,7 +107,7 @@ def test_param_metric_artifact_and_manifest(
     assert manifest["status"] == "FINISHED"
     assert manifest["is_final"] is True
     assert manifest["metric_count"] == 2
-    assert manifest["artifact_count"] == 1
+    assert manifest["artifact_count"] == len(artifact_events)
     assert manifest["param_count"] == 1
     assert manifest["end_time"] is not None
 
@@ -109,13 +122,13 @@ def test_mlflow_failure_does_not_write_mirror(
 
     with tracker.start_run():
 
-        def fail_log_param(key, value):
+        def fail_log_params(params):
             raise RuntimeError("MLflow failed")
 
         monkeypatch.setattr(
             mlflow,
-            "log_param",
-            fail_log_param,
+            "log_params",
+            fail_log_params,
         )
 
         with pytest.raises(RuntimeError, match="MLflow failed"):
@@ -201,11 +214,10 @@ def test_export_creates_compact_json_files(
         )
         tracker.log_metrics(
             {"accuracy": 0.91},
-            0.91,
             step=2,
             timestamp=2000,
         )
-        tracker.set_tag("stage", "training")
+        tracker.set_tags({"stage": "training"})
 
     output = root / "metadata_json"
     counts = compact(root, output)
@@ -220,7 +232,14 @@ def test_export_creates_compact_json_files(
         "artifacts.json",
     }
 
-    assert {path.name for path in output.iterdir()} == expected_files
+    # Each compact export gets a SHA256 sidecar file.
+    expected_sidecars = {f"{name}.sha256" for name in expected_files}
+
+    assert {path.name for path in output.iterdir()} == expected_files | expected_sidecars
+
+    for name in expected_files:
+        digest = hashlib.sha256((output / name).read_bytes()).hexdigest()
+        assert (output / f"{name}.sha256").read_text().strip() == digest
 
     metrics = json.loads((output / "metrics.json").read_text())
     latest_metrics = json.loads((output / "latest_metrics.json").read_text())

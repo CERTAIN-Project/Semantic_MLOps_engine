@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Keep the version in sync with requirements-dev.txt.
+      - name: Install ruff
+        run: pip install -r requirements-dev.txt
+
+      - name: Ruff lint
+        run: ruff check . --output-format=github
+
+      - name: Ruff format
+        run: ruff format --check .
+
+  test:
+    name: Tests (pytest, Python 3.11)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      # CPU-only wheel: the default Linux torch wheel pulls several GB of CUDA libraries.
+      - name: Install PyTorch (CPU)
+        run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      # testpaths and pythonpath come from [tool.pytest.ini_options] in pyproject.toml.
+      - name: Run tests
+        run: >-
+          pytest
+          --cov=certain_library --cov=data_api
+          --cov-report=term:skip-covered
+          --junitxml=pytest-report.xml
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-report
+          path: pytest-report.xml

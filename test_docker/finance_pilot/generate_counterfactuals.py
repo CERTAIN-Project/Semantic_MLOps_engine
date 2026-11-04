@@ -369,7 +369,7 @@ class InternalKPIWindowWrapper:
                 f"Insufficient context rows for CF window replacement on asset={context_item}: "
                 f"need {self.window_size}, got {len(item_indices)}"
             )
-        rating_col_pos =asset_base.columns.get_loc(DEFAULT_RATING_COL)
+        rating_col_pos = asset_base.columns.get_loc(DEFAULT_RATING_COL)
         rating_col_pos_full = asset_base_full.columns.get_loc(DEFAULT_RATING_COL)
 
         preds = []

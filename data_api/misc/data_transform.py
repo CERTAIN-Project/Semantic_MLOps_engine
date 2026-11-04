@@ -667,6 +667,8 @@ def map_run_code(tags_df: "pd.DataFrame", run_id: str, artifact_git_record: dict
     #     "name": source_name or "unknown",
     # }
 
+    return {}
+
 
 def map_checkpoints(row: "pd.Series", id_mapping: dict) -> dict:
     """

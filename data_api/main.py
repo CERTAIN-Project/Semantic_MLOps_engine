@@ -254,9 +254,7 @@ def sync_metrics(id_mapping):
                 mapped_df["timestamp"] = mapped_df["timestamp"].fillna(0).astype(int)
             except Exception:
                 mapped_df["timestamp"] = mapped_df["timestamp"].apply(
-                    lambda x: (
-                        int(x) if pd.notna(x) else int(pd.Timestamp.now(tz="UTC").timestamp())
-                    )
+                    lambda x: int(x) if pd.notna(x) else int(pd.Timestamp.now(tz="UTC").timestamp())
                 )
 
     insert_dataframe(mapped_df, "model_metrics")
@@ -286,7 +284,7 @@ def sync_latest_metrics(id_mapping):
             mapped_df["timestamp"] = mapped_df["timestamp"].fillna(0).astype(int)
         except Exception:
             mapped_df["timestamp"] = mapped_df["timestamp"].apply(
-                lambda x: (int(x) if pd.notna(x) else int(pd.Timestamp.now(tz="UTC").timestamp()))
+                lambda x: int(x) if pd.notna(x) else int(pd.Timestamp.now(tz="UTC").timestamp())
             )
 
     # Attempt to derive parent_id for each run so we can deduplicate per
@@ -1012,7 +1010,7 @@ def sync_data_signatures(id_mapping):
     # Normalize JSON strings into Python objects when necessary
     try:
         df[signature_col] = df[signature_col].apply(
-            lambda x: (json.loads(x) if isinstance(x, str) and x.strip().startswith("{") else x)
+            lambda x: json.loads(x) if isinstance(x, str) and x.strip().startswith("{") else x
         )
     except Exception:
         # best-effort: leave as-is

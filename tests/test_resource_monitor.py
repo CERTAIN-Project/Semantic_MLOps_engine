@@ -161,10 +161,10 @@ class TestResourceMonitoringOPSDPatterns:
                 f"Expected 3 artifact logs, got {mock_log_artifact.call_count}"
             )
 
-            # Verify all artifacts logged to code_carbon path
+            # Verify all artifacts logged to the CERTAIN-prefixed code_carbon path
             for call in mock_log_artifact.call_args_list:
                 args, kwargs = call
-                assert kwargs["artifact_path"] == "code_carbon"
+                assert kwargs["artifact_path"] == "certain/code_carbon"
 
 
 # class TestStartTracker:

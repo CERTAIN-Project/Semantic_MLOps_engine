@@ -52,5 +52,7 @@ quote-style = "double"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Import roots the tests need (same as PYTHONPATH=.:certain_library:data_api).
+pythonpath = [".", "certain_library", "data_api"]
 
 addopts = "-ra"
